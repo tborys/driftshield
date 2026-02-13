@@ -1,7 +1,9 @@
 """Core domain models for DriftShield."""
 
 from dataclasses import dataclass, fields
+from datetime import datetime
 from enum import Enum
+from uuid import UUID
 
 
 class EventType(str, Enum):
@@ -32,3 +34,34 @@ class RiskClassification:
     def active_flags(self) -> list[str]:
         """Return list of flag names that are True."""
         return [f.name for f in fields(self) if getattr(self, f.name)]
+
+
+@dataclass
+class CanonicalEvent:
+    """A single decision node in a reasoning trace."""
+
+    id: UUID
+    session_id: str
+    timestamp: datetime
+    event_type: EventType
+    agent_id: str
+    action: str
+    parent_event_id: UUID | None = None
+    inputs: dict = None
+    outputs: dict = None
+    metadata: dict = None
+    risk_classification: RiskClassification | None = None
+
+    def __post_init__(self):
+        if self.inputs is None:
+            self.inputs = {}
+        if self.outputs is None:
+            self.outputs = {}
+        if self.metadata is None:
+            self.metadata = {}
+
+    def has_risk_flags(self) -> bool:
+        """Return True if this event has any risk flags set."""
+        if self.risk_classification is None:
+            return False
+        return self.risk_classification.has_any_flag()

@@ -1,6 +1,9 @@
 """Tests for core domain models."""
 
-from driftshield.core.models import EventType, RiskClassification
+from datetime import datetime, timezone
+from uuid import uuid4
+
+from driftshield.core.models import CanonicalEvent, EventType, RiskClassification
 
 
 class TestEventType:
@@ -50,3 +53,68 @@ class TestRiskClassification:
         assert "coverage_gap" in active
         assert "policy_divergence" not in active
         assert len(active) == 2
+
+
+class TestCanonicalEvent:
+    def test_create_minimal_event(self):
+        """Can create event with required fields only."""
+        event = CanonicalEvent(
+            id=uuid4(),
+            session_id="session-123",
+            timestamp=datetime.now(timezone.utc),
+            event_type=EventType.TOOL_CALL,
+            agent_id="agent-1",
+            action="fetch_data",
+        )
+        assert event.parent_event_id is None
+        assert event.inputs == {}
+        assert event.outputs == {}
+        assert event.metadata == {}
+        assert event.risk_classification is None
+
+    def test_create_full_event(self):
+        """Can create event with all fields."""
+        parent_id = uuid4()
+        event_id = uuid4()
+        now = datetime.now(timezone.utc)
+
+        event = CanonicalEvent(
+            id=event_id,
+            session_id="session-123",
+            timestamp=now,
+            event_type=EventType.BRANCH,
+            agent_id="agent-1",
+            parent_event_id=parent_id,
+            action="decide_path",
+            inputs={"options": ["a", "b"]},
+            outputs={"chosen": "a"},
+            metadata={"source": "test"},
+            risk_classification=RiskClassification(assumption_mutation=True),
+        )
+        assert event.id == event_id
+        assert event.parent_event_id == parent_id
+        assert event.inputs == {"options": ["a", "b"]}
+        assert event.risk_classification.assumption_mutation is True
+
+    def test_event_has_risk_flags(self):
+        """has_risk_flags delegates to risk_classification."""
+        event_no_risk = CanonicalEvent(
+            id=uuid4(),
+            session_id="s",
+            timestamp=datetime.now(timezone.utc),
+            event_type=EventType.OUTPUT,
+            agent_id="a",
+            action="x",
+        )
+        assert event_no_risk.has_risk_flags() is False
+
+        event_with_risk = CanonicalEvent(
+            id=uuid4(),
+            session_id="s",
+            timestamp=datetime.now(timezone.utc),
+            event_type=EventType.OUTPUT,
+            agent_id="a",
+            action="x",
+            risk_classification=RiskClassification(coverage_gap=True),
+        )
+        assert event_with_risk.has_risk_flags() is True
