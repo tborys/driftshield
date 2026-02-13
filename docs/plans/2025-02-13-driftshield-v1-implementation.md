@@ -2027,12 +2027,375 @@ git commit -m "feat(analysis): add inflection node detection"
 
 ---
 
-## Phase 7: Continue with remaining tasks...
+## Phase 7: Parser Interface and Claude Code Parser
+
+### Task 7.1: Parser Protocol (Interface)
+
+**Files:**
+- Create: `driftshield/src/driftshield/parsers/__init__.py`
+- Create: `driftshield/src/driftshield/parsers/protocol.py`
+- Create: `driftshield/tests/parsers/__init__.py`
+
+**Step 1: Create parsers package**
+
+```bash
+mkdir -p driftshield/src/driftshield/parsers
+mkdir -p driftshield/tests/parsers
+touch driftshield/src/driftshield/parsers/__init__.py
+touch driftshield/tests/parsers/__init__.py
+```
+
+**Step 2: Write Parser protocol**
+
+```python
+# src/driftshield/parsers/protocol.py
+"""Parser protocol for log ingestion."""
+
+from typing import Protocol
+from driftshield.core.models import CanonicalEvent
+
+
+class TranscriptParser(Protocol):
+    """Protocol for parsing agent transcripts into CanonicalEvents."""
+
+    def parse(self, content: str) -> list[CanonicalEvent]:
+        """Parse raw transcript content into canonical events."""
+        ...
+
+    def parse_file(self, file_path: str) -> list[CanonicalEvent]:
+        """Parse transcript from file path."""
+        ...
+
+    @property
+    def source_type(self) -> str:
+        """Return identifier for this parser type (e.g., 'claude_code')."""
+        ...
+```
+
+**Step 3: Commit**
+
+```bash
+git add driftshield/
+git commit -m "feat(parsers): add TranscriptParser protocol"
+```
+
+---
+
+### Task 7.2: Claude Code Parser - Core Parsing
+
+**Files:**
+- Create: `driftshield/src/driftshield/parsers/claude_code.py`
+- Create: `driftshield/tests/parsers/test_claude_code.py`
+- Create: `driftshield/tests/fixtures/transcripts/` (directory for test fixtures)
+
+**Step 1: Create test fixture from real session**
+
+Copy a real Claude Code session file to use as test fixture:
+```bash
+mkdir -p driftshield/tests/fixtures/transcripts
+# Copy sample session (anonymise if needed)
+cp ~/.claude/projects/-Users-demo-user-github-drift-shield/45b32921-0559-400d-8930-350d66ff0221.jsonl \
+   driftshield/tests/fixtures/transcripts/sample_claude_code_session.jsonl
+```
+
+**Step 2: Write failing test**
+
+```python
+# tests/parsers/test_claude_code.py
+"""Tests for Claude Code transcript parser."""
+
+from pathlib import Path
+import pytest
+
+from driftshield.parsers.claude_code import ClaudeCodeParser
+from driftshield.core.models import EventType
+
+
+FIXTURES_DIR = Path(__file__).parent.parent / "fixtures" / "transcripts"
+
+
+class TestClaudeCodeParser:
+    def test_parse_file_returns_events(self):
+        """Parser extracts events from JSONL file."""
+        parser = ClaudeCodeParser()
+        events = parser.parse_file(str(FIXTURES_DIR / "sample_claude_code_session.jsonl"))
+
+        assert len(events) > 0
+        assert all(e.session_id for e in events)
+
+    def test_extracts_tool_calls(self):
+        """Parser extracts tool_use entries as TOOL_CALL events."""
+        parser = ClaudeCodeParser()
+        events = parser.parse_file(str(FIXTURES_DIR / "sample_claude_code_session.jsonl"))
+
+        tool_calls = [e for e in events if e.event_type == EventType.TOOL_CALL]
+        assert len(tool_calls) > 0
+
+    def test_tool_call_has_action_and_inputs(self):
+        """Tool call events have action (tool name) and inputs."""
+        parser = ClaudeCodeParser()
+        events = parser.parse_file(str(FIXTURES_DIR / "sample_claude_code_session.jsonl"))
+
+        tool_calls = [e for e in events if e.event_type == EventType.TOOL_CALL]
+        for tc in tool_calls[:5]:  # Check first 5
+            assert tc.action  # Tool name
+            assert isinstance(tc.inputs, dict)
+
+    def test_events_have_timestamps(self):
+        """All events have valid timestamps."""
+        parser = ClaudeCodeParser()
+        events = parser.parse_file(str(FIXTURES_DIR / "sample_claude_code_session.jsonl"))
+
+        for event in events:
+            assert event.timestamp is not None
+
+    def test_events_linked_by_parent(self):
+        """Events are linked via parent_event_id."""
+        parser = ClaudeCodeParser()
+        events = parser.parse_file(str(FIXTURES_DIR / "sample_claude_code_session.jsonl"))
+
+        # At least some events should have parents (not root)
+        events_with_parents = [e for e in events if e.parent_event_id is not None]
+        assert len(events_with_parents) > 0
+
+    def test_source_type(self):
+        """Parser identifies as claude_code."""
+        parser = ClaudeCodeParser()
+        assert parser.source_type == "claude_code"
+```
+
+**Step 3: Run test to verify it fails**
+
+```bash
+pytest tests/parsers/test_claude_code.py -v
+```
+
+Expected: FAIL with "cannot import name 'ClaudeCodeParser'"
+
+**Step 4: Implement parser**
+
+```python
+# src/driftshield/parsers/claude_code.py
+"""Parser for Claude Code JSONL transcripts."""
+
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+from uuid import UUID, uuid4
+
+from driftshield.core.models import CanonicalEvent, EventType
+
+
+class ClaudeCodeParser:
+    """
+    Parse Claude Code session transcripts (JSONL format).
+
+    Claude Code stores sessions as JSONL files with entries:
+    - type: "assistant" with tool_use in content
+    - type: "user" with tool_result in content
+
+    Each tool_use becomes a TOOL_CALL event.
+    """
+
+    @property
+    def source_type(self) -> str:
+        return "claude_code"
+
+    def parse_file(self, file_path: str) -> list[CanonicalEvent]:
+        """Parse transcript from file path."""
+        content = Path(file_path).read_text()
+        return self.parse(content)
+
+    def parse(self, content: str) -> list[CanonicalEvent]:
+        """Parse raw JSONL content into canonical events."""
+        events = []
+        session_id = None
+        uuid_map: dict[str, UUID] = {}  # tool_use_id -> our UUID
+        prev_event_id: UUID | None = None
+
+        for line in content.strip().split("\n"):
+            if not line.strip():
+                continue
+
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+            # Extract session ID from first entry that has it
+            if session_id is None and "sessionId" in entry:
+                session_id = entry["sessionId"]
+
+            # Process assistant messages with tool_use
+            if entry.get("type") == "assistant" and "message" in entry:
+                message = entry["message"]
+                content_items = message.get("content", [])
+
+                for item in content_items:
+                    if item.get("type") == "tool_use":
+                        event = self._create_tool_call_event(
+                            item=item,
+                            entry=entry,
+                            session_id=session_id or "unknown",
+                            parent_id=prev_event_id,
+                        )
+                        events.append(event)
+                        uuid_map[item["id"]] = event.id
+                        prev_event_id = event.id
+
+            # Process tool results to capture outputs
+            if entry.get("type") == "user" and "message" in entry:
+                message = entry["message"]
+                content_items = message.get("content", [])
+
+                for item in content_items:
+                    if item.get("type") == "tool_result":
+                        tool_use_id = item.get("tool_use_id")
+                        if tool_use_id and tool_use_id in uuid_map:
+                            # Find the corresponding event and update outputs
+                            event_id = uuid_map[tool_use_id]
+                            for e in events:
+                                if e.id == event_id:
+                                    e.outputs = {
+                                        "result": item.get("content", ""),
+                                        "is_error": item.get("is_error", False),
+                                    }
+                                    break
+
+        return events
+
+    def _create_tool_call_event(
+        self,
+        item: dict,
+        entry: dict,
+        session_id: str,
+        parent_id: UUID | None,
+    ) -> CanonicalEvent:
+        """Create a CanonicalEvent from a tool_use item."""
+        timestamp_ms = entry.get("timestamp", 0)
+        timestamp = datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc)
+
+        return CanonicalEvent(
+            id=uuid4(),
+            session_id=session_id,
+            timestamp=timestamp,
+            event_type=EventType.TOOL_CALL,
+            agent_id=entry.get("message", {}).get("model", "claude"),
+            action=item.get("name", "unknown"),
+            parent_event_id=parent_id,
+            inputs=item.get("input", {}),
+            outputs={},  # Will be filled when we see tool_result
+            metadata={
+                "tool_use_id": item.get("id"),
+                "cwd": entry.get("cwd"),
+                "git_branch": entry.get("gitBranch"),
+            },
+        )
+```
+
+**Step 5: Run tests to verify**
+
+```bash
+pytest tests/parsers/test_claude_code.py -v
+```
+
+**Step 6: Commit**
+
+```bash
+git add driftshield/
+git commit -m "feat(parsers): add Claude Code transcript parser"
+```
+
+---
+
+### Task 7.3: End-to-End Test with Real Transcript
+
+**Files:**
+- Create: `driftshield/tests/integration/test_real_transcript.py`
+
+**Step 1: Write integration test**
+
+```python
+# tests/integration/test_real_transcript.py
+"""Integration tests using real Claude Code transcripts."""
+
+from pathlib import Path
+import pytest
+
+from driftshield.parsers.claude_code import ClaudeCodeParser
+from driftshield.core.graph.builder import build_graph
+from driftshield.core.analysis.inflection import find_inflection_node
+
+
+FIXTURES_DIR = Path(__file__).parent.parent / "fixtures" / "transcripts"
+
+
+class TestRealTranscriptEndToEnd:
+    """End-to-end tests with real transcripts."""
+
+    def test_can_build_graph_from_real_transcript(self):
+        """Parse real transcript and build lineage graph."""
+        parser = ClaudeCodeParser()
+        events = parser.parse_file(str(FIXTURES_DIR / "sample_claude_code_session.jsonl"))
+
+        graph = build_graph(events, session_id=events[0].session_id if events else "test")
+
+        assert len(graph.nodes) > 0
+        assert graph.root is not None
+
+    def test_graph_has_connected_nodes(self):
+        """Graph nodes are connected via parent relationships."""
+        parser = ClaudeCodeParser()
+        events = parser.parse_file(str(FIXTURES_DIR / "sample_claude_code_session.jsonl"))
+        graph = build_graph(events, session_id=events[0].session_id if events else "test")
+
+        # Check path from last node to root exists
+        if len(graph.nodes) > 1:
+            last_node = graph.nodes[-1]
+            path = graph.path_to_root(last_node.id)
+            assert len(path) >= 1
+
+    def test_inflection_detection_runs_without_error(self):
+        """Inflection detection completes on real transcript."""
+        parser = ClaudeCodeParser()
+        events = parser.parse_file(str(FIXTURES_DIR / "sample_claude_code_session.jsonl"))
+        graph = build_graph(events, session_id=events[0].session_id if events else "test")
+
+        if graph.nodes:
+            last_node = graph.nodes[-1]
+            # Should not raise - may return None if no risk flags
+            result = find_inflection_node(graph, last_node.id)
+            # Result can be None (no risk flags in transcript)
+            assert result is None or result.has_risk_flags()
+```
+
+**Step 2: Create integration tests directory**
+
+```bash
+mkdir -p driftshield/tests/integration
+touch driftshield/tests/integration/__init__.py
+```
+
+**Step 3: Run integration tests**
+
+```bash
+pytest tests/integration/test_real_transcript.py -v
+```
+
+**Step 4: Commit**
+
+```bash
+git add driftshield/
+git commit -m "test: add real transcript integration tests"
+```
+
+---
+
+## Phase 8+: Future Phases (Outline)
 
 The implementation plan continues with:
 
-- **Phase 7**: Risk Classification Heuristics
-- **Phase 8**: Parser Interface and JSON Parser
+- **Phase 8**: Risk Classification Heuristics (auto-detect flags)
 - **Phase 9**: Database Models (SQLAlchemy)
 - **Phase 10**: API Routes (FastAPI)
 - **Phase 11**: Report Generation
