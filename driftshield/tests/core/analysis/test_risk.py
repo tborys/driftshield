@@ -7,6 +7,7 @@ import pytest
 
 from driftshield.core.models import CanonicalEvent, EventType, RiskClassification
 from driftshield.core.analysis.risk import RiskHeuristic, RiskAnalyzer
+from driftshield.core.analysis.heuristics import CoverageGapHeuristic
 
 
 def make_event(**kwargs) -> CanonicalEvent:
@@ -101,3 +102,101 @@ class TestRiskAnalyzer:
         # When analyzing event2, context should include event1's outputs
         assert "previous_outputs" in captured_context
         assert len(captured_context["previous_outputs"]) >= 1
+
+
+class TestCoverageGapHeuristic:
+    """Tests for coverage gap detection."""
+
+    def test_no_flag_when_no_enumerable_inputs(self):
+        """No flag when inputs don't contain enumerable items."""
+        heuristic = CoverageGapHeuristic()
+        event = make_event(
+            inputs={"text": "some content"},
+            outputs={"summary": "processed"},
+        )
+
+        result = heuristic.check(event, {})
+
+        assert result is None
+
+    def test_no_flag_when_all_items_referenced(self):
+        """No flag when output references all input items."""
+        heuristic = CoverageGapHeuristic()
+        event = make_event(
+            inputs={"items": ["a", "b", "c"]},
+            outputs={"processed_items": ["a", "b", "c"]},
+        )
+
+        result = heuristic.check(event, {})
+
+        assert result is None
+
+    def test_flags_when_items_missing_from_output(self):
+        """Flags coverage gap when output references fewer items than input."""
+        heuristic = CoverageGapHeuristic()
+        event = make_event(
+            inputs={"subsections": ["a", "b", "c", "d"]},
+            outputs={"referenced_subsections": ["a", "b", "d"]},  # Missing c!
+        )
+
+        result = heuristic.check(event, {})
+
+        assert result is not None
+        assert result.coverage_gap is True
+
+    def test_detects_nested_list_inputs(self):
+        """Detects enumerable items in nested input structures."""
+        heuristic = CoverageGapHeuristic()
+        event = make_event(
+            inputs={
+                "document": {
+                    "sections": ["intro", "body", "conclusion", "appendix"],
+                }
+            },
+            outputs={
+                "reviewed_sections": ["intro", "body"],  # Missing 2!
+            },
+        )
+
+        result = heuristic.check(event, {})
+
+        assert result is not None
+        assert result.coverage_gap is True
+
+    def test_ignores_non_matching_key_patterns(self):
+        """Only compares keys with matching patterns (e.g., items/processed_items)."""
+        heuristic = CoverageGapHeuristic()
+        event = make_event(
+            inputs={"items": ["a", "b", "c"]},
+            outputs={"unrelated_list": ["x", "y"]},  # Different key, no match
+        )
+
+        result = heuristic.check(event, {})
+
+        # Should not flag - output key doesn't match input key pattern
+        assert result is None
+
+    def test_matches_common_key_patterns(self):
+        """Detects common naming patterns for input/output pairs."""
+        heuristic = CoverageGapHeuristic()
+
+        # Pattern: X -> referenced_X
+        event = make_event(
+            inputs={"clauses": ["a", "b", "c"]},
+            outputs={"referenced_clauses": ["a", "b"]},
+        )
+        assert heuristic.check(event, {}) is not None
+
+        # Pattern: X -> processed_X
+        event = make_event(
+            inputs={"items": ["a", "b", "c"]},
+            outputs={"processed_items": ["a"]},
+        )
+        assert heuristic.check(event, {}) is not None
+
+        # Pattern: X -> reviewed_X
+        event = make_event(
+            inputs={"sections": ["a", "b", "c"]},
+            outputs={"reviewed_sections": ["a", "b"]},
+        )
+        assert heuristic.check(event, {})
