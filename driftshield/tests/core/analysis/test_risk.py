@@ -7,7 +7,10 @@ import pytest
 
 from driftshield.core.models import CanonicalEvent, EventType, RiskClassification
 from driftshield.core.analysis.risk import RiskHeuristic, RiskAnalyzer
-from driftshield.core.analysis.heuristics import CoverageGapHeuristic
+from driftshield.core.analysis.heuristics import (
+    CoverageGapHeuristic,
+    ContextContaminationHeuristic,
+)
 
 
 def make_event(**kwargs) -> CanonicalEvent:
@@ -200,3 +203,100 @@ class TestCoverageGapHeuristic:
             outputs={"reviewed_sections": ["a", "b"]},
         )
         assert heuristic.check(event, {})
+
+
+class TestContextContaminationHeuristic:
+    """Tests for context contamination detection."""
+
+    def test_no_flag_when_no_previous_context(self):
+        """No flag when there's no previous context to contaminate from."""
+        heuristic = ContextContaminationHeuristic()
+        event = make_event(
+            inputs={"category": "B", "discount_tier": "gold"},
+            outputs={"price": 100},
+        )
+
+        result = heuristic.check(event, {"previous_outputs": []})
+
+        assert result is None
+
+    def test_no_flag_when_context_matches(self):
+        """No flag when category in input matches category from previous output."""
+        heuristic = ContextContaminationHeuristic()
+
+        previous_outputs = [
+            {"discount_tier": "gold", "discount_category": "A"},
+        ]
+
+        event = make_event(
+            inputs={
+                "product_category": "A",  # Same as discount_category
+                "customer_discount_tier": "gold",
+            },
+            outputs={"final_price": 80},
+        )
+
+        result = heuristic.check(event, {"previous_outputs": previous_outputs})
+
+        assert result is None
+
+    def test_flags_when_category_mismatch(self):
+        """Flags when discount from category A applied to category B product."""
+        heuristic = ContextContaminationHeuristic()
+
+        previous_outputs = [
+            {"discount_tier": "gold", "discount_category": "A"},
+        ]
+
+        event = make_event(
+            inputs={
+                "product_category": "B",  # Different from discount_category!
+                "customer_discount_tier": "gold",  # From category A context
+            },
+            outputs={"final_price": 80, "discount_applied": 0.20},
+        )
+
+        result = heuristic.check(event, {"previous_outputs": previous_outputs})
+
+        assert result is not None
+        assert result.context_contamination is True
+
+    def test_detects_value_from_wrong_context(self):
+        """Detects when a value appears in incompatible context."""
+        heuristic = ContextContaminationHeuristic()
+
+        # Previous event established "premium" applies to "enterprise" tier
+        previous_outputs = [
+            {"pricing_tier": "enterprise", "support_level": "premium"},
+        ]
+
+        # Current event uses "premium" support but for "basic" tier
+        event = make_event(
+            inputs={
+                "customer_tier": "basic",
+                "support_level": "premium",  # Contaminated from enterprise context
+            },
+            outputs={"support_cost": 0},  # Wrong! Basic shouldn't get premium
+        )
+
+        result = heuristic.check(event, {"previous_outputs": previous_outputs})
+
+        assert result is not None
+        assert result.context_contamination is True
+
+    def test_no_flag_for_unrelated_values(self):
+        """No flag when values are unrelated to previous context."""
+        heuristic = ContextContaminationHeuristic()
+
+        previous_outputs = [
+            {"customer_name": "Acme", "region": "US"},
+        ]
+
+        event = make_event(
+            inputs={"product_id": "P123", "quantity": 5},
+            outputs={"total": 500},
+        )
+
+        result = heuristic.check(event, {"previous_outputs": previous_outputs})
+
+        assert result is None
