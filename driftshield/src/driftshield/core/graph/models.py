@@ -87,3 +87,33 @@ class LineageGraph:
         if node is None or node.parent_event_id is None:
             return None
         return self.get_node(node.parent_event_id)
+
+    def path_to_root(self, node_id: UUID) -> list[DecisionNode]:
+        """Return path from node to root, starting with the given node."""
+        path = []
+        current = self.get_node(node_id)
+
+        while current is not None:
+            path.append(current)
+            current = self.get_parent(current.id)
+
+        return path
+
+    def path_between(self, start_id: UUID, end_id: UUID) -> list[DecisionNode]:
+        """Return path from start to end, inclusive. Empty if not connected."""
+        if start_id == end_id:
+            node = self.get_node(start_id)
+            return [node] if node else []
+
+        # Walk backward from end to find start
+        path_to_root = self.path_to_root(end_id)
+
+        try:
+            start_idx = next(
+                i for i, node in enumerate(path_to_root)
+                if node.id == start_id
+            )
+            # Reverse to get start -> end order
+            return list(reversed(path_to_root[: start_idx + 1]))
+        except StopIteration:
+            return []

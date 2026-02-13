@@ -164,3 +164,78 @@ class TestLineageGraph:
 
         assert graph.get_parent(child.id).action == "parent"
         assert graph.get_parent(parent.id) is None
+
+    def test_path_to_root(self):
+        """path_to_root returns nodes from target to root."""
+        graph = LineageGraph(session_id="test-session")
+
+        node1 = make_event(action="root")
+        node2 = make_event(action="middle", parent_event_id=node1.id)
+        node3 = make_event(action="leaf", parent_event_id=node2.id)
+
+        graph.add_node(DecisionNode(event=node1, sequence_num=0))
+        graph.add_node(DecisionNode(event=node2, sequence_num=1))
+        graph.add_node(DecisionNode(event=node3, sequence_num=2))
+
+        path = graph.path_to_root(node3.id)
+
+        assert len(path) == 3
+        assert [n.action for n in path] == ["leaf", "middle", "root"]
+
+    def test_path_to_root_single_node(self):
+        """path_to_root for root node returns just the root."""
+        graph = LineageGraph(session_id="test-session")
+        event = make_event(action="root")
+        graph.add_node(DecisionNode(event=event, sequence_num=0))
+
+        path = graph.path_to_root(event.id)
+
+        assert len(path) == 1
+        assert path[0].action == "root"
+
+    def test_path_to_root_nonexistent_returns_empty(self):
+        """path_to_root for nonexistent node returns empty list."""
+        graph = LineageGraph(session_id="test-session")
+        assert graph.path_to_root(uuid4()) == []
+
+    def test_path_between(self):
+        """path_between returns nodes from start to end inclusive."""
+        graph = LineageGraph(session_id="test-session")
+
+        node1 = make_event(action="n1")
+        node2 = make_event(action="n2", parent_event_id=node1.id)
+        node3 = make_event(action="n3", parent_event_id=node2.id)
+        node4 = make_event(action="n4", parent_event_id=node3.id)
+
+        graph.add_node(DecisionNode(event=node1, sequence_num=0))
+        graph.add_node(DecisionNode(event=node2, sequence_num=1))
+        graph.add_node(DecisionNode(event=node3, sequence_num=2))
+        graph.add_node(DecisionNode(event=node4, sequence_num=3))
+
+        path = graph.path_between(node2.id, node4.id)
+
+        assert len(path) == 3
+        assert [n.action for n in path] == ["n2", "n3", "n4"]
+
+    def test_path_between_same_node(self):
+        """path_between with same start and end returns single node."""
+        graph = LineageGraph(session_id="test-session")
+        event = make_event(action="solo")
+        graph.add_node(DecisionNode(event=event, sequence_num=0))
+
+        path = graph.path_between(event.id, event.id)
+
+        assert len(path) == 1
+        assert path[0].action == "solo"
+
+    def test_path_between_not_connected_returns_empty(self):
+        """path_between returns empty if nodes not connected."""
+        graph = LineageGraph(session_id="test-session")
+
+        node1 = make_event(action="n1")
+        node2 = make_event(action="n2")  # no parent, not connected
+
+        graph.add_node(DecisionNode(event=node1, sequence_num=0))
+        graph.add_node(DecisionNode(event=node2, sequence_num=1))
+
+        assert graph.path_between(node1.id, node2.id) == []
