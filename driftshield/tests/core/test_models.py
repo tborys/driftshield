@@ -3,7 +3,13 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from driftshield.core.models import CanonicalEvent, EventType, RiskClassification
+from driftshield.core.models import (
+    CanonicalEvent,
+    EventType,
+    RiskClassification,
+    Session,
+    SessionStatus,
+)
 
 
 class TestEventType:
@@ -118,3 +124,45 @@ class TestCanonicalEvent:
             risk_classification=RiskClassification(coverage_gap=True),
         )
         assert event_with_risk.has_risk_flags() is True
+
+
+class TestSessionStatus:
+    def test_status_values(self):
+        """Session status enum has expected values."""
+        assert SessionStatus.RUNNING.value == "running"
+        assert SessionStatus.COMPLETED.value == "completed"
+        assert SessionStatus.FAILED.value == "failed"
+
+
+class TestSession:
+    def test_create_session(self):
+        """Can create a session with required fields."""
+        session_id = uuid4()
+        now = datetime.now(timezone.utc)
+
+        session = Session(
+            id=session_id,
+            agent_id="doc-reviewer",
+            started_at=now,
+        )
+        assert session.id == session_id
+        assert session.external_id is None
+        assert session.status == SessionStatus.RUNNING
+        assert session.ended_at is None
+        assert session.metadata == {}
+
+    def test_create_completed_session(self):
+        """Can create a completed session."""
+        now = datetime.now(timezone.utc)
+
+        session = Session(
+            id=uuid4(),
+            agent_id="doc-reviewer",
+            started_at=now,
+            ended_at=now,
+            status=SessionStatus.COMPLETED,
+            external_id="ext-123",
+            metadata={"source": "langsmith"},
+        )
+        assert session.status == SessionStatus.COMPLETED
+        assert session.external_id == "ext-123"

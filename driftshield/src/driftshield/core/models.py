@@ -65,3 +65,28 @@ class CanonicalEvent:
         if self.risk_classification is None:
             return False
         return self.risk_classification.has_any_flag()
+
+
+class SessionStatus(str, Enum):
+    """Status of an agent session."""
+
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+@dataclass
+class Session:
+    """An agent workflow execution containing decision nodes."""
+
+    id: UUID
+    agent_id: str
+    started_at: datetime
+    external_id: str | None = None
+    ended_at: datetime | None = None
+    status: SessionStatus = SessionStatus.RUNNING
+    metadata: dict = None
+
+    def __post_init__(self):
+        if self.metadata is None:
+            self.metadata = {}
