@@ -40,3 +40,50 @@ class DecisionNode:
 
     def has_risk_flags(self) -> bool:
         return self.event.has_risk_flags()
+
+
+@dataclass
+class LineageGraph:
+    """A directed acyclic graph of decision nodes representing reasoning trajectory."""
+
+    session_id: str
+    _nodes: dict = None  # UUID -> DecisionNode
+
+    def __post_init__(self):
+        if self._nodes is None:
+            self._nodes = {}
+
+    def add_node(self, node: DecisionNode) -> None:
+        """Add a node to the graph."""
+        self._nodes[node.id] = node
+
+    def get_node(self, node_id: UUID) -> DecisionNode | None:
+        """Get a node by ID."""
+        return self._nodes.get(node_id)
+
+    @property
+    def nodes(self) -> list[DecisionNode]:
+        """Return all nodes in sequence order."""
+        return sorted(self._nodes.values(), key=lambda n: n.sequence_num)
+
+    @property
+    def root(self) -> DecisionNode | None:
+        """Return the root node (sequence_num 0)."""
+        for node in self._nodes.values():
+            if node.sequence_num == 0:
+                return node
+        return None
+
+    def get_children(self, node_id: UUID) -> list[DecisionNode]:
+        """Get all nodes that have this node as parent."""
+        return [
+            node for node in self._nodes.values()
+            if node.parent_event_id == node_id
+        ]
+
+    def get_parent(self, node_id: UUID) -> DecisionNode | None:
+        """Get the parent node of a given node."""
+        node = self.get_node(node_id)
+        if node is None or node.parent_event_id is None:
+            return None
+        return self.get_node(node.parent_event_id)
