@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { RiskFlagBadge } from './RiskFlagBadge'
+import { ValidationControls } from '../validation/ValidationControls'
 import type { GraphNode } from '../../types/graph'
 
 interface NodeInspectorProps {
@@ -85,6 +86,9 @@ export function NodeInspector({ node }: NodeInspectorProps) {
           </CardContent>
         </Card>
       )}
+
+      <Separator />
+      <ValidationControls node={node} />
     </div>
   )
 }
