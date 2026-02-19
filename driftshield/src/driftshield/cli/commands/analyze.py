@@ -49,6 +49,16 @@ def analyze(
         "-q",
         help="Minimal output.",
     ),
+    fail_on: Optional[str] = typer.Option(
+        None,
+        "--fail-on",
+        help="Exit 1 if specified risks detected (comma-separated).",
+    ),
+    fail_threshold: Optional[int] = typer.Option(
+        None,
+        "--fail-threshold",
+        help="Exit 1 if N or more events flagged.",
+    ),
 ) -> None:
     """Analyse session(s) for reasoning risks."""
     claude_home = os.environ.get("CLAUDE_HOME")
@@ -110,6 +120,26 @@ def analyze(
         console.print("No sessions analyzed.")
         raise typer.Exit(1)
 
+    # Check CI failure conditions
+    should_fail = False
+    fail_reasons: list[str] = []
+
+    for file_path, result in all_results:
+        if fail_on:
+            risk_types = [r.strip() for r in fail_on.split(",")]
+            for risk_type in risk_types:
+                if result.risk_summary.get(risk_type, 0) > 0:
+                    should_fail = True
+                    fail_reasons.append(f"{risk_type} detected in {file_path.stem}")
+
+        if fail_threshold is not None:
+            if result.flagged_events >= fail_threshold:
+                should_fail = True
+                fail_reasons.append(
+                    f"{result.flagged_events} flagged events in {file_path.stem} "
+                    f"(threshold: {fail_threshold})"
+                )
+
     # Output results
     if json_output:
         import json
@@ -142,3 +172,12 @@ def analyze(
             if verbose:
                 console.print()
                 console.print(format_verbose_table(result))
+
+    # Exit with failure if CI conditions met
+    if should_fail:
+        if not quiet:
+            console.print()
+            console.print("[red]FAIL:[/red]")
+            for reason in fail_reasons:
+                console.print(f"  - {reason}")
+        raise typer.Exit(1)
