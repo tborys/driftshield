@@ -1,6 +1,9 @@
 services:
   app:
-    build: .
+    build:
+      context: .
+      args:
+        VITE_API_KEY: ${API_KEY:?API_KEY is required}
     ports:
       - "${PORT:-8080}:8080"
     environment:
