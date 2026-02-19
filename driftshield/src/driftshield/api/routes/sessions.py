@@ -6,7 +6,10 @@ from sqlalchemy.orm import Session as DBSession
 
 from driftshield.api.auth import require_api_key
 from driftshield.api.dependencies import get_db
-from driftshield.api.schemas import SessionSummary, SessionDetail, PaginatedResponse
+from driftshield.api.schemas import (
+    SessionSummary, SessionDetail, PaginatedResponse,
+    GraphResponse, GraphNodeResponse, GraphEdgeResponse,
+)
 from driftshield.db.models import SessionModel, DecisionNodeModel
 from driftshield.db.persistence import PersistenceService
 
@@ -87,3 +90,59 @@ def get_session(
         total_events=len(nodes),
         flagged_events=risk_count,
     )
+
+
+def _risk_flags_for_node(n: DecisionNodeModel) -> list[str]:
+    flags = []
+    if n.assumption_mutation:
+        flags.append("assumption_mutation")
+    if n.policy_divergence:
+        flags.append("policy_divergence")
+    if n.constraint_violation:
+        flags.append("constraint_violation")
+    if n.context_contamination:
+        flags.append("context_contamination")
+    if n.coverage_gap:
+        flags.append("coverage_gap")
+    return flags
+
+
+@router.get("/api/sessions/{session_id}/graph")
+def get_session_graph(
+    session_id: uuid.UUID,
+    api_key: str = Depends(require_api_key),
+    db: DBSession = Depends(get_db),
+):
+    session = db.get(SessionModel, session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    nodes = (
+        db.query(DecisionNodeModel)
+        .filter(DecisionNodeModel.session_id == session_id)
+        .order_by(DecisionNodeModel.sequence_num)
+        .all()
+    )
+    if not nodes:
+        raise HTTPException(status_code=404, detail="No graph data for session")
+
+    graph_nodes = []
+    edges = []
+    for n in nodes:
+        graph_nodes.append(GraphNodeResponse(
+            id=n.id,
+            event_type=n.event_type,
+            action=n.action,
+            sequence_num=n.sequence_num,
+            risk_flags=_risk_flags_for_node(n),
+            is_inflection=n.is_inflection_node,
+            inputs=n.inputs,
+            outputs=n.outputs,
+            metadata=n.metadata_json,
+            parent_node_id=n.parent_node_id,
+        ))
+
+        if n.parent_node_id is not None:
+            edges.append(GraphEdgeResponse(source=n.parent_node_id, target=n.id))
+
+    return GraphResponse(session_id=session_id, nodes=graph_nodes, edges=edges)
