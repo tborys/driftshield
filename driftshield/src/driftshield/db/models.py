@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import String, DateTime, JSON, Boolean, Integer, ForeignKey
+from sqlalchemy import String, DateTime, JSON, Boolean, Integer, ForeignKey, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
@@ -78,3 +78,19 @@ class SessionSignatureModel(Base):
         PG_UUID(as_uuid=True), ForeignKey("recurrence_signatures.id"), primary_key=True
     )
     matched_nodes: Mapped[list | None] = mapped_column(JSON, nullable=True)
+
+
+class ReportModel(Base):
+    __tablename__ = "reports"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    session_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("sessions.id"), nullable=False, index=True
+    )
+    generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    report_type: Mapped[str] = mapped_column(String, nullable=False)
+    content_markdown: Mapped[str | None] = mapped_column(Text, nullable=True)
+    content_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    generated_by: Mapped[str | None] = mapped_column(String, nullable=True)

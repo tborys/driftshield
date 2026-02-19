@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from driftshield.db.models import (
     Base, SessionModel, DecisionNodeModel,
-    RecurrenceSignatureModel, SessionSignatureModel,
+    RecurrenceSignatureModel, SessionSignatureModel, ReportModel,
 )
 
 
@@ -159,3 +159,30 @@ def test_session_signature_junction(db_session):
     loaded = db_session.query(SessionSignatureModel).first()
     assert loaded.session_id == session_id
     assert loaded.signature_id == sig_id
+
+
+def test_create_report(db_session):
+    session_id = uuid.uuid4()
+    s = SessionModel(id=session_id, started_at=datetime.now(timezone.utc), status="completed")
+    db_session.add(s)
+    db_session.flush()
+
+    report_id = uuid.uuid4()
+    report = ReportModel(
+        id=report_id,
+        session_id=session_id,
+        generated_at=datetime.now(timezone.utc),
+        report_type="full",
+        content_markdown="# Report\n\nSample report content.",
+        content_json={"sections": []},
+        generated_by="system",
+    )
+    db_session.add(report)
+    db_session.commit()
+
+    loaded = db_session.get(ReportModel, report_id)
+    assert loaded is not None
+    assert loaded.session_id == session_id
+    assert loaded.report_type == "full"
+    assert "Sample report content" in loaded.content_markdown
+    assert loaded.content_json == {"sections": []}
