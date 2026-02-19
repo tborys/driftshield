@@ -3,12 +3,16 @@
 import typer
 
 from driftshield import __version__
+from driftshield.cli.commands.analyze import analyze
 
 app = typer.Typer(
     name="driftshield",
     help="DriftShield - AI Decision Forensics CLI",
     no_args_is_help=True,
 )
+
+# Register commands
+app.command()(analyze)
 
 
 def version_callback(value: bool) -> None:
