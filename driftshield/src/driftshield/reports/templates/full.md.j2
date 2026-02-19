@@ -1,0 +1,28 @@
+{# Full forensic analysis report template #}
+# Forensic Analysis Report
+
+**Session:** {{ report.session_id }}
+**Agent:** {{ report.agent_id }}
+**Generated:** {{ report.generated_at.strftime('%Y-%m-%d %H:%M:%S UTC') }}
+**Events:** {{ report.total_events }} total, {{ report.flagged_events }} flagged
+
+---
+{% for section in report.sections %}
+
+## {{ loop.index }}. {{ section.title }}
+
+{{ section.content }}
+{% if section.node_table %}
+
+| # | Node | Type | Action | Risk Flags |
+|---|------|------|--------|------------|
+{% for row in section.node_table %}
+| {{ row.sequence }} | {{ row.node_id | string | truncate(8, False, '') }} | {{ row.event_type }} | {{ row.action or '—' }} | {{ row.risk_flags | join(', ') if row.risk_flags else '—' }} |
+{% endfor %}
+{% endif %}
+{% if section.risk_transitions %}
+{% for t in section.risk_transitions %}
+- **{{ t.from_node_id | string | truncate(8, False, '') }}** → **{{ t.to_node_id | string | truncate(8, False, '') }}**: {{ t.description }}
+{% endfor %}
+{% endif %}
+{% endfor %}
