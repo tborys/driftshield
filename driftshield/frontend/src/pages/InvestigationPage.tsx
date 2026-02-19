@@ -1,13 +1,17 @@
+import { useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { useSession, useSessionGraph } from '../api/sessions'
 import { InvestigationView } from '../components/investigation/InvestigationView'
+import { ReportTrigger } from '../components/reports/ReportTrigger'
+import { ReportPreview } from '../components/reports/ReportPreview'
 
 export function InvestigationPage() {
   const { id } = useParams<{ id: string }>()
   const { data: session } = useSession(id!)
   const { data: graph, isLoading, error } = useSessionGraph(id!)
+  const [previewReportId, setPreviewReportId] = useState<string | null>(null)
 
   if (isLoading) {
     return <div className="p-6 text-muted-foreground">Loading graph...</div>
@@ -32,8 +36,14 @@ export function InvestigationPage() {
             </>
           )}
         </div>
+        <ReportTrigger sessionId={id!} onReportGenerated={setPreviewReportId} />
       </div>
       <InvestigationView graph={graph} />
+      <ReportPreview
+        reportId={previewReportId}
+        open={previewReportId !== null}
+        onClose={() => setPreviewReportId(null)}
+      />
     </div>
   )
 }
