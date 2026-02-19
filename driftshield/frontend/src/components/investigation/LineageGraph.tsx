@@ -5,6 +5,7 @@ import {
   type Node, type Edge,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
+import Dagre from '@dagrejs/dagre'
 import { GraphNodeComponent, type GraphNodeData } from './GraphNode'
 import type { GraphResponse } from '../../types/graph'
 
@@ -16,34 +17,50 @@ interface LineageGraphProps {
 
 const nodeTypes = { custom: GraphNodeComponent }
 
-export function LineageGraph({ graph, onNodeSelect, selectedNodeId }: LineageGraphProps) {
-  const initialNodes: Node[] = useMemo(
-    () =>
-      graph.nodes.map((node, index) => ({
-        id: node.id,
-        type: 'custom',
-        position: { x: 250, y: index * 120 },
-        data: {
-          label: node.action || node.event_type,
-          eventType: node.event_type,
-          action: node.action,
-          riskFlags: node.risk_flags,
-          isInflection: node.is_inflection,
-        } satisfies GraphNodeData,
-        selected: node.id === selectedNodeId,
-      })),
-    [graph.nodes, selectedNodeId],
-  )
+function layoutGraph(graph: GraphResponse, selectedNodeId: string | null): { nodes: Node[]; edges: Edge[] } {
+  const g = new Dagre.graphlib.Graph().setDefaultEdgeLabel(() => ({}))
+  g.setGraph({ rankdir: 'TB', nodesep: 50, ranksep: 80 })
 
-  const initialEdges: Edge[] = useMemo(
-    () =>
-      graph.edges.map((edge, index) => ({
-        id: `e-${index}`,
-        source: edge.source,
-        target: edge.target,
-        animated: false,
-      })),
-    [graph.edges],
+  graph.nodes.forEach((node) => {
+    g.setNode(node.id, { width: 200, height: 80 })
+  })
+
+  graph.edges.forEach((edge) => {
+    g.setEdge(edge.source, edge.target)
+  })
+
+  Dagre.layout(g)
+
+  const nodes: Node[] = graph.nodes.map((node) => {
+    const pos = g.node(node.id)
+    return {
+      id: node.id,
+      type: 'custom',
+      position: { x: pos.x - 100, y: pos.y - 40 },
+      data: {
+        label: node.action || node.event_type,
+        eventType: node.event_type,
+        action: node.action,
+        riskFlags: node.risk_flags,
+        isInflection: node.is_inflection,
+      } satisfies GraphNodeData,
+      selected: node.id === selectedNodeId,
+    }
+  })
+
+  const edges: Edge[] = graph.edges.map((edge, index) => ({
+    id: `e-${index}`,
+    source: edge.source,
+    target: edge.target,
+  }))
+
+  return { nodes, edges }
+}
+
+export function LineageGraph({ graph, onNodeSelect, selectedNodeId }: LineageGraphProps) {
+  const { nodes: initialNodes, edges: initialEdges } = useMemo(
+    () => layoutGraph(graph, selectedNodeId),
+    [graph, selectedNodeId],
   )
 
   const [nodes, , onNodesChange] = useNodesState(initialNodes)
