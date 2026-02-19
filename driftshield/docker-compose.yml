@@ -35,5 +35,28 @@ services:
       timeout: 5s
       retries: 5
 
+  app-dev:
+    build: .
+    ports:
+      - "${PORT:-8080}:8080"
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-drift}:${DB_PASSWORD:-drift}@db:5432/${DB_NAME:-driftshield}
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-drift}
+      API_KEY: ${API_KEY:-dev-key}
+      LOG_LEVEL: debug
+    volumes:
+      - ./src:/app/src
+    command: >
+      uvicorn driftshield.api.server:app
+      --host 0.0.0.0 --port 8080
+      --reload --log-level debug
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles:
+      - dev
+
 volumes:
   postgres_data:
