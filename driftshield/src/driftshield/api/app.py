@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -22,7 +23,9 @@ def create_app() -> FastAPI:
     app.include_router(reports_router)
 
     # Serve React static files in production
-    static_dir = Path(__file__).parent.parent.parent.parent / "static"
+    # When installed as a package, __file__ points to site-packages.
+    # Use STATIC_DIR env var (set in Docker) or fall back to relative path for local dev.
+    static_dir = Path(os.environ.get("STATIC_DIR", Path(__file__).parent.parent.parent.parent / "static"))
     if static_dir.exists():
         app.mount("/assets", StaticFiles(directory=str(static_dir / "assets")), name="assets")
 

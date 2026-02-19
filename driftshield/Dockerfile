@@ -12,15 +12,15 @@ WORKDIR /app
 
 # Install system dependencies for psycopg2
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq-dev postgresql-client \
+    libpq-dev postgresql-client curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
+# Copy source and install Python package
 COPY pyproject.toml ./
+COPY src/ ./src/
 RUN pip install --no-cache-dir .
 
-# Copy application code
-COPY src/ ./src/
+# Copy Alembic config
 COPY alembic.ini ./
 
 # Copy built frontend
@@ -31,6 +31,7 @@ COPY docker/entrypoint.sh ./entrypoint.sh
 RUN chmod +x ./entrypoint.sh
 
 # Environment defaults
+ENV STATIC_DIR=/app/static
 ENV HOST=0.0.0.0
 ENV PORT=8080
 ENV WORKERS=1
