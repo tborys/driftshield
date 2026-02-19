@@ -16,6 +16,14 @@ echo "Running database migrations..."
 python -m alembic upgrade head
 echo "Migrations complete."
 
+# Seed sample data on first startup
+SEED_MARKER="/app/.seeded"
+if [ ! -f "$SEED_MARKER" ] && [ -d "/app/docker/fixtures" ]; then
+  echo "Seeding sample data..."
+  python /app/docker/seed.py
+  touch "$SEED_MARKER"
+fi
+
 # Start Uvicorn
 echo "Starting DriftShield on ${HOST:-0.0.0.0}:${PORT:-8080}..."
 exec uvicorn driftshield.api.server:app \

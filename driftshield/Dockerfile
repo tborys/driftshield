@@ -28,8 +28,10 @@ COPY alembic.ini ./
 # Copy built frontend
 COPY --from=frontend-build /app/frontend/dist ./static
 
-# Copy entrypoint
+# Copy entrypoint and seed data
 COPY docker/entrypoint.sh ./entrypoint.sh
+COPY docker/seed.py ./docker/seed.py
+COPY docker/fixtures/ ./docker/fixtures/
 RUN chmod +x ./entrypoint.sh
 
 # Environment defaults
