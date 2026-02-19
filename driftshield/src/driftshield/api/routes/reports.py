@@ -7,7 +7,14 @@ from sqlalchemy.orm import Session as DBSession
 
 from driftshield.api.auth import require_api_key
 from driftshield.api.dependencies import get_db
+from driftshield.core.analysis.inflection import find_inflection_node
+from driftshield.core.analysis.session import AnalysisResult
 from driftshield.db.models import SessionModel, ReportModel
+from driftshield.db.persistence import PersistenceService
+from driftshield.reports.builder import ReportBuilder
+from driftshield.reports.json_export import export_json
+from driftshield.reports.markdown import render_markdown
+from driftshield.reports.models import ReportType
 
 router = APIRouter()
 
@@ -23,17 +30,46 @@ def generate_report(
     api_key: str = Depends(require_api_key),
     db: DBSession = Depends(get_db),
 ):
-    session = db.get(SessionModel, session_id)
-    if session is None:
+    session_model = db.get(SessionModel, session_id)
+    if session_model is None:
         raise HTTPException(status_code=404, detail="Session not found")
+
+    service = PersistenceService(db)
+    domain_session = service.load_session(session_id)
+    graph = service.load_graph(session_id)
+
+    if graph is None:
+        raise HTTPException(status_code=404, detail="No graph data for session")
+
+    # Reconstruct AnalysisResult from stored data
+    inflection = find_inflection_node(graph, graph.nodes[-1].id) if graph.nodes else None
+    events = [node.event for node in graph.nodes]
+    flagged = sum(
+        1 for e in events if e.risk_classification and e.risk_classification.has_any_flag()
+    )
+
+    result = AnalysisResult(
+        events=events,
+        graph=graph,
+        inflection_node=inflection,
+        total_events=len(events),
+        flagged_events=flagged,
+    )
+
+    report_type = ReportType(request.report_type)
+    builder = ReportBuilder()
+    report_data = builder.build(domain_session, result, report_type=report_type)
+
+    md = render_markdown(report_data)
+    json_content = export_json(report_data)
 
     report = ReportModel(
         id=uuid.uuid4(),
         session_id=session_id,
-        generated_at=datetime.now(timezone.utc),
-        report_type=request.report_type,
-        content_markdown=f"# Forensic Analysis Report\n\nSession: {session_id}\n",
-        content_json={"session_id": str(session_id), "sections": []},
+        generated_at=report_data.generated_at,
+        report_type=report_type.value,
+        content_markdown=md,
+        content_json=json_content,
         generated_by="system",
     )
     db.add(report)

@@ -105,3 +105,20 @@ def test_get_report_by_id(client, auth_headers, seeded_session, db_session):
 def test_get_report_not_found(client, auth_headers):
     response = client.get(f"/api/reports/{uuid.uuid4()}", headers=auth_headers)
     assert response.status_code == 404
+
+
+def test_generated_report_has_real_content(client, auth_headers, seeded_session, db_session):
+    response = client.post(
+        f"/api/sessions/{seeded_session}/report",
+        headers=auth_headers,
+        json={"report_type": "full"},
+    )
+    assert response.status_code == 201
+    report_id = response.json()["id"]
+
+    # Fetch the report and check it has real content
+    get_response = client.get(f"/api/reports/{report_id}", headers=auth_headers)
+    data = get_response.json()
+    assert "Forensic Analysis Report" in data["content_markdown"]
+    assert data["content_json"]["sections"] is not None
+    assert len(data["content_json"]["sections"]) == 5
