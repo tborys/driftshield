@@ -4,6 +4,7 @@ import typer
 
 from driftshield import __version__
 from driftshield.cli.commands.analyze import analyze
+from driftshield.cli.commands.list import list_sessions
 
 app = typer.Typer(
     name="driftshield",
@@ -13,6 +14,7 @@ app = typer.Typer(
 
 # Register commands
 app.command()(analyze)
+app.command(name="list")(list_sessions)
 
 
 def version_callback(value: bool) -> None:
