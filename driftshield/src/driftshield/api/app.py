@@ -2,6 +2,7 @@ from fastapi import FastAPI
 
 from driftshield.api.routes.health import router as health_router
 from driftshield.api.routes.ingest import router as ingest_router
+from driftshield.api.routes.sessions import router as sessions_router
 
 
 def create_app() -> FastAPI:
@@ -12,4 +13,5 @@ def create_app() -> FastAPI:
     )
     app.include_router(health_router)
     app.include_router(ingest_router)
+    app.include_router(sessions_router)
     return app

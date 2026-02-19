@@ -1,0 +1,89 @@
+import math
+import uuid
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session as DBSession
+
+from driftshield.api.auth import require_api_key
+from driftshield.api.dependencies import get_db
+from driftshield.api.schemas import SessionSummary, SessionDetail, PaginatedResponse
+from driftshield.db.models import SessionModel, DecisionNodeModel
+from driftshield.db.persistence import PersistenceService
+
+router = APIRouter()
+
+
+def _count_risks(nodes: list[DecisionNodeModel]) -> int:
+    return sum(
+        1 for n in nodes if any([
+            n.assumption_mutation, n.policy_divergence, n.constraint_violation,
+            n.context_contamination, n.coverage_gap,
+        ])
+    )
+
+
+@router.get("/api/sessions")
+def list_sessions(
+    page: int = Query(default=1, ge=1),
+    per_page: int = Query(default=20, ge=1, le=100),
+    api_key: str = Depends(require_api_key),
+    db: DBSession = Depends(get_db),
+):
+    service = PersistenceService(db)
+    sessions, total = service.list_sessions(page=page, per_page=per_page)
+    pages = math.ceil(total / per_page) if total > 0 else 0
+
+    items = []
+    for s in sessions:
+        nodes = db.query(DecisionNodeModel).filter(
+            DecisionNodeModel.session_id == s.id
+        ).all()
+        risk_count = _count_risks(nodes)
+        has_inflection = any(n.is_inflection_node for n in nodes)
+        items.append(SessionSummary(
+            id=s.id,
+            agent_id=s.agent_id,
+            external_id=s.external_id,
+            status=s.status,
+            started_at=s.started_at,
+            ended_at=s.ended_at,
+            risk_flag_count=risk_count,
+            has_inflection=has_inflection,
+        ))
+
+    return PaginatedResponse(
+        items=[i.model_dump(mode="json") for i in items],
+        total=total,
+        page=page,
+        per_page=per_page,
+        pages=pages,
+    )
+
+
+@router.get("/api/sessions/{session_id}")
+def get_session(
+    session_id: uuid.UUID,
+    api_key: str = Depends(require_api_key),
+    db: DBSession = Depends(get_db),
+):
+    session = db.get(SessionModel, session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    nodes = db.query(DecisionNodeModel).filter(
+        DecisionNodeModel.session_id == session_id
+    ).all()
+    risk_count = _count_risks(nodes)
+
+    return SessionDetail(
+        id=session.id,
+        agent_id=session.agent_id,
+        external_id=session.external_id,
+        status=session.status,
+        started_at=session.started_at,
+        ended_at=session.ended_at,
+        risk_flag_count=risk_count,
+        has_inflection=any(n.is_inflection_node for n in nodes),
+        total_events=len(nodes),
+        flagged_events=risk_count,
+    )
