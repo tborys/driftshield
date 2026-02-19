@@ -1,5 +1,6 @@
 """Analyze command for DriftShield CLI."""
 
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -8,6 +9,7 @@ from rich.console import Console
 
 from driftshield.cli.parsers import get_parser, detect_parser, ParserNotFoundError
 from driftshield.cli.output import format_summary, format_json, format_verbose_table, format_quiet
+from driftshield.cli.discovery import discover_sessions, resolve_session
 from driftshield.core.analysis.session import analyze_session
 
 
@@ -15,10 +17,14 @@ console = Console()
 
 
 def analyze(
-    path: Optional[Path] = typer.Argument(
+    path: Optional[str] = typer.Argument(
         None,
-        help="Session file or directory to analyze.",
-        exists=False,
+        help="Session file, directory, or session ID to analyze.",
+    ),
+    project: bool = typer.Option(
+        False,
+        "--project",
+        help="Analyze sessions for current project.",
     ),
     parser: str = typer.Option(
         "auto",
@@ -45,54 +51,94 @@ def analyze(
     ),
 ) -> None:
     """Analyse session(s) for reasoning risks."""
-    if path is None:
+    claude_home = os.environ.get("CLAUDE_HOME")
+    claude_base = Path(claude_home) if claude_home else None
+
+    # Collect files to analyze
+    files_to_analyze: list[Path] = []
+
+    if project:
+        sessions = discover_sessions(Path.cwd(), claude_base)
+        if not sessions:
+            console.print("No sessions found for this project.")
+            raise typer.Exit(0)
+        files_to_analyze = [s.path for s in sessions]
+    elif path is not None:
+        resolved = resolve_session(path, Path.cwd(), claude_base)
+        if resolved is None:
+            direct = Path(path).expanduser().resolve()
+            if direct.exists():
+                resolved = direct
+            else:
+                console.print(f"[red]Error:[/red] Could not find session: {path}")
+                raise typer.Exit(1)
+        files_to_analyze = [resolved]
+    else:
         console.print("[red]Error:[/red] No path provided. Use --project or specify a file path.")
         raise typer.Exit(1)
 
-    path = Path(path).expanduser().resolve()
+    # Analyze each file
+    all_results = []
+    for file_path in files_to_analyze:
+        effective_parser = parser
+        if effective_parser == "auto":
+            detected = detect_parser(file_path)
+            if detected is None:
+                console.print(
+                    f"[yellow]Warning:[/yellow] Could not detect parser for '{file_path.name}', skipping"
+                )
+                continue
+            effective_parser = detected
 
-    if not path.exists():
-        console.print(f"[red]Error:[/red] Path not found: {path}")
-        raise typer.Exit(1)
-
-    # Determine parser
-    if parser == "auto":
-        detected = detect_parser(path)
-        if detected is None:
-            console.print(
-                f"[red]Error:[/red] Could not detect parser for '{path.name}'\n"
-                "Hint: Use --parser to specify format (available: claude_code)"
-            )
-            raise typer.Exit(1)
-        parser = detected
-
-    try:
-        parser_instance = get_parser(parser)
-    except ParserNotFoundError as e:
-        console.print(f"[red]Error:[/red] {e}")
-        raise typer.Exit(1)
-
-    # Parse and analyze
-    try:
-        if path.is_file():
-            events = parser_instance.parse_file(str(path))
-        else:
-            console.print("[red]Error:[/red] Directory analysis not yet supported. Specify a file.")
+        try:
+            parser_instance = get_parser(effective_parser)
+        except ParserNotFoundError as e:
+            console.print(f"[red]Error:[/red] {e}")
             raise typer.Exit(1)
 
-        result = analyze_session(events)
-    except Exception as e:
-        console.print(f"[red]Error:[/red] Failed to analyze: {e}")
+        try:
+            events = parser_instance.parse_file(str(file_path))
+            result = analyze_session(events)
+            all_results.append((file_path, result))
+        except Exception as e:
+            console.print(f"[red]Error:[/red] Failed to analyze {file_path.name}: {e}")
+            if len(files_to_analyze) == 1:
+                raise typer.Exit(1)
+            continue
+
+    if not all_results:
+        console.print("No sessions analyzed.")
         raise typer.Exit(1)
 
-    # Output
+    # Output results
     if json_output:
-        console.print(format_json(result))
+        import json
+        if len(all_results) == 1:
+            console.print(format_json(all_results[0][1]))
+        else:
+            data = []
+            for file_path, result in all_results:
+                import json as json_lib
+                data.append(json_lib.loads(format_json(result)))
+            console.print(json.dumps(data, indent=2))
     elif quiet:
-        console.print(format_quiet(result))
-    elif verbose:
-        console.print(format_summary(result))
-        console.print()
-        console.print(format_verbose_table(result))
+        for file_path, result in all_results:
+            if len(all_results) > 1:
+                console.print(f"[bold]{file_path.stem}:[/bold] ", end="")
+            console.print(format_quiet(result))
     else:
-        console.print(format_summary(result))
+        for i, (file_path, result) in enumerate(all_results):
+            if i > 0:
+                console.print()
+                console.print("\u2500" * 40)
+                console.print()
+
+            if len(all_results) > 1:
+                console.print(f"[bold]Session: {file_path.stem}[/bold]")
+                console.print()
+
+            console.print(format_summary(result))
+
+            if verbose:
+                console.print()
+                console.print(format_verbose_table(result))
