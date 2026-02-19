@@ -1,0 +1,39 @@
+services:
+  app:
+    build: .
+    ports:
+      - "${PORT:-8080}:8080"
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-drift}:${DB_PASSWORD:-drift}@db:5432/${DB_NAME:-driftshield}
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-drift}
+      API_KEY: ${API_KEY:?API_KEY is required}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      WORKERS: ${WORKERS:-1}
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${DB_USER:-drift}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-drift}
+      POSTGRES_DB: ${DB_NAME:-driftshield}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-drift}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
