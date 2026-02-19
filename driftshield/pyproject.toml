@@ -11,6 +11,8 @@ dependencies = [
     "psycopg2-binary>=2.9.9",
     "pydantic>=2.5.0",
     "pydantic-settings>=2.1.0",
+    "typer>=0.9.0",
+    "rich>=13.0.0",
 ]
 
 [project.optional-dependencies]
@@ -36,6 +38,9 @@ asyncio_mode = "auto"
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+
+[project.scripts]
+driftshield = "driftshield.cli.main:app"
 
 [tool.mypy]
 python_version = "3.12"
