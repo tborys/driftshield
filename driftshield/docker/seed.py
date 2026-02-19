@@ -54,10 +54,14 @@ def main():
     db = SessionLocal()
     try:
         count = seed(db)
+        db.commit()
         if count:
             print(f"Seeded {count} session(s).")
         else:
             print("No seed fixtures found.")
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
 
