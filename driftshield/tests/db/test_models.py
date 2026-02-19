@@ -5,7 +5,10 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from driftshield.db.models import Base, SessionModel, DecisionNodeModel
+from driftshield.db.models import (
+    Base, SessionModel, DecisionNodeModel,
+    RecurrenceSignatureModel, SessionSignatureModel,
+)
 
 
 @pytest.fixture
@@ -106,3 +109,53 @@ def test_decision_node_parent_child(db_session):
 
     loaded_child = db_session.get(DecisionNodeModel, child.id)
     assert loaded_child.parent_node_id == parent.id
+
+
+def test_create_recurrence_signature(db_session):
+    sig_id = uuid.uuid4()
+    sig = RecurrenceSignatureModel(
+        id=sig_id,
+        signature_hash="abc123def456",
+        pattern={"sequence": ["TOOL_CALL", "BRANCH", "OUTPUT"]},
+        first_seen_at=datetime.now(timezone.utc),
+        last_seen_at=datetime.now(timezone.utc),
+        occurrence_count=3,
+        severity="medium",
+    )
+    db_session.add(sig)
+    db_session.commit()
+
+    loaded = db_session.get(RecurrenceSignatureModel, sig_id)
+    assert loaded.signature_hash == "abc123def456"
+    assert loaded.occurrence_count == 3
+    assert loaded.severity == "medium"
+
+
+def test_session_signature_junction(db_session):
+    session_id = uuid.uuid4()
+    s = SessionModel(id=session_id, started_at=datetime.now(timezone.utc), status="completed")
+    sig_id = uuid.uuid4()
+    sig = RecurrenceSignatureModel(
+        id=sig_id,
+        signature_hash="hash1",
+        pattern={},
+        first_seen_at=datetime.now(timezone.utc),
+        last_seen_at=datetime.now(timezone.utc),
+        occurrence_count=1,
+        severity="low",
+    )
+    db_session.add_all([s, sig])
+    db_session.flush()
+
+    node_id = uuid.uuid4()
+    junction = SessionSignatureModel(
+        session_id=session_id,
+        signature_id=sig_id,
+        matched_nodes=[str(node_id)],
+    )
+    db_session.add(junction)
+    db_session.commit()
+
+    loaded = db_session.query(SessionSignatureModel).first()
+    assert loaded.session_id == session_id
+    assert loaded.signature_id == sig_id

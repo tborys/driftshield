@@ -52,3 +52,29 @@ class DecisionNodeModel(Base):
     coverage_gap: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
     is_inflection_node: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+
+
+class RecurrenceSignatureModel(Base):
+    __tablename__ = "recurrence_signatures"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    signature_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    pattern: Mapped[dict] = mapped_column(JSON, nullable=False)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    occurrence_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    severity: Mapped[str] = mapped_column(String, nullable=False, default="low")
+
+
+class SessionSignatureModel(Base):
+    __tablename__ = "session_signatures"
+
+    session_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("sessions.id"), primary_key=True
+    )
+    signature_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("recurrence_signatures.id"), primary_key=True
+    )
+    matched_nodes: Mapped[list | None] = mapped_column(JSON, nullable=True)
