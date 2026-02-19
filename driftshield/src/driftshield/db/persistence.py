@@ -80,6 +80,15 @@ class PersistenceService:
         events = [_node_model_to_event(n, session_id) for n in nodes]
         return build_graph(events, session_id=str(session_id))
 
+    def list_sessions(
+        self, page: int = 1, per_page: int = 20
+    ) -> tuple[list[SessionModel], int]:
+        query = self._db.query(SessionModel).order_by(SessionModel.started_at.desc())
+        total = query.count()
+        offset = (page - 1) * per_page
+        sessions = query.offset(offset).limit(per_page).all()
+        return sessions, total
+
 
 def _node_model_to_event(node: DecisionNodeModel, session_id: uuid.UUID) -> CanonicalEvent:
     return CanonicalEvent(

@@ -97,3 +97,34 @@ def test_load_nonexistent_session(db_session):
     service = PersistenceService(db_session)
     loaded = service.load_session(uuid.uuid4())
     assert loaded is None
+
+
+def test_list_sessions(db_session, sample_analysis_result):
+    result, domain_session = sample_analysis_result
+    service = PersistenceService(db_session)
+    service.save(domain_session, result)
+    db_session.commit()
+
+    sessions, total = service.list_sessions(page=1, per_page=20)
+    assert total == 1
+    assert len(sessions) == 1
+    assert sessions[0].id == domain_session.id
+
+
+def test_list_sessions_pagination(db_session):
+    service = PersistenceService(db_session)
+    now = datetime.now(timezone.utc)
+    for i in range(5):
+        s = SessionModel(
+            id=uuid.uuid4(), started_at=now, status="completed", agent_id=f"agent-{i}"
+        )
+        db_session.add(s)
+    db_session.commit()
+
+    sessions, total = service.list_sessions(page=1, per_page=2)
+    assert total == 5
+    assert len(sessions) == 2
+
+    sessions, total = service.list_sessions(page=3, per_page=2)
+    assert total == 5
+    assert len(sessions) == 1
