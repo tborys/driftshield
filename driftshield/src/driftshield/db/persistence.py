@@ -3,9 +3,12 @@ import uuid
 from sqlalchemy.orm import Session as DBSession
 
 from driftshield.core.models import (
-    RiskClassification, Session as DomainSession,
+    CanonicalEvent, EventType, RiskClassification,
+    Session as DomainSession, SessionStatus,
 )
 from driftshield.core.analysis.session import AnalysisResult
+from driftshield.core.graph.models import LineageGraph
+from driftshield.core.graph.builder import build_graph
 from driftshield.db.models import SessionModel, DecisionNodeModel
 
 
@@ -52,3 +55,49 @@ class PersistenceService:
             self._db.add(node_model)
 
         return session_model
+
+    def load_session(self, session_id: uuid.UUID) -> DomainSession | None:
+        model = self._db.get(SessionModel, session_id)
+        if model is None:
+            return None
+        return DomainSession(
+            id=model.id,
+            agent_id=model.agent_id or "",
+            started_at=model.started_at,
+            status=SessionStatus(model.status),
+        )
+
+    def load_graph(self, session_id: uuid.UUID) -> LineageGraph | None:
+        nodes = (
+            self._db.query(DecisionNodeModel)
+            .filter(DecisionNodeModel.session_id == session_id)
+            .order_by(DecisionNodeModel.sequence_num)
+            .all()
+        )
+        if not nodes:
+            return None
+
+        events = [_node_model_to_event(n, session_id) for n in nodes]
+        return build_graph(events, session_id=str(session_id))
+
+
+def _node_model_to_event(node: DecisionNodeModel, session_id: uuid.UUID) -> CanonicalEvent:
+    return CanonicalEvent(
+        id=node.id,
+        session_id=str(session_id),
+        timestamp=node.timestamp,
+        event_type=EventType(node.event_type),
+        agent_id="",
+        action=node.action,
+        parent_event_id=node.parent_node_id,
+        inputs=node.inputs,
+        outputs=node.outputs,
+        metadata=node.metadata_json,
+        risk_classification=RiskClassification(
+            assumption_mutation=node.assumption_mutation,
+            policy_divergence=node.policy_divergence,
+            constraint_violation=node.constraint_violation,
+            context_contamination=node.context_contamination,
+            coverage_gap=node.coverage_gap,
+        ),
+    )

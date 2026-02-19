@@ -68,3 +68,32 @@ def test_save_analysis_result(db_session, sample_analysis_result):
     nodes = db_session.query(DecisionNodeModel).all()
     assert len(nodes) == 2
     assert nodes[0].session_id == domain_session.id
+
+
+def test_load_session(db_session, sample_analysis_result):
+    result, domain_session = sample_analysis_result
+    service = PersistenceService(db_session)
+    service.save(domain_session, result)
+    db_session.commit()
+
+    loaded = service.load_session(domain_session.id)
+    assert loaded is not None
+    assert loaded.id == domain_session.id
+    assert loaded.agent_id == "test-agent"
+
+
+def test_load_graph(db_session, sample_analysis_result):
+    result, domain_session = sample_analysis_result
+    service = PersistenceService(db_session)
+    service.save(domain_session, result)
+    db_session.commit()
+
+    graph = service.load_graph(domain_session.id)
+    assert graph is not None
+    assert len(graph.nodes) == 2
+
+
+def test_load_nonexistent_session(db_session):
+    service = PersistenceService(db_session)
+    loaded = service.load_session(uuid.uuid4())
+    assert loaded is None
