@@ -27,18 +27,26 @@ class GraveyardCollector:
     def collect(self, repos: list[str], limit_per_repo: int = 100) -> GraveyardCollectResult:
         candidates: list[GraveyardCandidate] = []
         total_issues = 0
+        seen_issue_urls: set[str] = set()
 
         for repo in repos:
             issues = self._client.list_issues(repo, limit_per_repo)
             total_issues += len(issues)
             for issue in issues:
-                comments = self._client.list_issue_comments(repo, issue.number)
+                if issue.html_url in seen_issue_urls:
+                    continue
+
+                try:
+                    comments = self._client.list_issue_comments(repo, issue.number)
+                except Exception:
+                    comments = []
                 evidence_text = "\n".join([issue.body or "", *comments])
                 classification = classify_thread(issue.title, evidence_text)
 
                 if not classification.is_candidate:
                     continue
 
+                seen_issue_urls.add(issue.html_url)
                 candidates.append(
                     GraveyardCandidate(
                         repo=repo,
