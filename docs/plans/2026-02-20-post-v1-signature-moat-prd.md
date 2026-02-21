@@ -25,7 +25,27 @@ Build a post‑V1 system that:
 - GitHub Graveyard spike completed with signal quality benchmark
 - First “State of OSS Agent Failures” report draft generated
 
-## 4) Scope & Priorities
+## 4) Delivery Status Tracker (2026-02-21)
+
+### Done
+- P0 Signature Foundation
+- P1 Recurrence Detection
+- P1.2 Validation Persistence + Export
+- P2.1 GitHub Graveyard Spike
+- P2.2 Graveyard Reporting
+- P2.3 Demo Fixture Generator
+- P3.1 Graveyard Reliability Hardening
+
+### In Progress
+- P3.2 Classifier Quality Evaluation Harness (PR #9)
+
+### Pending
+- Parser ecosystem expansion
+- Operational readiness
+- Drift alerting
+- UI-driven analyst workflows
+
+## 5) Scope & Priorities
 
 ### P0 — Signature Foundation
 1. Signature schema + ontology hardening

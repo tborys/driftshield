@@ -1,6 +1,26 @@
 # Beyond V1: Ideas and Directions
 
-**Status:** Not planned. Ideas to evaluate after Phase 14 completes.
+**Status:** In execution (Phase 14 complete).
+
+## Execution Snapshot (2026-02-21)
+
+### Completed
+- ✅ P0 Signature foundation (schema, templates, quality gates) — PR #2
+- ✅ P1 Recurrence detection engine + persistence/reporting — PR #3
+- ✅ P1.2 Analyst validation persistence + export pipeline — PR #4
+- ✅ P2.1 GitHub Graveyard spike collector + triage CLI — PR #5
+- ✅ P2.2 Graveyard markdown reporting pipeline — PR #6
+- ✅ P2.3 Deterministic demo fixture generator + CLI — PR #7
+- ✅ P3.1 Graveyard reliability hardening (pagination, dedup, malformed payload handling) — PR #8
+
+### In progress
+- 🟡 P3.2 Classifier quality evaluation harness — PR #9 (open)
+
+### Pending
+- ⏳ Parser ecosystem expansion
+- ⏳ Operational readiness (auth/RBAC/audit/multi-tenant)
+- ⏳ Drift alerting
+- ⏳ UI/API analyst workflows and product polish
 
 ---
 
