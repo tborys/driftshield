@@ -10,6 +10,7 @@ from driftshield.cli.commands.report import report_command
 from driftshield.cli.commands.export_validations import export_validations
 from driftshield.cli.commands.collect_graveyard import collect_graveyard
 from driftshield.cli.commands.report_graveyard import report_graveyard
+from driftshield.cli.commands.generate_fixtures import generate_fixtures
 
 app = typer.Typer(
     name="driftshield",
@@ -25,6 +26,7 @@ app.command(name="report")(report_command)
 app.command(name="export-validations")(export_validations)
 app.command(name="collect-graveyard")(collect_graveyard)
 app.command(name="report-graveyard")(report_graveyard)
+app.command(name="generate-fixtures")(generate_fixtures)
 
 
 def version_callback(value: bool) -> None:
