@@ -6,8 +6,13 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from driftshield.db.models import (
-    Base, SessionModel, DecisionNodeModel,
-    RecurrenceSignatureModel, SessionSignatureModel, ReportModel,
+    AnalystValidationModel,
+    Base,
+    DecisionNodeModel,
+    RecurrenceSignatureModel,
+    ReportModel,
+    SessionModel,
+    SessionSignatureModel,
 )
 
 
@@ -186,3 +191,33 @@ def test_create_report(db_session):
     assert loaded.report_type == "full"
     assert "Sample report content" in loaded.content_markdown
     assert loaded.content_json == {"sections": []}
+
+
+def test_create_analyst_validation(db_session):
+    session_id = uuid.uuid4()
+    s = SessionModel(id=session_id, started_at=datetime.now(timezone.utc), status="completed")
+    db_session.add(s)
+    db_session.flush()
+
+    validation_id = uuid.uuid4()
+    validation = AnalystValidationModel(
+        id=validation_id,
+        session_id=session_id,
+        target_type="signature",
+        target_ref="abc123",
+        verdict="accept",
+        confidence=0.91,
+        reviewer="demo",
+        notes="Looks right",
+        metadata_json={"signature_hash": "abc123"},
+        shareable=True,
+        created_at=datetime.now(timezone.utc),
+    )
+    db_session.add(validation)
+    db_session.commit()
+
+    loaded = db_session.get(AnalystValidationModel, validation_id)
+    assert loaded is not None
+    assert loaded.target_type == "signature"
+    assert loaded.verdict == "accept"
+    assert loaded.shareable is True
