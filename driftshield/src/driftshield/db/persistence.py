@@ -9,7 +9,12 @@ from driftshield.core.models import (
 from driftshield.core.analysis.session import AnalysisResult
 from driftshield.core.graph.models import LineageGraph
 from driftshield.core.graph.builder import build_graph
-from driftshield.db.models import SessionModel, DecisionNodeModel
+from driftshield.db.models import (
+    SessionModel,
+    DecisionNodeModel,
+    RecurrenceSignatureModel,
+    SessionSignatureModel,
+)
 
 
 class PersistenceService:
@@ -53,6 +58,41 @@ class PersistenceService:
                 ),
             )
             self._db.add(node_model)
+
+        if result.recurrence is not None:
+            recurrence = (
+                self._db.query(RecurrenceSignatureModel)
+                .filter(
+                    RecurrenceSignatureModel.signature_hash
+                    == result.recurrence.signature_hash
+                )
+                .one_or_none()
+            )
+            if recurrence is None:
+                recurrence = RecurrenceSignatureModel(
+                    signature_hash=result.recurrence.signature_hash,
+                    pattern={
+                        "level": result.recurrence.level.value,
+                        "probability": result.recurrence.probability,
+                    },
+                    first_seen_at=session.started_at,
+                    last_seen_at=session.started_at,
+                    occurrence_count=result.recurrence.occurrence_count,
+                    severity=result.recurrence.probability,
+                )
+                self._db.add(recurrence)
+                self._db.flush()
+            else:
+                recurrence.last_seen_at = session.started_at
+                recurrence.occurrence_count = result.recurrence.occurrence_count
+                recurrence.severity = result.recurrence.probability
+
+            mapping = SessionSignatureModel(
+                session_id=session.id,
+                signature_id=recurrence.id,
+                matched_nodes=[],
+            )
+            self._db.add(mapping)
 
         return session_model
 
