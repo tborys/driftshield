@@ -91,33 +91,55 @@ For every important step/phase:
 - No “done” status without explicit test pass confirmation
 - Any failing test blocks merge until resolved or explicitly waived by Demo
 
-## 7) Non-Goals (this phase)
+## 7) Client Data Collection & Learning Policy
+
+### Default data posture
+- Client data is tenant-isolated and private by default
+- No raw cross-tenant sharing
+- No client traces used for shared model learning unless explicitly enabled
+
+### Collection modes
+- **Private mode (default):** signatures and validations stay within client tenant scope
+- **Shared learning mode (opt-in):** anonymised/aggregated signature artefacts can be used to improve global detection quality
+
+### Data controls
+- Capture provenance for all client-derived signatures (tenant, source, timestamp, parser version)
+- Apply anonymisation/redaction before any shared-learning export
+- Enforce retention windows and deletion workflows per contract
+- Maintain audit logs for access and export actions
+
+### Contract and compliance requirements
+- Explicit consent language for shared learning in commercial terms/DPA
+- Right-to-delete support for client-contributed data
+- Ability to produce audit trail of what data contributed to each learned signature
+
+## 8) Non-Goals (this phase)
 - Full multi-tenant enterprise rollout
 - Real-time production alerting at scale
 - Broad parser support before signature core is stable
 
-## 8) Dependencies
+## 9) Dependencies
 - Phase 14 complete
 - Existing DB tables from Phase 10 available
 - `beyond-v1-ideas.md` remains planning source of truth
 - GitHub issue #1 remains parent epic for execution breakdown
 
-## 9) Risks & Mitigations
+## 10) Risks & Mitigations
 - **Noisy OSS data** → spike first, strict quality gates before scale
 - **Weak invariants** → lock schema early, require reviewer validation
 - **Premature infra expansion** → defer P3 until P0/P1/P2 evidence is solid
 
-## 10) Delivery Flow
+## 11) Delivery Flow
 - **Gate A:** update/approve doc-level priorities
 - **Gate B:** convert to ranked execution backlog with acceptance criteria
 - **Gate C:** create child issues and assign owners
 
-## 11) Open Decisions
+## 12) Open Decisions
 1. Keep recurrence in same epic as signature work, or sibling epic?
 2. GitHub Graveyard scale timing after spike (immediate vs after first recurrence milestone)?
 3. Initial OSS repos for spike
 
-## 12) Immediate Next Actions
+## 13) Immediate Next Actions
 1. Approve this PRD
 2. Link this doc from issue #1
 3. Create child issues mapped to P0/P1/P2/P3 with blockers and milestones
