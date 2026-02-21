@@ -7,6 +7,7 @@ from driftshield.cli.commands.analyze import analyze
 from driftshield.cli.commands.list import list_sessions
 from driftshield.cli.commands.inspect import inspect
 from driftshield.cli.commands.report import report_command
+from driftshield.cli.commands.export_validations import export_validations
 
 app = typer.Typer(
     name="driftshield",
@@ -19,6 +20,7 @@ app.command()(analyze)
 app.command(name="list")(list_sessions)
 app.command()(inspect)
 app.command(name="report")(report_command)
+app.command(name="export-validations")(export_validations)
 
 
 def version_callback(value: bool) -> None:
