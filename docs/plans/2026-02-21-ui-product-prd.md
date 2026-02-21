@@ -101,6 +101,7 @@ Build a minimal, clear investigation UI that makes DriftShield usable by non-eng
 - Real-time collaboration
 - Complex workflow automation
 - Multi-tenant admin console
+- Dedicated UI authentication flow (deferred to Operational Readiness phase)
 
 ---
 
@@ -175,8 +176,12 @@ Build a minimal, clear investigation UI that makes DriftShield usable by non-eng
 
 ---
 
-## 14) Open Questions
+## 14) Decisions and Remaining Questions
 
-1. ✅ Decided: validation UI will be embedded in investigation view using a right-side Review drawer.
-2. Which persona is first-class for MVP: technical analyst only, or mixed technical/non-technical?
-3. Do we need lightweight auth in UI before validation actions are enabled?
+### Decided
+1. Validation UI is embedded in investigation view using a right-side Review drawer.
+2. MVP persona focus is mixed technical/non-technical users.
+3. UI auth will be added later; validation actions in MVP proceed without dedicated UI auth flow.
+
+### Follow-up note
+- Defer UI authentication to a later phase (Operational Readiness track) and keep this explicitly out of UI-P1 scope.
