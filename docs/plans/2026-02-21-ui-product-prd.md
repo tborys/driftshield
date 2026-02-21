@@ -148,8 +148,9 @@ Build a minimal, clear investigation UI that makes DriftShield usable by non-eng
 
 ## 12) Proposed Delivery Plan (UI)
 
-### UI-P1: Validation-first UI wiring
-- Add validation controls to session detail view
+### UI-P1: Validation-first UI wiring (embedded)
+- Add validation controls directly inside the existing investigation/session detail page
+- Use a right-side Review drawer for focused interaction (not a separate page)
 - Save to backend persistence
 - Show confirmation + history timeline
 
@@ -176,6 +177,6 @@ Build a minimal, clear investigation UI that makes DriftShield usable by non-eng
 
 ## 14) Open Questions
 
-1. Should validation UI be embedded inline in timeline or in a side drawer?
+1. ✅ Decided: validation UI will be embedded in investigation view using a right-side Review drawer.
 2. Which persona is first-class for MVP: technical analyst only, or mixed technical/non-technical?
 3. Do we need lightweight auth in UI before validation actions are enabled?
