@@ -12,6 +12,7 @@ from driftshield.core.analysis.heuristics import (
     ContextContaminationHeuristic,
 )
 from driftshield.core.analysis.inflection import find_inflection_node
+from driftshield.core.analysis.recurrence import RecurrenceAssessment, RecurrenceEngine
 
 
 @dataclass
@@ -23,6 +24,7 @@ class AnalysisResult:
     inflection_node: DecisionNode | None
     total_events: int
     flagged_events: int
+    recurrence: RecurrenceAssessment | None = None
 
     @property
     def has_risks(self) -> bool:
@@ -52,6 +54,7 @@ class AnalysisResult:
 def analyze_session(
     events: list[CanonicalEvent],
     session_id: str | None = None,
+    historical_recurrence_counts: dict[str, int] | None = None,
 ) -> AnalysisResult:
     """
     Analyze a session's events for risks and build lineage graph.
@@ -70,6 +73,7 @@ def analyze_session(
             inflection_node=None,
             total_events=0,
             flagged_events=0,
+            recurrence=None,
         )
 
     # Determine session ID
@@ -97,10 +101,18 @@ def analyze_session(
     # Count flagged events
     flagged_count = sum(1 for e in analyzed_events if e.has_risk_flags())
 
+    recurrence = None
+    if flagged_count > 0:
+        recurrence = RecurrenceEngine().evaluate(
+            analyzed_events,
+            historical_counts=historical_recurrence_counts,
+        )
+
     return AnalysisResult(
         events=analyzed_events,
         graph=graph,
         inflection_node=inflection_node,
         total_events=len(analyzed_events),
         flagged_events=flagged_count,
+        recurrence=recurrence,
     )
