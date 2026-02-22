@@ -61,6 +61,30 @@ class PaginatedResponse(BaseModel):
     pages: int
 
 
+class ValidationCreateRequest(BaseModel):
+    target_type: str
+    target_ref: str
+    verdict: str
+    reviewer: str
+    confidence: float | None = None
+    notes: str | None = None
+    shareable: bool = False
+
+
+class ValidationResponse(BaseModel):
+    id: uuid.UUID
+    session_id: uuid.UUID
+    target_type: str
+    target_ref: str
+    verdict: str
+    confidence: float | None = None
+    reviewer: str
+    notes: str | None = None
+    metadata_json: dict[str, Any] | None = None
+    shareable: bool = False
+    created_at: datetime
+
+
 class ErrorResponse(BaseModel):
     detail: str
     code: str | None = None
