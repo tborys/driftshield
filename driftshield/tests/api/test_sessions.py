@@ -8,7 +8,13 @@ from sqlalchemy.orm import Session as DBSession
 from sqlalchemy.pool import StaticPool
 
 from driftshield.api.app import create_app
-from driftshield.db.models import Base, SessionModel, DecisionNodeModel
+from driftshield.db.models import (
+    Base,
+    DecisionNodeModel,
+    RecurrenceSignatureModel,
+    SessionModel,
+    SessionSignatureModel,
+)
 
 
 @pytest.fixture
@@ -90,6 +96,43 @@ def test_get_session_detail(client, auth_headers, seeded_session):
     data = response.json()
     assert data["id"] == str(seeded_session)
     assert data["agent_id"] == "test-agent"
+
+
+def test_session_endpoints_include_recurrence_summary(client, auth_headers, db_session):
+    session_id = uuid.uuid4()
+    s = SessionModel(
+        id=session_id,
+        agent_id="test-agent",
+        started_at=datetime.now(timezone.utc),
+        status="completed",
+    )
+    sig_id = uuid.uuid4()
+    sig = RecurrenceSignatureModel(
+        id=sig_id,
+        signature_hash="abc123",
+        pattern={"level": "recurring", "probability": "medium"},
+        first_seen_at=datetime.now(timezone.utc),
+        last_seen_at=datetime.now(timezone.utc),
+        occurrence_count=3,
+        severity="medium",
+    )
+    link = SessionSignatureModel(session_id=session_id, signature_id=sig_id, matched_nodes=[])
+    db_session.add_all([s, sig, link])
+    db_session.commit()
+
+    list_resp = client.get("/api/sessions", headers=auth_headers)
+    assert list_resp.status_code == 200
+    item = next(i for i in list_resp.json()["items"] if i["id"] == str(session_id))
+    assert item["recurrence_level"] == "recurring"
+    assert item["recurrence_probability"] == "medium"
+    assert item["recurrence_count"] == 3
+
+    detail_resp = client.get(f"/api/sessions/{session_id}", headers=auth_headers)
+    assert detail_resp.status_code == 200
+    detail = detail_resp.json()
+    assert detail["recurrence_level"] == "recurring"
+    assert detail["recurrence_probability"] == "medium"
+    assert detail["recurrence_count"] == 3
 
 
 def test_get_session_not_found(client, auth_headers):
