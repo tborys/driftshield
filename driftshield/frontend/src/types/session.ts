@@ -42,3 +42,8 @@ export interface ReportDetail {
   content_json: Record<string, unknown>
   generated_by: string | null
 }
+
+export interface GraveyardSummary {
+  path: string
+  content_markdown: string
+}

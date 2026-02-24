@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { useSession, useSessionGraph } from '../api/sessions'
+import { useSessionReports } from '../api/reports'
 import { InvestigationView } from '../components/investigation/InvestigationView'
 import { ReportTrigger } from '../components/reports/ReportTrigger'
 import { ReportPreview } from '../components/reports/ReportPreview'
@@ -11,6 +12,7 @@ export function InvestigationPage() {
   const { id } = useParams<{ id: string }>()
   const { data: session } = useSession(id!)
   const { data: graph, isLoading, error } = useSessionGraph(id!)
+  const { data: reports } = useSessionReports(id!)
   const [previewReportId, setPreviewReportId] = useState<string | null>(null)
 
   if (isLoading) {
@@ -61,6 +63,22 @@ export function InvestigationPage() {
           {session.recurrence_probability ? ` Confidence: ${session.recurrence_probability}.` : ''}
         </div>
       )}
+
+      <div className="px-6 py-3 border-b">
+        <div className="text-sm font-medium mb-2">Session reports</div>
+        {!reports || reports.length === 0 ? (
+          <div className="text-sm text-muted-foreground">No reports yet. Generate one to review it in-app or export markdown.</div>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {reports.map((report) => (
+              <Button key={report.id} variant="outline" size="sm" onClick={() => setPreviewReportId(report.id)}>
+                {report.report_type} · {new Date(report.generated_at).toLocaleString()}
+              </Button>
+            ))}
+          </div>
+        )}
+      </div>
+
       <InvestigationView graph={graph} />
       <ReportPreview
         reportId={previewReportId}

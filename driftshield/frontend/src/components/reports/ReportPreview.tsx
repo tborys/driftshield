@@ -2,6 +2,8 @@ import { Button } from '@/components/ui/button'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { useReport } from '../../api/reports'
 
 interface ReportPreviewProps {
@@ -33,9 +35,9 @@ export function ReportPreview({ reportId, open, onClose }: ReportPreviewProps) {
         {isLoading ? (
           <div className="text-muted-foreground">Loading report...</div>
         ) : report ? (
-          <pre className="text-sm whitespace-pre-wrap font-mono bg-muted p-4 rounded">
-            {report.content_markdown}
-          </pre>
+          <article className="text-sm leading-6 bg-muted p-4 rounded border space-y-2">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{report.content_markdown}</ReactMarkdown>
+          </article>
         ) : (
           <div className="text-destructive">Failed to load report.</div>
         )}

@@ -1,5 +1,7 @@
+import os
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -118,4 +120,22 @@ def get_report(
         "content_markdown": report.content_markdown,
         "content_json": report.content_json,
         "generated_by": report.generated_by,
+    }
+
+
+@router.get("/api/graveyard/summary")
+def get_graveyard_summary(
+    api_key: str = Depends(require_api_key),
+):
+    _ = api_key
+    report_path = Path(os.getenv("GRAVEYARD_REPORT_PATH", "data/graveyard/report.md"))
+    if not report_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail="Graveyard summary not found. Generate it with `driftshield report-graveyard`.",
+        )
+
+    return {
+        "path": str(report_path),
+        "content_markdown": report_path.read_text(encoding="utf-8"),
     }
