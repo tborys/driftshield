@@ -6,7 +6,13 @@ import { Button } from '@/components/ui/button'
 import { useGraveyardSummary } from '../api/graveyard'
 
 export function ReportsPage() {
-  const { data, isLoading, isError } = useGraveyardSummary()
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useGraveyardSummary()
   const [copied, setCopied] = useState(false)
 
   const handleDownload = () => {
@@ -27,6 +33,9 @@ export function ReportsPage() {
     setTimeout(() => setCopied(false), 1200)
   }
 
+  const errorMessage = error instanceof Error ? error.message : 'Unexpected error.'
+  const summaryMissing = errorMessage.toLowerCase().includes('not found')
+
   return (
     <div className="p-6 space-y-4">
       <div className="flex items-center justify-between">
@@ -42,8 +51,19 @@ export function ReportsPage() {
       {isLoading && <div className="text-muted-foreground">Loading graveyard summary...</div>}
 
       {isError && (
-        <div className="border rounded p-4 text-sm text-muted-foreground">
-          No graveyard summary report available yet. Run <span className="font-mono">driftshield report-graveyard</span> to generate one.
+        <div className="border rounded p-4 text-sm space-y-2">
+          {summaryMissing ? (
+            <>
+              <p className="font-medium">No graveyard summary available yet.</p>
+              <p className="text-muted-foreground">Run <span className="font-mono">driftshield report-graveyard</span> to generate one.</p>
+            </>
+          ) : (
+            <>
+              <p className="font-medium text-destructive">Failed to load graveyard summary.</p>
+              <p className="text-muted-foreground">{errorMessage}</p>
+              <Button size="sm" variant="outline" onClick={() => refetch()}>Retry</Button>
+            </>
+          )}
         </div>
       )}
 

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useCreateSessionValidation, useSessionValidations } from '@/api/sessions'
@@ -41,13 +41,39 @@ export function ReviewDrawer({ open, sessionId, node, onClose }: ReviewDrawerPro
   const { data: validations = [], isLoading } = useSessionValidations(sessionId)
   const createValidation = useCreateSessionValidation(sessionId)
 
+  useEffect(() => {
+    if (!open) return
+
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose()
+      }
+    }
+
+    window.addEventListener('keydown', onEscape)
+    return () => window.removeEventListener('keydown', onEscape)
+  }, [open, onClose])
+
+  useEffect(() => {
+    if (open && node) {
+      setTimeout(() => {
+        const input = document.getElementById('reviewer-input') as HTMLInputElement | null
+        input?.focus()
+      }, 0)
+    }
+  }, [open, node])
+
+  const parsedConfidence = Number(confidence)
+  const confidenceInvalid = confidence.length > 0 && (Number.isNaN(parsedConfidence) || parsedConfidence < 0 || parsedConfidence > 1)
+  const canSave = Boolean(node) && reviewer.trim().length > 0 && !confidenceInvalid
+
   const nodeValidations = useMemo(
     () => validations.filter((v) => (node ? isValidationForNode(v, node.id) : false)),
     [node, validations],
   )
 
   const save = async () => {
-    if (!node) return
+    if (!node || !canSave) return
 
     setSaveStatus(null)
 
@@ -55,10 +81,10 @@ export function ReviewDrawer({ open, sessionId, node, onClose }: ReviewDrawerPro
       await createValidation.mutateAsync({
         target_type: node.is_inflection ? 'inflection' : 'risk_flag',
         target_ref: node.risk_flags.length > 0 ? `${node.id}:${node.risk_flags[0]}` : node.id,
-        reviewer,
+        reviewer: reviewer.trim(),
         verdict,
         notes: notes || undefined,
-        confidence: Number.isNaN(Number(confidence)) ? undefined : Number(confidence),
+        confidence: Number.isNaN(parsedConfidence) ? undefined : parsedConfidence,
         shareable: false,
       })
 
@@ -73,7 +99,12 @@ export function ReviewDrawer({ open, sessionId, node, onClose }: ReviewDrawerPro
   if (!open) return null
 
   return (
-    <div className="w-[360px] border-l bg-background h-full overflow-y-auto p-4 space-y-4">
+    <div
+      className="w-[360px] border-l bg-background h-full overflow-y-auto p-4 space-y-4"
+      role="dialog"
+      aria-label="Node review"
+      aria-modal="false"
+    >
       <div className="flex items-center justify-between">
         <h3 className="font-semibold">Review</h3>
         <Button variant="ghost" size="sm" onClick={onClose}>Close</Button>
@@ -90,7 +121,7 @@ export function ReviewDrawer({ open, sessionId, node, onClose }: ReviewDrawerPro
 
           <div className="space-y-2">
             <label className="text-xs text-muted-foreground">Reviewer</label>
-            <Input value={reviewer} onChange={(e) => setReviewer(e.target.value)} />
+            <Input id="reviewer-input" value={reviewer} onChange={(e) => setReviewer(e.target.value)} />
           </div>
 
           <div className="space-y-2">
@@ -111,7 +142,14 @@ export function ReviewDrawer({ open, sessionId, node, onClose }: ReviewDrawerPro
 
           <div className="space-y-2">
             <label className="text-xs text-muted-foreground">Confidence (0-1)</label>
-            <Input value={confidence} onChange={(e) => setConfidence(e.target.value)} />
+            <Input
+              value={confidence}
+              onChange={(e) => setConfidence(e.target.value)}
+              aria-invalid={confidenceInvalid}
+            />
+            {confidenceInvalid && (
+              <p className="text-xs text-destructive">Confidence must be a number between 0 and 1.</p>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -124,12 +162,14 @@ export function ReviewDrawer({ open, sessionId, node, onClose }: ReviewDrawerPro
             />
           </div>
 
-          <Button onClick={save} disabled={createValidation.isPending}>
+          <Button onClick={save} disabled={createValidation.isPending || !canSave}>
             {createValidation.isPending ? 'Saving...' : 'Save validation'}
           </Button>
 
           {saveStatus && (
-            <p className="text-xs text-muted-foreground">{saveStatus}</p>
+            <p className={`text-xs ${saveStatus === 'Validation saved.' ? 'text-emerald-600' : 'text-destructive'}`} aria-live="polite">
+              {saveStatus}
+            </p>
           )}
 
           <div className="pt-2 border-t">

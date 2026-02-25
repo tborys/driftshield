@@ -41,7 +41,14 @@ export function SessionList({ sessions, isLoading }: SessionListProps) {
           <TableRow
             key={session.id}
             className="cursor-pointer hover:bg-muted/50"
+            tabIndex={0}
             onClick={() => navigate(`/sessions/${session.id}`)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault()
+                navigate(`/sessions/${session.id}`)
+              }
+            }}
           >
             <TableCell className="font-mono text-sm">
               {session.id.slice(0, 8)}...

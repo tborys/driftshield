@@ -10,9 +10,23 @@ import { ReportPreview } from '../components/reports/ReportPreview'
 
 export function InvestigationPage() {
   const { id } = useParams<{ id: string }>()
-  const { data: session } = useSession(id!)
-  const { data: graph, isLoading, error } = useSessionGraph(id!)
-  const { data: reports } = useSessionReports(id!)
+  const {
+    data: session,
+    isLoading: sessionLoading,
+  } = useSession(id!)
+  const {
+    data: graph,
+    isLoading,
+    error,
+    refetch: refetchGraph,
+  } = useSessionGraph(id!)
+  const {
+    data: reports,
+    isLoading: reportsLoading,
+    isError: reportsError,
+    error: reportsLoadError,
+    refetch: refetchReports,
+  } = useSessionReports(id!)
   const [previewReportId, setPreviewReportId] = useState<string | null>(null)
 
   if (isLoading) {
@@ -20,7 +34,13 @@ export function InvestigationPage() {
   }
 
   if (error || !graph) {
-    return <div className="p-6 text-destructive">Failed to load graph data.</div>
+    return (
+      <div className="p-6 space-y-3">
+        <div className="text-destructive font-medium">Failed to load graph data.</div>
+        <p className="text-sm text-muted-foreground">{error instanceof Error ? error.message : 'Unexpected error.'}</p>
+        <Button size="sm" variant="outline" onClick={() => refetchGraph()}>Retry graph load</Button>
+      </div>
+    )
   }
 
   return (
@@ -31,7 +51,9 @@ export function InvestigationPage() {
             <Button variant="ghost" size="sm">&larr; Sessions</Button>
           </Link>
           <span className="font-mono text-sm">{id?.slice(0, 8)}...</span>
-          {session && (
+          {sessionLoading ? (
+            <Badge variant="outline">Loading session...</Badge>
+          ) : session ? (
             <>
               <Badge variant="secondary">{session.agent_id}</Badge>
               <Badge variant="outline">{session.status}</Badge>
@@ -52,6 +74,8 @@ export function InvestigationPage() {
                 <Badge variant="outline">{session.recurrence_probability} confidence</Badge>
               )}
             </>
+          ) : (
+            <Badge variant="outline">Session metadata unavailable</Badge>
           )}
         </div>
         <ReportTrigger sessionId={id!} onReportGenerated={setPreviewReportId} />
@@ -73,9 +97,24 @@ export function InvestigationPage() {
             </Button>
           )}
         </div>
-        {!reports || reports.length === 0 ? (
+
+        {reportsLoading && (
+          <div className="text-sm text-muted-foreground">Loading report history...</div>
+        )}
+
+        {reportsError && (
+          <div className="border rounded-md p-3 bg-destructive/5 text-sm space-y-2">
+            <p className="text-destructive font-medium">Could not load report history.</p>
+            <p className="text-muted-foreground">{reportsLoadError instanceof Error ? reportsLoadError.message : 'Unexpected error.'}</p>
+            <Button size="sm" variant="outline" onClick={() => refetchReports()}>Retry</Button>
+          </div>
+        )}
+
+        {!reportsLoading && !reportsError && (!reports || reports.length === 0) ? (
           <div className="text-sm text-muted-foreground">No reports yet. Generate one to review it in-app or export markdown.</div>
-        ) : (
+        ) : null}
+
+        {!reportsLoading && !reportsError && reports && reports.length > 0 && (
           <div className="space-y-2">
             <div className="text-xs text-muted-foreground">{reports.length} report{reports.length > 1 ? 's' : ''} available</div>
             <div className="flex flex-wrap gap-2">
