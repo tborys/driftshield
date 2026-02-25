@@ -9,6 +9,7 @@ from sqlalchemy.pool import StaticPool
 
 from driftshield.api.app import create_app
 from driftshield.db.models import (
+    AnalystValidationModel,
     Base,
     DecisionNodeModel,
     RecurrenceSignatureModel,
@@ -137,4 +138,66 @@ def test_session_endpoints_include_recurrence_summary(client, auth_headers, db_s
 
 def test_get_session_not_found(client, auth_headers):
     response = client.get(f"/api/sessions/{uuid.uuid4()}", headers=auth_headers)
+    assert response.status_code == 404
+
+
+def test_create_session_validation_and_list_for_node(client, auth_headers, seeded_session, db_session):
+    node = (
+        db_session.query(DecisionNodeModel)
+        .filter(DecisionNodeModel.session_id == seeded_session)
+        .order_by(DecisionNodeModel.sequence_num.asc())
+        .first()
+    )
+    assert node is not None
+
+    payload = {
+        "target_type": "risk_flag",
+        "target_ref": f"{node.id}:coverage_gap",
+        "verdict": "accept",
+        "reviewer": "analyst",
+        "confidence": 0.8,
+        "notes": "Looks correct",
+        "shareable": False,
+    }
+
+    create_response = client.post(
+        f"/api/sessions/{seeded_session}/validations",
+        headers=auth_headers,
+        json=payload,
+    )
+    assert create_response.status_code == 200
+    created = create_response.json()
+    assert created["target_ref"] == payload["target_ref"]
+    assert created["reviewer"] == "analyst"
+
+    list_response = client.get(
+        f"/api/sessions/{seeded_session}/validations",
+        headers=auth_headers,
+    )
+    assert list_response.status_code == 200
+    listed = list_response.json()
+    assert len(listed) == 1
+    assert listed[0]["target_ref"] == payload["target_ref"]
+
+    db_row = db_session.query(AnalystValidationModel).first()
+    assert db_row is not None
+    assert db_row.target_ref == payload["target_ref"]
+    assert db_row.verdict == "accept"
+
+
+def test_create_session_validation_for_missing_session_returns_404(client, auth_headers):
+    payload = {
+        "target_type": "risk_flag",
+        "target_ref": f"{uuid.uuid4()}:coverage_gap",
+        "verdict": "accept",
+        "reviewer": "analyst",
+        "confidence": 0.8,
+    }
+
+    response = client.post(
+        f"/api/sessions/{uuid.uuid4()}/validations",
+        headers=auth_headers,
+        json=payload,
+    )
+
     assert response.status_code == 404

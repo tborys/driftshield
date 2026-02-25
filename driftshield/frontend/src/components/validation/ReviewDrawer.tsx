@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useCreateSessionValidation, useSessionValidations } from '@/api/sessions'
 import type { GraphNode } from '@/types/graph'
+import type { ValidationRecord } from '@/types/validation'
 
 interface ReviewDrawerProps {
   open: boolean
@@ -13,33 +14,60 @@ interface ReviewDrawerProps {
 
 const verdictOptions: Array<'accept' | 'reject' | 'needs_review'> = ['accept', 'reject', 'needs_review']
 
+function isValidationForNode(validation: ValidationRecord, nodeId: string) {
+  if (validation.target_ref === nodeId) {
+    return true
+  }
+
+  const [targetNodeId] = validation.target_ref.split(':')
+  if (targetNodeId === nodeId) {
+    return true
+  }
+
+  const metadataNodeId = typeof validation.metadata_json?.node_id === 'string'
+    ? validation.metadata_json.node_id
+    : null
+
+  return metadataNodeId === nodeId
+}
+
 export function ReviewDrawer({ open, sessionId, node, onClose }: ReviewDrawerProps) {
   const [reviewer, setReviewer] = useState('analyst')
   const [verdict, setVerdict] = useState<'accept' | 'reject' | 'needs_review'>('accept')
   const [notes, setNotes] = useState('')
   const [confidence, setConfidence] = useState('0.8')
+  const [saveStatus, setSaveStatus] = useState<string | null>(null)
 
   const { data: validations = [], isLoading } = useSessionValidations(sessionId)
   const createValidation = useCreateSessionValidation(sessionId)
 
   const nodeValidations = useMemo(
-    () => validations.filter((v) => (node ? v.target_ref.includes(node.id) : false)),
+    () => validations.filter((v) => (node ? isValidationForNode(v, node.id) : false)),
     [node, validations],
   )
 
   const save = async () => {
     if (!node) return
 
-    await createValidation.mutateAsync({
-      target_type: node.is_inflection ? 'inflection' : 'risk_flag',
-      target_ref: node.risk_flags.length > 0 ? `${node.id}:${node.risk_flags[0]}` : node.id,
-      reviewer,
-      verdict,
-      notes: notes || undefined,
-      confidence: Number.isNaN(Number(confidence)) ? undefined : Number(confidence),
-      shareable: false,
-    })
-    setNotes('')
+    setSaveStatus(null)
+
+    try {
+      await createValidation.mutateAsync({
+        target_type: node.is_inflection ? 'inflection' : 'risk_flag',
+        target_ref: node.risk_flags.length > 0 ? `${node.id}:${node.risk_flags[0]}` : node.id,
+        reviewer,
+        verdict,
+        notes: notes || undefined,
+        confidence: Number.isNaN(Number(confidence)) ? undefined : Number(confidence),
+        shareable: false,
+      })
+
+      setNotes('')
+      setSaveStatus('Validation saved.')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Validation save failed.'
+      setSaveStatus(message)
+    }
   }
 
   if (!open) return null
@@ -99,6 +127,10 @@ export function ReviewDrawer({ open, sessionId, node, onClose }: ReviewDrawerPro
           <Button onClick={save} disabled={createValidation.isPending}>
             {createValidation.isPending ? 'Saving...' : 'Save validation'}
           </Button>
+
+          {saveStatus && (
+            <p className="text-xs text-muted-foreground">{saveStatus}</p>
+          )}
 
           <div className="pt-2 border-t">
             <h4 className="text-sm font-medium mb-2">Validation history</h4>
