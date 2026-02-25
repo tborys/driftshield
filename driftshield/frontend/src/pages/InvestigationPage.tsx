@@ -65,16 +65,26 @@ export function InvestigationPage() {
       )}
 
       <div className="px-6 py-3 border-b">
-        <div className="text-sm font-medium mb-2">Session reports</div>
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-sm font-medium">Session reports</div>
+          {reports && reports.length > 0 && (
+            <Button variant="ghost" size="sm" onClick={() => setPreviewReportId(reports[0].id)}>
+              Open latest
+            </Button>
+          )}
+        </div>
         {!reports || reports.length === 0 ? (
           <div className="text-sm text-muted-foreground">No reports yet. Generate one to review it in-app or export markdown.</div>
         ) : (
-          <div className="flex flex-wrap gap-2">
-            {reports.map((report) => (
-              <Button key={report.id} variant="outline" size="sm" onClick={() => setPreviewReportId(report.id)}>
-                {report.report_type} · {new Date(report.generated_at).toLocaleString()}
-              </Button>
-            ))}
+          <div className="space-y-2">
+            <div className="text-xs text-muted-foreground">{reports.length} report{reports.length > 1 ? 's' : ''} available</div>
+            <div className="flex flex-wrap gap-2">
+              {reports.map((report) => (
+                <Button key={report.id} variant="outline" size="sm" onClick={() => setPreviewReportId(report.id)}>
+                  {report.report_type} · {new Date(report.generated_at).toLocaleString()}
+                </Button>
+              ))}
+            </div>
           </div>
         )}
       </div>

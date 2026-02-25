@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
@@ -32,6 +33,7 @@ export function SessionList({ sessions, isLoading }: SessionListProps) {
           <TableHead>Inflection</TableHead>
           <TableHead>Recurrence</TableHead>
           <TableHead>Started</TableHead>
+          <TableHead className="text-right">Action</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -66,23 +68,40 @@ export function SessionList({ sessions, isLoading }: SessionListProps) {
             </TableCell>
             <TableCell>
               {session.recurrence_level ? (
-                <Badge
-                  variant={
-                    session.recurrence_level === 'systemic'
-                      ? 'destructive'
-                      : session.recurrence_level === 'recurring'
-                        ? 'secondary'
-                        : 'outline'
-                  }
-                >
-                  {session.recurrence_level}
-                </Badge>
+                <div className="flex items-center gap-2">
+                  <Badge
+                    variant={
+                      session.recurrence_level === 'systemic'
+                        ? 'destructive'
+                        : session.recurrence_level === 'recurring'
+                          ? 'secondary'
+                          : 'outline'
+                    }
+                  >
+                    {session.recurrence_level}
+                  </Badge>
+                  {session.recurrence_probability && (
+                    <span className="text-xs text-muted-foreground">{session.recurrence_probability}</span>
+                  )}
+                </div>
               ) : (
                 <span className="text-muted-foreground">new/unknown</span>
               )}
             </TableCell>
             <TableCell className="text-sm text-muted-foreground">
               {new Date(session.started_at).toLocaleString()}
+            </TableCell>
+            <TableCell className="text-right">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  navigate(`/sessions/${session.id}`)
+                }}
+              >
+                Open
+              </Button>
             </TableCell>
           </TableRow>
         ))}

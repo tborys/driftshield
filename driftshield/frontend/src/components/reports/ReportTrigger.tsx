@@ -12,11 +12,13 @@ interface ReportTriggerProps {
 
 export function ReportTrigger({ sessionId, onReportGenerated }: ReportTriggerProps) {
   const [reportType, setReportType] = useState('full')
+  const [lastGeneratedType, setLastGeneratedType] = useState<string | null>(null)
   const generateReport = useGenerateReport(sessionId)
 
   const handleGenerate = async () => {
     const result = await generateReport.mutateAsync(reportType)
     onReportGenerated(result.id)
+    setLastGeneratedType(reportType)
   }
 
   return (
@@ -37,6 +39,11 @@ export function ReportTrigger({ sessionId, onReportGenerated }: ReportTriggerPro
       >
         {generateReport.isPending ? 'Generating...' : 'Generate Report'}
       </Button>
+      {lastGeneratedType && !generateReport.isPending && (
+        <span className="text-xs text-muted-foreground">
+          {lastGeneratedType} report ready
+        </span>
+      )}
     </div>
   )
 }
