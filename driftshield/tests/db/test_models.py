@@ -2,7 +2,8 @@ import uuid
 from datetime import datetime, timezone
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, JSON
+from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.orm import Session
 
 from driftshield.db.models import (
@@ -164,6 +165,33 @@ def test_session_signature_junction(db_session):
     loaded = db_session.query(SessionSignatureModel).first()
     assert loaded.session_id == session_id
     assert loaded.signature_id == sig_id
+
+
+def test_session_signature_matched_nodes_type_is_uuid_array_on_postgres():
+    column_type = SessionSignatureModel.__table__.c.matched_nodes.type
+    compiled = str(column_type.compile(dialect=postgresql.dialect()))
+
+    assert compiled == "UUID[]"
+
+
+def test_session_signature_matched_nodes_type_falls_back_to_json_on_sqlite():
+    column_type = SessionSignatureModel.__table__.c.matched_nodes.type
+    sqlite_impl = column_type.dialect_impl(sqlite.dialect())
+
+    assert isinstance(sqlite_impl, JSON)
+
+
+def test_session_signature_insert_compiles_uuid_array_value_on_postgres():
+    statement = SessionSignatureModel.__table__.insert().values(
+        session_id=uuid.uuid4(),
+        signature_id=uuid.uuid4(),
+        matched_nodes=[],
+    )
+
+    compiled_sql = str(statement.compile(dialect=postgresql.dialect()))
+
+    assert "%(matched_nodes)s::UUID[]" in compiled_sql
+    assert "::JSON" not in compiled_sql
 
 
 def test_create_report(db_session):

@@ -3,7 +3,7 @@ from datetime import datetime
 
 from sqlalchemy import String, DateTime, JSON, Boolean, Integer, ForeignKey, Text, Float
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID, ARRAY as PG_ARRAY
 
 
 class Base(DeclarativeBase):
@@ -77,7 +77,10 @@ class SessionSignatureModel(Base):
     signature_id: Mapped[uuid.UUID] = mapped_column(
         PG_UUID(as_uuid=True), ForeignKey("recurrence_signatures.id"), primary_key=True
     )
-    matched_nodes: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    matched_nodes: Mapped[list[uuid.UUID] | None] = mapped_column(
+        PG_ARRAY(PG_UUID(as_uuid=True)).with_variant(JSON, "sqlite"),
+        nullable=True,
+    )
 
 
 class ReportModel(Base):
