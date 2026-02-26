@@ -1,0 +1,20 @@
+{"fixture_id":"fx-vd-001","graph_pattern":"retrieve->transform->write","lexical_markers":["alias","baseline mapping"],"expected_risk_class":"variable_drift"}
+{"fixture_id":"fx-vd-002","graph_pattern":"retrieve_metric->transform_metric->write_metric","lexical_markers":["substitute metric","mapped output"],"expected_risk_class":"variable_drift"}
+{"fixture_id":"fx-cc-001","graph_pattern":"retrieve_irrelevant->reason->write","lexical_markers":["irrelevant context","carry over"],"expected_risk_class":"context_contamination"}
+{"fixture_id":"fx-cc-002","graph_pattern":"reuse_previous_context->reason->write","lexical_markers":["earlier session","reuse state"],"expected_risk_class":"context_contamination"}
+{"fixture_id":"fx-tcv-001","graph_pattern":"tool_error->no_retry->write","lexical_markers":["schema mismatch","ignored tool error"],"expected_risk_class":"tool_contract_violation"}
+{"fixture_id":"fx-tcv-002","graph_pattern":"tool_partial_response->coerce->write","lexical_markers":["coerce response","fallback parser"],"expected_risk_class":"tool_contract_violation"}
+{"fixture_id":"fx-cg-001","graph_pattern":"missing_evidence->branch->write","lexical_markers":["missing evidence","continue anyway"],"expected_risk_class":"coverage_gap"}
+{"fixture_id":"fx-cg-002","graph_pattern":"partial_scan->decide->write","lexical_markers":["partial scan","remaining sources"],"expected_risk_class":"coverage_gap"}
+{"fixture_id":"fx-pd-001","graph_pattern":"fallback->skip_policy->write","lexical_markers":["skip policy","fallback mode"],"expected_risk_class":"policy_divergence"}
+{"fixture_id":"fx-pd-002","graph_pattern":"select_wrong_policy->approve","lexical_markers":["wrong policy","scope mismatch"],"expected_risk_class":"policy_divergence"}
+{"fixture_id":"fx-uv-001","graph_pattern":"infer->no_verify->write_system","lexical_markers":["write without verify","direct update"],"expected_risk_class":"unverified_write"}
+{"fixture_id":"fx-uv-002","graph_pattern":"plan_write->commit_external","lexical_markers":["commit now","no second check"],"expected_risk_class":"unverified_write"}
+{"fixture_id":"fx-am-001","graph_pattern":"assumption->promote_fact->write","lexical_markers":["assume","treat as confirmed"],"expected_risk_class":"assumption_mutation"}
+{"fixture_id":"fx-am-002","graph_pattern":"low_confidence->relabel_high_confidence->approve","lexical_markers":["confidence upgraded","high confidence"],"expected_risk_class":"assumption_mutation"}
+{"fixture_id":"fx-tms-001","graph_pattern":"write->reconcile","lexical_markers":["write first","post-hoc validation"],"expected_risk_class":"tool_missequencing"}
+{"fixture_id":"fx-tms-002","graph_pattern":"parallel_tools->race->commit","lexical_markers":["parallel branch","first result wins"],"expected_risk_class":"tool_missequencing"}
+{"fixture_id":"fx-hd-001","graph_pattern":"noise_context->unsupported_entity->write","lexical_markers":["unverified entity","not in sources"],"expected_risk_class":"hallucination_distraction"}
+{"fixture_id":"fx-hd-002","graph_pattern":"fabricated_citation->justify->write","lexical_markers":["fabricated source","citation missing"],"expected_risk_class":"hallucination_distraction"}
+{"fixture_id":"fx-cr-001","graph_pattern":"retry->relax_constraint->approve","lexical_markers":["relax threshold","temporary override"],"expected_risk_class":"constraint_relaxation"}
+{"fixture_id":"fx-cr-002","graph_pattern":"guardrail_timeout->disable_guardrail->approve","lexical_markers":["timeout bypass","disable guardrail"],"expected_risk_class":"constraint_relaxation"}

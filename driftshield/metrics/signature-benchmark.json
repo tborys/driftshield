@@ -1,0 +1,97 @@
+{
+  "dataset_size": 20,
+  "exact_match_rate": 1.0,
+  "average_candidate_signatures": 1.0,
+  "per_family": {
+    "variable_drift": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "true_positive": 2,
+      "false_positive": 0,
+      "false_negative": 0,
+      "support": 2
+    },
+    "context_contamination": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "true_positive": 2,
+      "false_positive": 0,
+      "false_negative": 0,
+      "support": 2
+    },
+    "tool_contract_violation": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "true_positive": 2,
+      "false_positive": 0,
+      "false_negative": 0,
+      "support": 2
+    },
+    "coverage_gap": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "true_positive": 2,
+      "false_positive": 0,
+      "false_negative": 0,
+      "support": 2
+    },
+    "policy_divergence": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "true_positive": 2,
+      "false_positive": 0,
+      "false_negative": 0,
+      "support": 2
+    },
+    "unverified_write": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "true_positive": 2,
+      "false_positive": 0,
+      "false_negative": 0,
+      "support": 2
+    },
+    "assumption_mutation": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "true_positive": 2,
+      "false_positive": 0,
+      "false_negative": 0,
+      "support": 2
+    },
+    "tool_missequencing": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "true_positive": 2,
+      "false_positive": 0,
+      "false_negative": 0,
+      "support": 2
+    },
+    "hallucination_distraction": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "true_positive": 2,
+      "false_positive": 0,
+      "false_negative": 0,
+      "support": 2
+    },
+    "constraint_relaxation": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "true_positive": 2,
+      "false_positive": 0,
+      "false_negative": 0,
+      "support": 2
+    }
+  }
+}
