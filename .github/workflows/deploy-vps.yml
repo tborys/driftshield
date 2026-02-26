@@ -1,0 +1,92 @@
+name: Deploy to Cloud VPS
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy_ref:
+        description: "Git ref to deploy (production must use main)"
+        required: true
+        default: "main"
+      run_access_check:
+        description: "Run tailnet/device access verification after deploy"
+        required: true
+        type: boolean
+        default: true
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+    env:
+      VPS_HOST: ${{ secrets.VPS_HOST }}
+      VPS_USER: ${{ secrets.VPS_USER }}
+      VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
+      VPS_REPO_PATH: ${{ secrets.VPS_REPO_PATH }}
+      DEPLOY_REF: ${{ github.event.inputs.deploy_ref }}
+      RUN_ACCESS_CHECK: ${{ github.event.inputs.run_access_check }}
+    steps:
+      - name: Validate production ref policy
+        run: |
+          if [ "$DEPLOY_REF" != "main" ]; then
+            echo "Production deploy is restricted to main."
+            exit 1
+          fi
+
+      - name: Prepare SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+
+      - name: Configure known_hosts
+        run: |
+          if [ -n "${{ secrets.VPS_KNOWN_HOSTS }}" ]; then
+            echo "${{ secrets.VPS_KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
+          else
+            ssh-keyscan -p "${VPS_SSH_PORT:-22}" "$VPS_HOST" >> ~/.ssh/known_hosts
+          fi
+
+      - name: Connectivity check
+        run: |
+          ssh -p "${VPS_SSH_PORT:-22}" "$VPS_USER@$VPS_HOST" "echo connected: \$(hostname)"
+
+      - name: Deploy
+        run: |
+          ssh -p "${VPS_SSH_PORT:-22}" "$VPS_USER@$VPS_HOST" \
+            "cd '$VPS_REPO_PATH' && BRANCH='$DEPLOY_REF' ROLLBACK_ENABLED='true' bash scripts/vps-deploy.sh"
+
+      - name: Access verification
+        if: ${{ github.event.inputs.run_access_check == 'true' }}
+        run: |
+          ssh -p "${VPS_SSH_PORT:-22}" "$VPS_USER@$VPS_HOST" \
+            "cd '$VPS_REPO_PATH' && bash scripts/vps-verify-access.sh"
+
+      - name: Deployment summary
+        if: always()
+        run: |
+          {
+            echo "## Deploy summary"
+            echo "- Ref: $DEPLOY_REF"
+            echo "- Access check: $RUN_ACCESS_CHECK"
+            echo "- Target host: $VPS_HOST"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Optional failure alert webhook
+        if: ${{ failure() }}
+        env:
+          DEPLOY_ALERT_WEBHOOK: ${{ secrets.DEPLOY_ALERT_WEBHOOK }}
+        run: |
+          if [ -z "$DEPLOY_ALERT_WEBHOOK" ]; then
+            echo "No DEPLOY_ALERT_WEBHOOK configured; skipping alert."
+            exit 0
+          fi
+
+          curl -sS -X POST "$DEPLOY_ALERT_WEBHOOK" \
+            -H "Content-Type: application/json" \
+            -d "{\"text\":\"DriftShield deploy failed for ref ${DEPLOY_REF}. Check workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}"
