@@ -342,6 +342,7 @@ def test_save_and_load_graph_round_trip_explanations(db_session):
     graph = service.load_graph(session_id)
 
     assert graph is not None
+    assert graph.nodes[0].is_inflection_node is True
     loaded_event = graph.nodes[0].event
     assert loaded_event.risk_classification is not None
     assert loaded_event.risk_classification.explanations["coverage_gap"] == ExplanationPayload(

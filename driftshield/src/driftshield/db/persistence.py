@@ -10,7 +10,6 @@ from driftshield.core.graph.models import LineageGraph
 from driftshield.core.models import (
     CanonicalEvent,
     EventType,
-    ExplanationPayload,
     RiskClassification,
     Session as DomainSession,
     SessionStatus,
@@ -105,7 +104,10 @@ class PersistenceService:
 
         for node in result.graph.nodes:
             risk = node.event.risk_classification or RiskClassification()
-            is_inflection_node = result.inflection_node is not None and node.id == result.inflection_node.id
+            is_inflection_node = (
+                result.inflection_node is not None
+                and node.id == result.inflection_node.id
+            )
             node_model = DecisionNodeModel(
                 id=node.id,
                 session_id=session.id,
@@ -191,7 +193,14 @@ class PersistenceService:
             return None
 
         events = [_node_model_to_event(n, session_id) for n in nodes]
-        return build_graph(events, session_id=str(session_id))
+        graph = build_graph(events, session_id=str(session_id))
+
+        for node in nodes:
+            graph_node = graph.get_node(node.id)
+            if graph_node is not None:
+                graph_node.is_inflection_node = node.is_inflection_node
+
+        return graph
 
     def list_sessions(
         self, page: int = 1, per_page: int = 20
