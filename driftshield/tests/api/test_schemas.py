@@ -48,9 +48,13 @@ def test_ingest_response():
         total_events=10,
         flagged_events=2,
         has_inflection=True,
+        status="created",
+        deduplicated=False,
     )
     data = r.model_dump(mode="json")
     assert data["total_events"] == 10
+    assert data["status"] == "created"
+    assert data["deduplicated"] is False
 
 
 def test_paginated_response():

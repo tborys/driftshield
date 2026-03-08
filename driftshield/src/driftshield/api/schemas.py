@@ -2,7 +2,13 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+
+class ExplanationPayloadResponse(BaseModel):
+    reason: str
+    confidence: float | None = None
+    evidence_refs: list[str] = Field(default_factory=list)
 
 
 class SessionSummary(BaseModel):
@@ -22,7 +28,7 @@ class SessionSummary(BaseModel):
 class SessionDetail(SessionSummary):
     total_events: int = 0
     flagged_events: int = 0
-    risk_summary: dict[str, int] = {}
+    risk_summary: dict[str, int] = Field(default_factory=dict)
 
 
 class GraphNodeResponse(BaseModel):
@@ -30,8 +36,10 @@ class GraphNodeResponse(BaseModel):
     event_type: str
     action: str | None = None
     sequence_num: int
-    risk_flags: list[str] = []
+    risk_flags: list[str] = Field(default_factory=list)
+    risk_explanations: dict[str, ExplanationPayloadResponse] = Field(default_factory=dict)
     is_inflection: bool = False
+    inflection_explanation: ExplanationPayloadResponse | None = None
     inputs: dict[str, Any] | None = None
     outputs: dict[str, Any] | None = None
     metadata: dict[str, Any] | None = None
@@ -54,6 +62,8 @@ class IngestResponse(BaseModel):
     total_events: int
     flagged_events: int
     has_inflection: bool
+    status: str
+    deduplicated: bool = False
 
 
 class PaginatedResponse(BaseModel):

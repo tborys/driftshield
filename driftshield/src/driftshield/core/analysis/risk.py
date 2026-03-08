@@ -1,7 +1,6 @@
 """Risk classification heuristics for detecting decision failures."""
 
 from abc import ABC, abstractmethod
-from dataclasses import fields
 
 from driftshield.core.models import CanonicalEvent, RiskClassification
 
@@ -61,13 +60,11 @@ class RiskAnalyzer:
                 "previous_events": list(previous_events),
             }
 
-            # Collect risk flags from all heuristics
             merged_risk = self._run_heuristics(event, context)
 
             if merged_risk is not None:
                 event.risk_classification = merged_risk
 
-            # Update context for next event
             previous_outputs.append(event.outputs)
             previous_events.append(event)
 
@@ -99,8 +96,10 @@ class RiskAnalyzer:
         merged = RiskClassification()
 
         for classification in classifications:
-            for field in fields(RiskClassification):
-                if getattr(classification, field.name):
-                    setattr(merged, field.name, True)
+            for field_name in RiskClassification.FLAG_FIELDS:
+                if getattr(classification, field_name):
+                    setattr(merged, field_name, True)
+
+            merged.explanations.update(classification.explanations)
 
         return merged

@@ -95,6 +95,60 @@ def test_create_decision_node(db_session):
     assert loaded.assumption_mutation is False
 
 
+def test_create_decision_node_with_explanations(db_session):
+    session_id = uuid.uuid4()
+    db_session.add(
+        SessionModel(
+            id=session_id,
+            started_at=datetime.now(timezone.utc),
+            status="completed",
+        )
+    )
+    db_session.flush()
+
+    node_id = uuid.uuid4()
+    db_session.add(
+        DecisionNodeModel(
+            id=node_id,
+            session_id=session_id,
+            sequence_num=1,
+            timestamp=datetime.now(timezone.utc),
+            event_type="TOOL_CALL",
+            action="review_sections",
+            coverage_gap=True,
+            risk_explanations={
+                "coverage_gap": {
+                    "reason": "Output referenced fewer items than were provided in the input.",
+                    "confidence": 0.86,
+                    "evidence_refs": ["inputs.sections", "outputs.reviewed_sections"],
+                }
+            },
+            is_inflection_node=True,
+            inflection_explanation={
+                "reason": "Selected as the inflection point because it is the closest flagged node on the path to the failure node.",
+                "confidence": 1.0,
+                "evidence_refs": [f"node:{node_id}", "risk:coverage_gap"],
+            },
+        )
+    )
+    db_session.commit()
+
+    loaded = db_session.get(DecisionNodeModel, node_id)
+    assert loaded is not None
+    assert loaded.risk_explanations == {
+        "coverage_gap": {
+            "reason": "Output referenced fewer items than were provided in the input.",
+            "confidence": 0.86,
+            "evidence_refs": ["inputs.sections", "outputs.reviewed_sections"],
+        }
+    }
+    assert loaded.inflection_explanation == {
+        "reason": "Selected as the inflection point because it is the closest flagged node on the path to the failure node.",
+        "confidence": 1.0,
+        "evidence_refs": [f"node:{node_id}", "risk:coverage_gap"],
+    }
+
+
 def test_decision_node_parent_child(db_session):
     session_id = uuid.uuid4()
     s = SessionModel(id=session_id, started_at=datetime.now(timezone.utc), status="completed")

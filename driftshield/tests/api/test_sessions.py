@@ -141,6 +141,61 @@ def test_get_session_not_found(client, auth_headers):
     assert response.status_code == 404
 
 
+def test_graph_endpoint_returns_risk_and_inflection_explanations(client, auth_headers, db_session):
+    session_id = uuid.uuid4()
+    node_id = uuid.uuid4()
+    db_session.add(
+        SessionModel(
+            id=session_id,
+            agent_id="test-agent",
+            started_at=datetime.now(timezone.utc),
+            status="completed",
+        )
+    )
+    db_session.add(
+        DecisionNodeModel(
+            id=node_id,
+            session_id=session_id,
+            sequence_num=1,
+            event_type="TOOL_CALL",
+            action="review_sections",
+            coverage_gap=True,
+            is_inflection_node=True,
+            risk_explanations={
+                "coverage_gap": {
+                    "reason": "Output referenced fewer items than were provided in the input.",
+                    "confidence": 0.86,
+                    "evidence_refs": ["inputs.sections", "outputs.reviewed_sections"],
+                }
+            },
+            inflection_explanation={
+                "reason": "Selected as the inflection point because it is the closest flagged node on the path to the failure node.",
+                "confidence": 1.0,
+                "evidence_refs": [f"node:{node_id}", "risk:coverage_gap"],
+            },
+        )
+    )
+    db_session.commit()
+
+    response = client.get(f"/api/sessions/{session_id}/graph", headers=auth_headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["nodes"][0]["risk_flags"] == ["coverage_gap"]
+    assert payload["nodes"][0]["risk_explanations"] == {
+        "coverage_gap": {
+            "reason": "Output referenced fewer items than were provided in the input.",
+            "confidence": 0.86,
+            "evidence_refs": ["inputs.sections", "outputs.reviewed_sections"],
+        }
+    }
+    assert payload["nodes"][0]["inflection_explanation"] == {
+        "reason": "Selected as the inflection point because it is the closest flagged node on the path to the failure node.",
+        "confidence": 1.0,
+        "evidence_refs": [f"node:{node_id}", "risk:coverage_gap"],
+    }
+
+
 def test_create_session_validation_and_list_for_node(client, auth_headers, seeded_session, db_session):
     node = (
         db_session.query(DecisionNodeModel)

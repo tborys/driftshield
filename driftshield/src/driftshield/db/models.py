@@ -1,9 +1,9 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import String, DateTime, JSON, Boolean, Integer, ForeignKey, Text, Float
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text
+from sqlalchemy.dialects.postgresql import ARRAY as PG_ARRAY, UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID, ARRAY as PG_ARRAY
 
 
 class Base(DeclarativeBase):
@@ -12,6 +12,14 @@ class Base(DeclarativeBase):
 
 class SessionModel(Base):
     __tablename__ = "sessions"
+    __table_args__ = (
+        Index(
+            "ix_sessions_transcript_hash_parser_version",
+            "transcript_hash",
+            "parser_version",
+            unique=True,
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
@@ -22,6 +30,11 @@ class SessionModel(Base):
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str] = mapped_column(String, nullable=False)
     metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    transcript_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    source_session_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    source_path: Mapped[str | None] = mapped_column(String, nullable=True)
+    parser_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    ingested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class DecisionNodeModel(Base):
@@ -44,14 +57,15 @@ class DecisionNodeModel(Base):
     outputs: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
-    # Risk flags
     assumption_mutation: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     policy_divergence: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     constraint_violation: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     context_contamination: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     coverage_gap: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    risk_explanations: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     is_inflection_node: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    inflection_explanation: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
 
 class RecurrenceSignatureModel(Base):

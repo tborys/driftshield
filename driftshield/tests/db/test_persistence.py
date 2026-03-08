@@ -1,3 +1,4 @@
+import hashlib
 import uuid
 from datetime import datetime, timezone
 
@@ -5,11 +6,15 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from driftshield.core.models import (
-    CanonicalEvent, EventType, RiskClassification,
-    Session as DomainSession, SessionStatus,
-)
 from driftshield.core.analysis.session import analyze_session
+from driftshield.core.models import (
+    CanonicalEvent,
+    EventType,
+    ExplanationPayload,
+    RiskClassification,
+    Session as DomainSession,
+    SessionStatus,
+)
 from driftshield.db.models import (
     Base,
     DecisionNodeModel,
@@ -17,7 +22,7 @@ from driftshield.db.models import (
     SessionModel,
     SessionSignatureModel,
 )
-from driftshield.db.persistence import PersistenceService
+from driftshield.db.persistence import IngestProvenance, PersistenceService
 
 
 @pytest.fixture
@@ -59,6 +64,50 @@ def sample_analysis_result():
     )
     result = analyze_session([event1, event2])
     return result, domain_session
+
+
+def _build_analysis_result() -> tuple:
+    session_id = uuid.uuid4()
+    event1 = CanonicalEvent(
+        id=uuid.uuid4(),
+        session_id=str(session_id),
+        timestamp=datetime.now(timezone.utc),
+        event_type=EventType.TOOL_CALL,
+        agent_id="test-agent",
+        action="read_file",
+        inputs={"path": "/test"},
+        outputs={"content": "data"},
+    )
+    event2 = CanonicalEvent(
+        id=uuid.uuid4(),
+        session_id=str(session_id),
+        timestamp=datetime.now(timezone.utc),
+        event_type=EventType.OUTPUT,
+        agent_id="test-agent",
+        action="respond",
+        parent_event_id=event1.id,
+    )
+    domain_session = DomainSession(
+        id=session_id,
+        agent_id="test-agent",
+        started_at=datetime.now(timezone.utc),
+        status=SessionStatus.COMPLETED,
+    )
+    return analyze_session([event1, event2]), domain_session
+
+
+@pytest.fixture
+def sample_ingest_payload(sample_analysis_result):
+    result, domain_session = sample_analysis_result
+    transcript_bytes = b'{"sessionId":"source-session-123"}\n'
+    provenance = IngestProvenance(
+        transcript_hash=hashlib.sha256(transcript_bytes).hexdigest(),
+        source_session_id="source-session-123",
+        source_path="fixtures/source-session-123.jsonl",
+        parser_version="claude_code@1",
+        ingested_at=datetime(2026, 3, 8, 12, 0, tzinfo=timezone.utc),
+    )
+    return result, domain_session, provenance
 
 
 def test_save_analysis_result(db_session, sample_analysis_result):
@@ -167,3 +216,141 @@ def test_save_persists_recurrence_signature_mapping(db_session):
     assert signatures[0].occurrence_count == 1
     assert len(mappings) == 1
     assert mappings[0].session_id == session_id
+
+
+def test_ingest_persists_transcript_provenance(db_session, sample_ingest_payload):
+    result, domain_session, provenance = sample_ingest_payload
+    service = PersistenceService(db_session)
+
+    outcome = service.ingest(domain_session, result, provenance)
+    db_session.commit()
+
+    assert outcome.status == "created"
+    assert outcome.deduplicated is False
+
+    stored = db_session.get(SessionModel, domain_session.id)
+    assert stored is not None
+    assert stored.transcript_hash == provenance.transcript_hash
+    assert stored.source_session_id == provenance.source_session_id
+    assert stored.source_path == provenance.source_path
+    assert stored.parser_version == provenance.parser_version
+    assert stored.ingested_at is not None
+    assert stored.ingested_at.replace(tzinfo=timezone.utc) == provenance.ingested_at
+
+
+def test_ingest_is_idempotent_and_returns_explicit_dedupe(db_session, sample_ingest_payload):
+    result, domain_session, provenance = sample_ingest_payload
+    service = PersistenceService(db_session)
+
+    first = service.ingest(domain_session, result, provenance)
+    db_session.commit()
+
+    second = service.ingest(domain_session, result, provenance)
+    db_session.commit()
+
+    assert first.status == "created"
+    assert second.status == "deduped"
+    assert second.deduplicated is True
+    assert second.session_id == domain_session.id
+    assert second.total_events == first.total_events
+    assert second.flagged_events == first.flagged_events
+    assert second.has_inflection == first.has_inflection
+
+    sessions = db_session.query(SessionModel).all()
+    nodes = db_session.query(DecisionNodeModel).all()
+    assert len(sessions) == 1
+    assert len(nodes) == len(result.graph.nodes)
+
+
+def test_ingest_allows_reprocessing_when_parser_version_changes(db_session, sample_ingest_payload):
+    result, domain_session, provenance = sample_ingest_payload
+    service = PersistenceService(db_session)
+
+    first = service.ingest(domain_session, result, provenance)
+    db_session.commit()
+
+    second_result, second_session = _build_analysis_result()
+    second_provenance = IngestProvenance(
+        transcript_hash=provenance.transcript_hash,
+        source_session_id=provenance.source_session_id,
+        source_path=provenance.source_path,
+        parser_version="claude_code@2",
+        ingested_at=datetime(2026, 3, 8, 12, 5, tzinfo=timezone.utc),
+    )
+
+    second = service.ingest(second_session, second_result, second_provenance)
+    db_session.commit()
+
+    assert first.status == "created"
+    assert second.status == "created"
+    assert second.deduplicated is False
+    assert second.session_id == second_session.id
+
+    sessions = db_session.query(SessionModel).order_by(SessionModel.parser_version).all()
+    assert len(sessions) == 2
+    assert [session.parser_version for session in sessions] == ["claude_code@1", "claude_code@2"]
+
+
+def test_save_and_load_graph_round_trip_explanations(db_session):
+    session_id = uuid.uuid4()
+    event = CanonicalEvent(
+        id=uuid.uuid4(),
+        session_id=str(session_id),
+        timestamp=datetime.now(timezone.utc),
+        event_type=EventType.TOOL_CALL,
+        agent_id="test-agent",
+        action="review_sections",
+        inputs={"sections": ["intro", "body", "appendix"]},
+        outputs={"reviewed_sections": ["intro", "body"]},
+        risk_classification=RiskClassification(
+            coverage_gap=True,
+            explanations={
+                "coverage_gap": ExplanationPayload(
+                    reason="Output referenced fewer items than were provided in the input.",
+                    confidence=0.86,
+                    evidence_refs=["inputs.sections", "outputs.reviewed_sections"],
+                )
+            },
+        ),
+    )
+    session = DomainSession(
+        id=session_id,
+        agent_id="test-agent",
+        started_at=datetime.now(timezone.utc),
+        status=SessionStatus.COMPLETED,
+    )
+    result = analyze_session([event], historical_recurrence_counts={})
+
+    service = PersistenceService(db_session)
+    service.save(session, result)
+    db_session.commit()
+
+    saved_node = db_session.query(DecisionNodeModel).filter(DecisionNodeModel.session_id == session_id).one()
+    assert saved_node.risk_explanations == {
+        "coverage_gap": {
+            "reason": "Output referenced fewer items than were provided in the input.",
+            "confidence": 0.86,
+            "evidence_refs": ["inputs.sections", "outputs.reviewed_sections"],
+        }
+    }
+    assert saved_node.inflection_explanation == {
+        "reason": "Selected as the inflection point because it is the closest flagged node on the path to the failure node.",
+        "confidence": 1.0,
+        "evidence_refs": [f"node:{event.id}", "risk:coverage_gap"],
+    }
+
+    graph = service.load_graph(session_id)
+
+    assert graph is not None
+    loaded_event = graph.nodes[0].event
+    assert loaded_event.risk_classification is not None
+    assert loaded_event.risk_classification.explanations["coverage_gap"] == ExplanationPayload(
+        reason="Output referenced fewer items than were provided in the input.",
+        confidence=0.86,
+        evidence_refs=["inputs.sections", "outputs.reviewed_sections"],
+    )
+    assert loaded_event.metadata["inflection_explanation"] == {
+        "reason": "Selected as the inflection point because it is the closest flagged node on the path to the failure node.",
+        "confidence": 1.0,
+        "evidence_refs": [f"node:{event.id}", "risk:coverage_gap"],
+    }

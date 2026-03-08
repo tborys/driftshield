@@ -12,7 +12,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
 from driftshield.core.models import (
-    CanonicalEvent, EventType, Session as DomainSession, SessionStatus,
+    CanonicalEvent, EventType, ExplanationPayload, RiskClassification, Session as DomainSession, SessionStatus,
 )
 from driftshield.core.analysis.session import analyze_session
 from driftshield.db.models import Base
@@ -67,3 +67,53 @@ def test_roundtrip_save_and_load(pg_session):
     graph = service.load_graph(session_id)
     assert len(graph.nodes) == 1
     assert graph.nodes[0].action == "test_action"
+
+
+def test_roundtrip_save_and_load_explanations(pg_session):
+    session_id = uuid.uuid4()
+    event = CanonicalEvent(
+        id=uuid.uuid4(),
+        session_id=str(session_id),
+        timestamp=datetime.now(timezone.utc),
+        event_type=EventType.TOOL_CALL,
+        agent_id="integration-test",
+        action="review_sections",
+        inputs={"sections": ["intro", "body", "appendix"]},
+        outputs={"reviewed_sections": ["intro", "body"]},
+        risk_classification=RiskClassification(
+            coverage_gap=True,
+            explanations={
+                "coverage_gap": ExplanationPayload(
+                    reason="Output referenced fewer items than were provided in the input.",
+                    confidence=0.86,
+                    evidence_refs=["inputs.sections", "outputs.reviewed_sections"],
+                )
+            },
+        ),
+    )
+    domain_session = DomainSession(
+        id=session_id,
+        agent_id="integration-test",
+        started_at=datetime.now(timezone.utc),
+        status=SessionStatus.COMPLETED,
+    )
+    result = analyze_session([event])
+    service = PersistenceService(pg_session)
+    service.save(domain_session, result)
+    pg_session.commit()
+
+    row = pg_session.execute(
+        text("SELECT risk_explanations, inflection_explanation FROM decision_nodes WHERE session_id = :session_id"),
+        {"session_id": session_id},
+    ).one()
+    assert row.risk_explanations["coverage_gap"]["reason"] == "Output referenced fewer items than were provided in the input."
+    assert row.inflection_explanation["reason"] == "Selected as the inflection point because it is the closest flagged node on the path to the failure node."
+
+    graph = service.load_graph(session_id)
+    assert graph is not None
+    assert graph.nodes[0].event.risk_classification is not None
+    assert graph.nodes[0].event.risk_classification.explanations["coverage_gap"] == ExplanationPayload(
+        reason="Output referenced fewer items than were provided in the input.",
+        confidence=0.86,
+        evidence_refs=["inputs.sections", "outputs.reviewed_sections"],
+    )

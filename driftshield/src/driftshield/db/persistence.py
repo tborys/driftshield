@@ -1,27 +1,91 @@
 import uuid
+from dataclasses import dataclass
+from datetime import datetime
 
 from sqlalchemy.orm import Session as DBSession
 
-from driftshield.core.models import (
-    CanonicalEvent, EventType, RiskClassification,
-    Session as DomainSession, SessionStatus,
-)
 from driftshield.core.analysis.session import AnalysisResult
-from driftshield.core.graph.models import LineageGraph
 from driftshield.core.graph.builder import build_graph
+from driftshield.core.graph.models import LineageGraph
+from driftshield.core.models import (
+    CanonicalEvent,
+    EventType,
+    ExplanationPayload,
+    RiskClassification,
+    Session as DomainSession,
+    SessionStatus,
+)
 from driftshield.db.models import (
-    SessionModel,
     DecisionNodeModel,
     RecurrenceSignatureModel,
+    SessionModel,
     SessionSignatureModel,
 )
+
+
+@dataclass(frozen=True)
+class IngestProvenance:
+    transcript_hash: str
+    source_session_id: str | None
+    source_path: str | None
+    parser_version: str
+    ingested_at: datetime
+
+
+@dataclass(frozen=True)
+class IngestOutcome:
+    session_id: uuid.UUID
+    total_events: int
+    flagged_events: int
+    has_inflection: bool
+    status: str
+    deduplicated: bool
 
 
 class PersistenceService:
     def __init__(self, db: DBSession):
         self._db = db
 
-    def save(self, session: DomainSession, result: AnalysisResult) -> SessionModel:
+    def ingest(
+        self,
+        session: DomainSession,
+        result: AnalysisResult,
+        provenance: IngestProvenance,
+    ) -> IngestOutcome:
+        existing = self.get_ingest_outcome(provenance)
+        if existing is not None:
+            return existing
+
+        self.save(session, result, provenance=provenance)
+        return IngestOutcome(
+            session_id=session.id,
+            total_events=result.total_events,
+            flagged_events=result.flagged_events,
+            has_inflection=result.inflection_node is not None,
+            status="created",
+            deduplicated=False,
+        )
+
+    def get_ingest_outcome(self, provenance: IngestProvenance) -> IngestOutcome | None:
+        existing = (
+            self._db.query(SessionModel)
+            .filter(
+                SessionModel.transcript_hash == provenance.transcript_hash,
+                SessionModel.parser_version == provenance.parser_version,
+            )
+            .one_or_none()
+        )
+        if existing is None:
+            return None
+
+        return self._outcome_for_existing_session(existing)
+
+    def save(
+        self,
+        session: DomainSession,
+        result: AnalysisResult,
+        provenance: IngestProvenance | None = None,
+    ) -> SessionModel:
         session_model = SessionModel(
             id=session.id,
             external_id=getattr(session, "external_id", None),
@@ -30,12 +94,18 @@ class PersistenceService:
             ended_at=getattr(session, "ended_at", None),
             status=session.status.value,
             metadata_json=getattr(session, "metadata", None),
+            transcript_hash=provenance.transcript_hash if provenance else None,
+            source_session_id=provenance.source_session_id if provenance else None,
+            source_path=provenance.source_path if provenance else None,
+            parser_version=provenance.parser_version if provenance else None,
+            ingested_at=provenance.ingested_at if provenance else None,
         )
         self._db.add(session_model)
         self._db.flush()
 
         for node in result.graph.nodes:
             risk = node.event.risk_classification or RiskClassification()
+            is_inflection_node = result.inflection_node is not None and node.id == result.inflection_node.id
             node_model = DecisionNodeModel(
                 id=node.id,
                 session_id=session.id,
@@ -52,9 +122,12 @@ class PersistenceService:
                 constraint_violation=risk.constraint_violation,
                 context_contamination=risk.context_contamination,
                 coverage_gap=risk.coverage_gap,
-                is_inflection_node=(
-                    result.inflection_node is not None
-                    and node.id == result.inflection_node.id
+                risk_explanations=risk.explanations_as_dict() or None,
+                is_inflection_node=is_inflection_node,
+                inflection_explanation=(
+                    result.inflection_explanation.to_dict()
+                    if is_inflection_node and result.inflection_explanation is not None
+                    else None
                 ),
             )
             self._db.add(node_model)
@@ -129,8 +202,60 @@ class PersistenceService:
         sessions = query.offset(offset).limit(per_page).all()
         return sessions, total
 
+    def _count_nodes(self, session_id: uuid.UUID) -> int:
+        return (
+            self._db.query(DecisionNodeModel)
+            .filter(DecisionNodeModel.session_id == session_id)
+            .count()
+        )
+
+    def _count_flagged_nodes(self, session_id: uuid.UUID) -> int:
+        nodes = (
+            self._db.query(DecisionNodeModel)
+            .filter(DecisionNodeModel.session_id == session_id)
+            .all()
+        )
+        return sum(
+            1
+            for node in nodes
+            if any(
+                [
+                    node.assumption_mutation,
+                    node.policy_divergence,
+                    node.constraint_violation,
+                    node.context_contamination,
+                    node.coverage_gap,
+                ]
+            )
+        )
+
+    def _has_inflection(self, session_id: uuid.UUID) -> bool:
+        return (
+            self._db.query(DecisionNodeModel)
+            .filter(
+                DecisionNodeModel.session_id == session_id,
+                DecisionNodeModel.is_inflection_node.is_(True),
+            )
+            .count()
+            > 0
+        )
+
+    def _outcome_for_existing_session(self, session: SessionModel) -> IngestOutcome:
+        return IngestOutcome(
+            session_id=session.id,
+            total_events=self._count_nodes(session.id),
+            flagged_events=self._count_flagged_nodes(session.id),
+            has_inflection=self._has_inflection(session.id),
+            status="deduped",
+            deduplicated=True,
+        )
+
 
 def _node_model_to_event(node: DecisionNodeModel, session_id: uuid.UUID) -> CanonicalEvent:
+    metadata = dict(node.metadata_json or {})
+    if node.inflection_explanation is not None:
+        metadata["inflection_explanation"] = node.inflection_explanation
+
     return CanonicalEvent(
         id=node.id,
         session_id=str(session_id),
@@ -141,12 +266,13 @@ def _node_model_to_event(node: DecisionNodeModel, session_id: uuid.UUID) -> Cano
         parent_event_id=node.parent_node_id,
         inputs=node.inputs,
         outputs=node.outputs,
-        metadata=node.metadata_json,
+        metadata=metadata,
         risk_classification=RiskClassification(
             assumption_mutation=node.assumption_mutation,
             policy_divergence=node.policy_divergence,
             constraint_violation=node.constraint_violation,
             context_contamination=node.context_contamination,
             coverage_gap=node.coverage_gap,
+            explanations=RiskClassification.explanations_from_dict(node.risk_explanations),
         ),
     )

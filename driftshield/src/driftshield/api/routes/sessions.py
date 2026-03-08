@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session as DBSession
 from driftshield.api.auth import require_api_key
 from driftshield.api.dependencies import get_db
 from driftshield.api.schemas import (
+    ExplanationPayloadResponse,
     GraphEdgeResponse,
     GraphNodeResponse,
     GraphResponse,
@@ -30,10 +31,17 @@ router = APIRouter()
 
 def _count_risks(nodes: list[DecisionNodeModel]) -> int:
     return sum(
-        1 for n in nodes if any([
-            n.assumption_mutation, n.policy_divergence, n.constraint_violation,
-            n.context_contamination, n.coverage_gap,
-        ])
+        1
+        for node in nodes
+        if any(
+            [
+                node.assumption_mutation,
+                node.policy_divergence,
+                node.constraint_violation,
+                node.context_contamination,
+                node.coverage_gap,
+            ]
+        )
     )
 
 
@@ -57,6 +65,35 @@ def _recurrence_summary(db: DBSession, session_id: uuid.UUID) -> tuple[str | Non
     return level, probability or sig.severity, sig.occurrence_count
 
 
+def _risk_flags_for_node(node: DecisionNodeModel) -> list[str]:
+    flags = []
+    if node.assumption_mutation:
+        flags.append("assumption_mutation")
+    if node.policy_divergence:
+        flags.append("policy_divergence")
+    if node.constraint_violation:
+        flags.append("constraint_violation")
+    if node.context_contamination:
+        flags.append("context_contamination")
+    if node.coverage_gap:
+        flags.append("coverage_gap")
+    return flags
+
+
+def _explanation_payload(payload: dict | None) -> ExplanationPayloadResponse | None:
+    if payload is None:
+        return None
+    return ExplanationPayloadResponse(**payload)
+
+
+def _risk_explanations_for_node(node: DecisionNodeModel) -> dict[str, ExplanationPayloadResponse]:
+    payload = node.risk_explanations or {}
+    return {
+        flag_name: ExplanationPayloadResponse(**explanation)
+        for flag_name, explanation in payload.items()
+    }
+
+
 @router.get("/api/sessions")
 def list_sessions(
     page: int = Query(default=1, ge=1),
@@ -69,29 +106,31 @@ def list_sessions(
     pages = math.ceil(total / per_page) if total > 0 else 0
 
     items = []
-    for s in sessions:
+    for session in sessions:
         nodes = db.query(DecisionNodeModel).filter(
-            DecisionNodeModel.session_id == s.id
+            DecisionNodeModel.session_id == session.id
         ).all()
         risk_count = _count_risks(nodes)
-        has_inflection = any(n.is_inflection_node for n in nodes)
-        recurrence_level, recurrence_probability, recurrence_count = _recurrence_summary(db, s.id)
-        items.append(SessionSummary(
-            id=s.id,
-            agent_id=s.agent_id,
-            external_id=s.external_id,
-            status=s.status,
-            started_at=s.started_at,
-            ended_at=s.ended_at,
-            risk_flag_count=risk_count,
-            has_inflection=has_inflection,
-            recurrence_level=recurrence_level,
-            recurrence_probability=recurrence_probability,
-            recurrence_count=recurrence_count,
-        ))
+        has_inflection = any(node.is_inflection_node for node in nodes)
+        recurrence_level, recurrence_probability, recurrence_count = _recurrence_summary(db, session.id)
+        items.append(
+            SessionSummary(
+                id=session.id,
+                agent_id=session.agent_id,
+                external_id=session.external_id,
+                status=session.status,
+                started_at=session.started_at,
+                ended_at=session.ended_at,
+                risk_flag_count=risk_count,
+                has_inflection=has_inflection,
+                recurrence_level=recurrence_level,
+                recurrence_probability=recurrence_probability,
+                recurrence_count=recurrence_count,
+            )
+        )
 
     return PaginatedResponse(
-        items=[i.model_dump(mode="json") for i in items],
+        items=[item.model_dump(mode="json") for item in items],
         total=total,
         page=page,
         per_page=per_page,
@@ -113,7 +152,6 @@ def get_session(
         DecisionNodeModel.session_id == session_id
     ).all()
     risk_count = _count_risks(nodes)
-
     recurrence_level, recurrence_probability, recurrence_count = _recurrence_summary(db, session_id)
 
     return SessionDetail(
@@ -124,28 +162,13 @@ def get_session(
         started_at=session.started_at,
         ended_at=session.ended_at,
         risk_flag_count=risk_count,
-        has_inflection=any(n.is_inflection_node for n in nodes),
+        has_inflection=any(node.is_inflection_node for node in nodes),
         recurrence_level=recurrence_level,
         recurrence_probability=recurrence_probability,
         recurrence_count=recurrence_count,
         total_events=len(nodes),
         flagged_events=risk_count,
     )
-
-
-def _risk_flags_for_node(n: DecisionNodeModel) -> list[str]:
-    flags = []
-    if n.assumption_mutation:
-        flags.append("assumption_mutation")
-    if n.policy_divergence:
-        flags.append("policy_divergence")
-    if n.constraint_violation:
-        flags.append("constraint_violation")
-    if n.context_contamination:
-        flags.append("context_contamination")
-    if n.coverage_gap:
-        flags.append("coverage_gap")
-    return flags
 
 
 @router.get("/api/sessions/{session_id}/graph")
@@ -169,22 +192,26 @@ def get_session_graph(
 
     graph_nodes = []
     edges = []
-    for n in nodes:
-        graph_nodes.append(GraphNodeResponse(
-            id=n.id,
-            event_type=n.event_type,
-            action=n.action,
-            sequence_num=n.sequence_num,
-            risk_flags=_risk_flags_for_node(n),
-            is_inflection=n.is_inflection_node,
-            inputs=n.inputs,
-            outputs=n.outputs,
-            metadata=n.metadata_json,
-            parent_node_id=n.parent_node_id,
-        ))
+    for node in nodes:
+        graph_nodes.append(
+            GraphNodeResponse(
+                id=node.id,
+                event_type=node.event_type,
+                action=node.action,
+                sequence_num=node.sequence_num,
+                risk_flags=_risk_flags_for_node(node),
+                risk_explanations=_risk_explanations_for_node(node),
+                is_inflection=node.is_inflection_node,
+                inflection_explanation=_explanation_payload(node.inflection_explanation),
+                inputs=node.inputs,
+                outputs=node.outputs,
+                metadata=node.metadata_json,
+                parent_node_id=node.parent_node_id,
+            )
+        )
 
-        if n.parent_node_id is not None:
-            edges.append(GraphEdgeResponse(source=n.parent_node_id, target=n.id))
+        if node.parent_node_id is not None:
+            edges.append(GraphEdgeResponse(source=node.parent_node_id, target=node.id))
 
     return GraphResponse(session_id=session_id, nodes=graph_nodes, edges=edges)
 
@@ -203,19 +230,19 @@ def list_session_validations(
     rows = service.list_validations(session_id=session_id)
     return [
         ValidationResponse(
-            id=r.id,
-            session_id=r.session_id,
-            target_type=r.target_type,
-            target_ref=r.target_ref,
-            verdict=r.verdict,
-            confidence=r.confidence,
-            reviewer=r.reviewer,
-            notes=r.notes,
-            metadata_json=r.metadata_json,
-            shareable=r.shareable,
-            created_at=r.created_at,
+            id=row.id,
+            session_id=row.session_id,
+            target_type=row.target_type,
+            target_ref=row.target_ref,
+            verdict=row.verdict,
+            confidence=row.confidence,
+            reviewer=row.reviewer,
+            notes=row.notes,
+            metadata_json=row.metadata_json,
+            shareable=row.shareable,
+            created_at=row.created_at,
         ).model_dump(mode="json")
-        for r in rows
+        for row in rows
     ]
 
 
