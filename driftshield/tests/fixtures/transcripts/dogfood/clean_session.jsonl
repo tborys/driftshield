@@ -1,0 +1,4 @@
+{"sessionId":"dogfood-clean-001","type":"assistant","timestamp":"2026-03-01T08:00:00Z","message":{"model":"claude-opus-4-5","content":[{"type":"tool_use","id":"tool_clean_1","name":"extract_sections","input":{"sections":["intro","body","summary"]}}]}}
+{"sessionId":"dogfood-clean-001","type":"user","timestamp":"2026-03-01T08:00:01Z","message":{"content":[{"type":"tool_result","tool_use_id":"tool_clean_1","content":{"processed_sections":["intro","body","summary"]}}]}}
+{"sessionId":"dogfood-clean-001","type":"assistant","timestamp":"2026-03-01T08:00:02Z","message":{"model":"claude-opus-4-5","content":[{"type":"tool_use","id":"tool_clean_2","name":"draft_summary","input":{"topic":"status update"}}]}}
+{"sessionId":"dogfood-clean-001","type":"user","timestamp":"2026-03-01T08:00:03Z","message":{"content":[{"type":"tool_result","tool_use_id":"tool_clean_2","content":{"summary":"All sections processed"}}]}}

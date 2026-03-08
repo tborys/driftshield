@@ -1,0 +1,93 @@
+{
+  "fixtures": [
+    {
+      "name": "clean_session",
+      "path": "dogfood/clean_session.jsonl",
+      "category": "clean",
+      "expected": {
+        "event_count": 2,
+        "event_types": {"TOOL_CALL": 2},
+        "has_handoff": false,
+        "risk_summary": {
+          "coverage_gap": 0,
+          "assumption_mutation": 0,
+          "context_contamination": 0,
+          "policy_divergence": 0,
+          "constraint_violation": 0
+        }
+      }
+    },
+    {
+      "name": "assumption_mutation_session",
+      "path": "dogfood/assumption_mutation_session.jsonl",
+      "category": "assumption_mutation",
+      "expected": {
+        "event_count": 2,
+        "event_types": {"TOOL_CALL": 2},
+        "has_handoff": false,
+        "risk_summary": {
+          "coverage_gap": 0,
+          "assumption_mutation": 0,
+          "context_contamination": 0,
+          "policy_divergence": 0,
+          "constraint_violation": 0
+        }
+      },
+      "notes": "Labelled for future assumption-mutation heuristic coverage."
+    },
+    {
+      "name": "policy_divergence_session",
+      "path": "dogfood/policy_divergence_session.jsonl",
+      "category": "policy_divergence",
+      "expected": {
+        "event_count": 2,
+        "event_types": {"TOOL_CALL": 2},
+        "has_handoff": false,
+        "risk_summary": {
+          "coverage_gap": 0,
+          "assumption_mutation": 0,
+          "context_contamination": 0,
+          "policy_divergence": 0,
+          "constraint_violation": 0
+        }
+      },
+      "notes": "Labelled for future policy-divergence heuristic coverage."
+    },
+    {
+      "name": "constraint_violation_session",
+      "path": "dogfood/constraint_violation_session.jsonl",
+      "category": "constraint_violation",
+      "expected": {
+        "event_count": 2,
+        "event_types": {"TOOL_CALL": 2},
+        "has_handoff": false,
+        "risk_summary": {
+          "coverage_gap": 0,
+          "assumption_mutation": 0,
+          "context_contamination": 0,
+          "policy_divergence": 0,
+          "constraint_violation": 0
+        }
+      },
+      "notes": "Labelled for future constraint-violation heuristic coverage."
+    },
+    {
+      "name": "multi_flag_session",
+      "path": "dogfood/multi_flag_session.jsonl",
+      "category": "multi_flag",
+      "expected": {
+        "event_count": 2,
+        "event_types": {"TOOL_CALL": 2},
+        "has_handoff": false,
+        "risk_summary": {
+          "coverage_gap": 1,
+          "assumption_mutation": 0,
+          "context_contamination": 0,
+          "policy_divergence": 0,
+          "constraint_violation": 0
+        }
+      },
+      "notes": "Current parser/risk stack deterministically surfaces coverage_gap only."
+    }
+  ]
+}

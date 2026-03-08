@@ -1,0 +1,4 @@
+{"sessionId":"dogfood-assumption-001","type":"assistant","timestamp":"2026-03-01T09:00:00Z","message":{"model":"claude-opus-4-5","content":[{"type":"tool_use","id":"tool_assume_1","name":"derive_requirements","input":{"brief":"Prepare rollout plan"}}]}}
+{"sessionId":"dogfood-assumption-001","type":"user","timestamp":"2026-03-01T09:00:01Z","message":{"content":[{"type":"tool_result","tool_use_id":"tool_assume_1","content":{"notes":"Assumed weekday launch"}}]}}
+{"sessionId":"dogfood-assumption-001","type":"assistant","timestamp":"2026-03-01T09:00:02Z","message":{"model":"claude-opus-4-5","content":[{"type":"tool_use","id":"tool_assume_2","name":"plan_schedule","input":{"assumption":"weekday launch"}}]}}
+{"sessionId":"dogfood-assumption-001","type":"user","timestamp":"2026-03-01T09:00:03Z","message":{"content":[{"type":"tool_result","tool_use_id":"tool_assume_2","content":{"plan":"Prepared schedule"}}]}}

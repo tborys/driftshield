@@ -1,0 +1,4 @@
+{"sessionId":"dogfood-multiflag-001","type":"assistant","timestamp":"2026-03-01T12:00:00Z","message":{"model":"claude-opus-4-5","content":[{"type":"tool_use","id":"tool_multi_1","name":"collect_discounts","input":{"category":"A"}}]}}
+{"sessionId":"dogfood-multiflag-001","type":"user","timestamp":"2026-03-01T12:00:01Z","message":{"content":[{"type":"tool_result","tool_use_id":"tool_multi_1","content":{"discount_tier":"gold","discount_category":"A"}}]}}
+{"sessionId":"dogfood-multiflag-001","type":"assistant","timestamp":"2026-03-01T12:00:02Z","message":{"model":"claude-opus-4-5","content":[{"type":"tool_use","id":"tool_multi_2","name":"evaluate_items","input":{"items":["A","B","C","D"],"product_category":"B","customer_discount_tier":"gold"}}]}}
+{"sessionId":"dogfood-multiflag-001","type":"user","timestamp":"2026-03-01T12:00:03Z","message":{"content":[{"type":"tool_result","tool_use_id":"tool_multi_2","content":{"processed_items":["A","C"],"final_price":80}}]}}

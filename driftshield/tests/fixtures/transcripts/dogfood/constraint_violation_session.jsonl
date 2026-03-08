@@ -1,0 +1,4 @@
+{"sessionId":"dogfood-constraint-001","type":"assistant","timestamp":"2026-03-01T11:00:00Z","message":{"model":"claude-opus-4-5","content":[{"type":"tool_use","id":"tool_constraint_1","name":"read_constraints","input":{"limit":"token_budget"}}]}}
+{"sessionId":"dogfood-constraint-001","type":"user","timestamp":"2026-03-01T11:00:01Z","message":{"content":[{"type":"tool_result","tool_use_id":"tool_constraint_1","content":{"limit":"4000"}}]}}
+{"sessionId":"dogfood-constraint-001","type":"assistant","timestamp":"2026-03-01T11:00:02Z","message":{"model":"claude-opus-4-5","content":[{"type":"tool_use","id":"tool_constraint_2","name":"prepare_response","input":{"target":"brief response"}}]}}
+{"sessionId":"dogfood-constraint-001","type":"user","timestamp":"2026-03-01T11:00:03Z","message":{"content":[{"type":"tool_result","tool_use_id":"tool_constraint_2","content":{"status":"response prepared"}}]}}
