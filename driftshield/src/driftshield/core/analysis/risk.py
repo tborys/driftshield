@@ -1,6 +1,7 @@
 """Risk classification heuristics for detecting decision failures."""
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 
 from driftshield.core.models import CanonicalEvent, RiskClassification
 
@@ -38,8 +39,13 @@ class RiskHeuristic(ABC):
 class RiskAnalyzer:
     """Orchestrates running risk heuristics on events."""
 
-    def __init__(self, heuristics: list[RiskHeuristic]):
+    def __init__(
+        self,
+        heuristics: list[RiskHeuristic],
+        context_builders: list[Callable[[list[CanonicalEvent]], dict[str, object]]] | None = None,
+    ):
         self.heuristics = heuristics
+        self.context_builders = context_builders or []
 
     def analyze(self, events: list[CanonicalEvent]) -> list[CanonicalEvent]:
         """
@@ -59,6 +65,8 @@ class RiskAnalyzer:
                 "previous_outputs": list(previous_outputs),
                 "previous_events": list(previous_events),
             }
+            for builder in self.context_builders:
+                context.update(builder(list(previous_events)))
 
             merged_risk = self._run_heuristics(event, context)
 

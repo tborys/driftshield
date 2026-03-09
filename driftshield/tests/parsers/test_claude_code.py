@@ -73,6 +73,20 @@ class TestClaudeCodeParser:
         assert events[0].action == "assistant_narrative"
         assert events[0].outputs.get("text") == "I will inspect this first."
 
+    def test_parses_plain_user_messages_into_user_events(self):
+        parser = ClaudeCodeParser()
+        content = "\n".join([
+            '{"sessionId":"s1","type":"user","timestamp":"2026-03-01T10:00:00Z","message":{"role":"user","content":"Please delete the build directory."}}'
+        ])
+
+        events = parser.parse(content)
+
+        assert len(events) == 1
+        assert events[0].event_type == EventType.OUTPUT
+        assert events[0].agent_id == "user"
+        assert events[0].action == "user_message"
+        assert events[0].outputs.get("text") == "Please delete the build directory."
+
     def test_detects_handoff_events_from_task_spawn(self):
         parser = ClaudeCodeParser()
         content = "\n".join([

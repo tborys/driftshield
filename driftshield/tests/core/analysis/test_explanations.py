@@ -123,3 +123,35 @@ def test_assumption_mutation_explanation_uses_stable_payload_shape() -> None:
         confidence=0.8,
         evidence_refs=["event:1.outputs.result.notes", "event:2.inputs.assumption", "event:2.action:plan_schedule"],
     )
+
+
+def test_policy_divergence_explanation_uses_stable_payload_shape() -> None:
+    transcript = Path(__file__).parent.parent.parent / "fixtures" / "transcripts" / "dogfood" / "policy_divergence_session.jsonl"
+    events = ClaudeCodeParser().parse_file(str(transcript))
+
+    result = analyze_session(events)
+
+    flagged_event = result.events[-1]
+    assert flagged_event.risk_classification is not None
+    assert flagged_event.risk_classification.policy_divergence is True
+    assert flagged_event.risk_classification.explanations["policy_divergence"] == ExplanationPayload(
+        reason="Action conflicts with a loaded project policy rule.",
+        confidence=0.93,
+        evidence_refs=["metadata.tool_use_id", "inputs.command", "event:1.outputs.text"],
+    )
+
+
+def test_constraint_violation_explanation_uses_stable_payload_shape() -> None:
+    transcript = Path(__file__).parent.parent.parent / "fixtures" / "transcripts" / "dogfood" / "constraint_violation_session.jsonl"
+    events = ClaudeCodeParser().parse_file(str(transcript))
+
+    result = analyze_session(events)
+
+    flagged_event = result.events[-1]
+    assert flagged_event.risk_classification is not None
+    assert flagged_event.risk_classification.constraint_violation is True
+    assert flagged_event.risk_classification.explanations["constraint_violation"] == ExplanationPayload(
+        reason="Destructive action occurred without required explicit confirmation.",
+        confidence=0.95,
+        evidence_refs=["metadata.tool_use_id", "inputs.command", "event:1.outputs.text"],
+    )

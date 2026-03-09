@@ -106,6 +106,34 @@ class TestRiskAnalyzer:
         assert "previous_outputs" in captured_context
         assert len(captured_context["previous_outputs"]) >= 1
 
+    def test_analyzer_merges_context_from_context_builders(self):
+        """Analyzer exposes extra derived context to heuristics."""
+        captured_context = {}
+
+        class ContextCapture(RiskHeuristic):
+            @property
+            def name(self) -> str:
+                return "capture"
+
+            def check(self, event: CanonicalEvent, context: dict) -> RiskClassification | None:
+                captured_context.update(context)
+                return None
+
+        event1 = make_event(outputs={"text": "Never force push shared branches."})
+        event2 = make_event(action="bash", inputs={"command": "git push --force origin main"})
+
+        analyzer = RiskAnalyzer(
+            heuristics=[ContextCapture()],
+            context_builders=[
+                lambda previous_events: {
+                    "project_rules": [{"rule_type": "forbid_force_push"}] if previous_events else []
+                }
+            ],
+        )
+        analyzer.analyze([event1, event2])
+
+        assert captured_context["project_rules"] == [{"rule_type": "forbid_force_push"}]
+
 
 class TestCoverageGapHeuristic:
     """Tests for coverage gap detection."""

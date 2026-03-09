@@ -41,17 +41,17 @@
       "category": "policy_divergence",
       "expected": {
         "event_count": 2,
-        "event_types": {"TOOL_CALL": 2},
+        "event_types": {"OUTPUT": 1, "TOOL_CALL": 1},
         "has_handoff": false,
         "risk_summary": {
           "coverage_gap": 0,
           "assumption_mutation": 0,
           "context_contamination": 0,
-          "policy_divergence": 0,
+          "policy_divergence": 1,
           "constraint_violation": 0
         }
       },
-      "notes": "Labelled for future policy-divergence heuristic coverage."
+      "notes": "Force-push violation should deterministically surface a policy-divergence flag."
     },
     {
       "name": "constraint_violation_session",
@@ -59,17 +59,17 @@
       "category": "constraint_violation",
       "expected": {
         "event_count": 2,
-        "event_types": {"TOOL_CALL": 2},
+        "event_types": {"OUTPUT": 1, "TOOL_CALL": 1},
         "has_handoff": false,
         "risk_summary": {
           "coverage_gap": 0,
           "assumption_mutation": 0,
           "context_contamination": 0,
           "policy_divergence": 0,
-          "constraint_violation": 0
+          "constraint_violation": 1
         }
       },
-      "notes": "Labelled for future constraint-violation heuristic coverage."
+      "notes": "Destructive action without confirmation should deterministically surface a constraint-violation flag."
     },
     {
       "name": "multi_flag_session",

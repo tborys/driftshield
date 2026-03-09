@@ -111,6 +111,18 @@ class ClaudeCodeParser:
                 message = entry["message"]
                 content_items = message.get("content", [])
 
+                if isinstance(content_items, str):
+                    text_event = self._create_user_message_event(
+                        text=content_items,
+                        entry=entry,
+                        session_id=session_id or "unknown",
+                        parent_id=prev_event_id,
+                    )
+                    if text_event is not None:
+                        events.append(text_event)
+                        prev_event_id = text_event.id
+                    continue
+
                 if not isinstance(content_items, list):
                     continue
 
@@ -128,6 +140,16 @@ class ClaudeCodeParser:
                                         "is_error": item.get("is_error", False),
                                     }
                                     break
+                    elif item.get("type") == "text" and item.get("text"):
+                        text_event = self._create_user_message_event(
+                            text=item["text"],
+                            entry=entry,
+                            session_id=session_id or "unknown",
+                            parent_id=prev_event_id,
+                        )
+                        if text_event is not None:
+                            events.append(text_event)
+                            prev_event_id = text_event.id
 
         return events
 
@@ -190,6 +212,33 @@ class ClaudeCodeParser:
             metadata={
                 "semantic_action_category": "handoff" if event_type == EventType.HANDOFF else "reasoning",
                 "raw_action": "assistant_text",
+            },
+        )
+
+    def _create_user_message_event(
+        self,
+        text: str,
+        entry: dict,
+        session_id: str,
+        parent_id: UUID | None,
+    ) -> CanonicalEvent | None:
+        cleaned = text.strip()
+        if not cleaned:
+            return None
+
+        return CanonicalEvent(
+            id=uuid4(),
+            session_id=session_id,
+            timestamp=self._parse_timestamp(entry.get("timestamp")),
+            event_type=EventType.OUTPUT,
+            agent_id="user",
+            action="user_message",
+            parent_event_id=parent_id,
+            inputs={},
+            outputs={"text": cleaned},
+            metadata={
+                "semantic_action_category": "user_input",
+                "raw_action": "user_text",
             },
         )
 

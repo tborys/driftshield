@@ -5,7 +5,10 @@ from dataclasses import dataclass
 from driftshield.core.analysis.heuristics import (
     AssumptionMutationHeuristic,
     CoverageGapHeuristic,
+    ConstraintViolationHeuristic,
     ContextContaminationHeuristic,
+    PolicyDivergenceHeuristic,
+    load_analysis_context,
 )
 from driftshield.core.analysis.recurrence import RecurrenceAssessment, RecurrenceEngine
 from driftshield.core.analysis.risk import RiskAnalyzer
@@ -88,8 +91,11 @@ def analyze_session(
         heuristics=[
             CoverageGapHeuristic(),
             AssumptionMutationHeuristic(),
+            PolicyDivergenceHeuristic(),
+            ConstraintViolationHeuristic(),
             ContextContaminationHeuristic(),
-        ]
+        ],
+        context_builders=[load_analysis_context],
     )
     analyzed_events = analyzer.analyze(events)
     graph = build_graph(analyzed_events, session_id=session_id)

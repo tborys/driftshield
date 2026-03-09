@@ -1,4 +1,2 @@
-{"sessionId":"dogfood-policy-001","type":"assistant","timestamp":"2026-03-01T10:00:00Z","message":{"model":"claude-opus-4-5","content":[{"type":"tool_use","id":"tool_policy_1","name":"lookup_policy","input":{"policy":"deployment_policy_v3"}}]}}
-{"sessionId":"dogfood-policy-001","type":"user","timestamp":"2026-03-01T10:00:01Z","message":{"content":[{"type":"tool_result","tool_use_id":"tool_policy_1","content":{"policy":"approval required"}}]}}
-{"sessionId":"dogfood-policy-001","type":"assistant","timestamp":"2026-03-01T10:00:02Z","message":{"model":"claude-opus-4-5","content":[{"type":"tool_use","id":"tool_policy_2","name":"draft_action","input":{"intent":"expedite deployment"}}]}}
-{"sessionId":"dogfood-policy-001","type":"user","timestamp":"2026-03-01T10:00:03Z","message":{"content":[{"type":"tool_result","tool_use_id":"tool_policy_2","content":{"decision":"drafted action"}}]}}
+{"sessionId":"dogfood-policy-001","type":"assistant","timestamp":"2026-03-01T10:00:00Z","message":{"model":"claude-opus-4-5","content":[{"type":"text","text":"Project policy: never force push shared branches."}]}}
+{"sessionId":"dogfood-policy-001","type":"assistant","timestamp":"2026-03-01T10:00:01Z","message":{"model":"claude-opus-4-5","content":[{"type":"tool_use","id":"tool_policy_2","name":"bash","input":{"command":"git push --force origin main"}}]}}

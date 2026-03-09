@@ -201,6 +201,88 @@ class AssumptionMutationHeuristic(RiskHeuristic):
         return flattened
 
 
+class PolicyDivergenceHeuristic(RiskHeuristic):
+    """Detect actions that contradict loaded project rules."""
+
+    READ_ONLY_ACTIONS = {"read", "grep", "glob", "ls"}
+
+    @property
+    def name(self) -> str:
+        return "policy_divergence"
+
+    def check(self, event: CanonicalEvent, context: dict) -> RiskClassification | None:
+        project_rules = context.get("project_rules", [])
+        if not project_rules or event.action.lower() in self.READ_ONLY_ACTIONS:
+            return None
+
+        command = _normalise_text(event.inputs.get("command"))
+        for index, rule in enumerate(project_rules):
+            if str(rule.get("rule_type", "")).lower() != "forbid_force_push":
+                continue
+            if "git push" in command and ("--force" in command or " -f" in f" {command}"):
+                source_ref = str(rule.get("source_ref") or f"context.project_rules[{index}]")
+                return RiskClassification(
+                    policy_divergence=True,
+                    explanations={
+                        "policy_divergence": ExplanationPayload(
+                            reason="Action conflicts with a loaded project policy rule.",
+                            confidence=0.93,
+                            evidence_refs=["metadata.tool_use_id", "inputs.command", source_ref],
+                        )
+                    },
+                )
+        return None
+
+
+class ConstraintViolationHeuristic(RiskHeuristic):
+    """Detect destructive actions taken without required explicit confirmation."""
+
+    DESTRUCTIVE_ACTIONS = {"bash", "exec", "write", "edit"}
+    DESTRUCTIVE_COMMAND_MARKERS = ("rm -rf", "rm -f", "git reset --hard", "git clean -fd")
+
+    @property
+    def name(self) -> str:
+        return "constraint_violation"
+
+    def check(self, event: CanonicalEvent, context: dict) -> RiskClassification | None:
+        if not context.get("session_constraints") or not self._is_destructive_action(event):
+            return None
+        if self._has_explicit_confirmation(context.get("explicit_confirmations", [])):
+            return None
+
+        for index, constraint in enumerate(context.get("session_constraints", [])):
+            if str(constraint.get("constraint_type", "")).lower() != "requires_confirmation_for_destructive_actions":
+                continue
+            source_ref = str(constraint.get("source_ref") or f"context.session_constraints[{index}]")
+            evidence = ["metadata.tool_use_id"]
+            if "command" in event.inputs:
+                evidence.append("inputs.command")
+            evidence.append(source_ref)
+            return RiskClassification(
+                constraint_violation=True,
+                explanations={
+                    "constraint_violation": ExplanationPayload(
+                        reason="Destructive action occurred without required explicit confirmation.",
+                        confidence=0.95,
+                        evidence_refs=evidence,
+                    )
+                },
+            )
+        return None
+
+    def _is_destructive_action(self, event: CanonicalEvent) -> bool:
+        action = event.action.lower()
+        if action not in self.DESTRUCTIVE_ACTIONS:
+            return False
+        if action in {"write", "edit"}:
+            return True
+        command = _normalise_text(event.inputs.get("command"))
+        return any(marker in command for marker in self.DESTRUCTIVE_COMMAND_MARKERS)
+
+    def _has_explicit_confirmation(self, confirmations: list[dict]) -> bool:
+        return any(str(item.get("confirmation_type", "")).lower() == "destructive_action" for item in confirmations)
+
+
 class ContextContaminationHeuristic(RiskHeuristic):
     """Detect when values from one context are incorrectly applied to another."""
 
@@ -296,10 +378,10 @@ def load_analysis_context(previous_events: list[CanonicalEvent]) -> dict[str, li
     session_constraints: list[dict[str, str]] = []
     explicit_confirmations: list[dict[str, str]] = []
 
-    for event in previous_events:
+    for event_index, event in enumerate(previous_events, start=1):
         for path, value in _walk_strings(event.outputs):
             lowered = value.lower()
-            source_ref = f"event:{event.id}.outputs.{path}"
+            source_ref = f"event:{event_index}.outputs.{path}"
             if "force push" in lowered:
                 project_rules.append({"rule_type": "forbid_force_push", "source_ref": source_ref, "rule_text": value})
             if any(marker in lowered for marker in ("approval required", "ask for confirmation", "confirm before destructive")):
