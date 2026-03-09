@@ -27,13 +27,13 @@
         "has_handoff": false,
         "risk_summary": {
           "coverage_gap": 0,
-          "assumption_mutation": 0,
+          "assumption_mutation": 1,
           "context_contamination": 0,
           "policy_divergence": 0,
           "constraint_violation": 0
         }
       },
-      "notes": "Labelled for future assumption-mutation heuristic coverage."
+      "notes": "Assumption-only plan shifts should now be surfaced by the real-session heuristic."
     },
     {
       "name": "policy_divergence_session",

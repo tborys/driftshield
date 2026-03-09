@@ -1,9 +1,11 @@
 from datetime import datetime, timezone
+from pathlib import Path
 from uuid import uuid4
 
 from driftshield.core.analysis.risk import RiskAnalyzer, RiskHeuristic
 from driftshield.core.analysis.session import analyze_session
 from driftshield.core.models import CanonicalEvent, EventType, ExplanationPayload, RiskClassification
+from driftshield.parsers.claude_code import ClaudeCodeParser
 
 
 def make_event(**kwargs) -> CanonicalEvent:
@@ -104,4 +106,20 @@ def test_analyze_session_emits_inflection_explanation_from_flagged_node() -> Non
         reason="Output referenced fewer items than were provided in the input.",
         confidence=0.86,
         evidence_refs=["inputs.sections", "outputs.reviewed_sections"],
+    )
+
+
+def test_assumption_mutation_explanation_uses_stable_payload_shape() -> None:
+    transcript = Path(__file__).parent.parent.parent / "fixtures" / "transcripts" / "dogfood" / "assumption_mutation_session.jsonl"
+    events = ClaudeCodeParser().parse_file(str(transcript))
+
+    result = analyze_session(events)
+
+    flagged_event = result.events[-1]
+    assert flagged_event.risk_classification is not None
+    assert flagged_event.risk_classification.assumption_mutation is True
+    assert flagged_event.risk_classification.explanations["assumption_mutation"] == ExplanationPayload(
+        reason="An assistant-introduced assumption was carried forward into a new planning step without explicit user instruction.",
+        confidence=0.8,
+        evidence_refs=["event:1.outputs.result.notes", "event:2.inputs.assumption", "event:2.action:plan_schedule"],
     )

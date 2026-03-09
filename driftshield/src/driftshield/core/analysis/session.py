@@ -2,7 +2,11 @@
 
 from dataclasses import dataclass
 
-from driftshield.core.analysis.heuristics import CoverageGapHeuristic, ContextContaminationHeuristic
+from driftshield.core.analysis.heuristics import (
+    AssumptionMutationHeuristic,
+    CoverageGapHeuristic,
+    ContextContaminationHeuristic,
+)
 from driftshield.core.analysis.recurrence import RecurrenceAssessment, RecurrenceEngine
 from driftshield.core.analysis.risk import RiskAnalyzer
 from driftshield.core.analysis.inflection import find_inflection_node
@@ -83,6 +87,7 @@ def analyze_session(
     analyzer = RiskAnalyzer(
         heuristics=[
             CoverageGapHeuristic(),
+            AssumptionMutationHeuristic(),
             ContextContaminationHeuristic(),
         ]
     )

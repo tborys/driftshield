@@ -83,7 +83,7 @@ class CoverageGapHeuristic(RiskHeuristic):
 
 
 class AssumptionMutationHeuristic(RiskHeuristic):
-    """Detect assistant-introduced assumptions that silently drive a later planning step."""
+    """Detect assistant-introduced assumptions that silently drive a new planning step."""
 
     ASSUMPTION_KEYS = {"assumption", "assumptions", "plan", "strategy", "schedule", "approach"}
     PLANNING_TERMS = ("plan", "schedule", "rollout", "launch", "strategy", "approach")
@@ -93,12 +93,19 @@ class AssumptionMutationHeuristic(RiskHeuristic):
     def name(self) -> str:
         return "assumption_mutation"
 
-    def check(self, event: CanonicalEvent, context: dict) -> RiskClassification | None:
+    def check(
+        self,
+        event: CanonicalEvent,
+        context: dict,
+    ) -> RiskClassification | None:
         if event.event_type not in {EventType.TOOL_CALL, EventType.HANDOFF}:
             return None
 
         candidate = self._candidate_from_event(event)
-        if candidate is None or not self._is_planning_step(event):
+        if candidate is None:
+            return None
+
+        if not self._is_planning_step(event):
             return None
 
         previous_events = context.get("previous_events", [])
@@ -123,114 +130,75 @@ class AssumptionMutationHeuristic(RiskHeuristic):
 
     def _candidate_from_event(self, event: CanonicalEvent) -> tuple[str, str] | None:
         for key, value in event.inputs.items():
-            if not isinstance(value, str):
-                continue
-            if key.lower() in self.ASSUMPTION_KEYS or any(cue in value.lower() for cue in self.ASSUMPTION_CUES):
-                return key, value
+            if key.lower() in self.ASSUMPTION_KEYS and isinstance(value, str) and value.strip():
+                return key, value.strip().lower()
+            if isinstance(value, str) and value.strip() and any(cue in value.lower() for cue in self.ASSUMPTION_CUES):
+                return key, value.strip().lower()
         return None
 
     def _is_planning_step(self, event: CanonicalEvent) -> bool:
-        haystacks = [event.action.lower(), *[str(v).lower() for v in event.inputs.values() if isinstance(v, str)]]
+        action = event.action.lower()
+        if any(term in action for term in self.PLANNING_TERMS):
+            return True
+        if any(key.lower() in self.ASSUMPTION_KEYS for key in event.inputs):
+            return True
+        haystacks = [str(v).lower() for v in event.inputs.values() if isinstance(v, str)]
         return any(term in haystack for haystack in haystacks for term in self.PLANNING_TERMS)
 
-    def _find_assistant_introduction(self, previous_events: list[CanonicalEvent], candidate: tuple[str, str]) -> tuple[str, str] | None:
-        candidate_text = candidate[1].strip().lower()
-        for index, previous_event in enumerate(previous_events, start=1):
-            for path, value in _walk_strings(previous_event.outputs):
-                lowered = value.lower()
-                if candidate_text in lowered and any(cue in lowered for cue in self.ASSUMPTION_CUES):
-                    return f"event:{index}.outputs.{path}", candidate_text
+    def _find_assistant_introduction(
+        self,
+        previous_events: list[CanonicalEvent],
+        candidate: tuple[str, str],
+    ) -> tuple[str, str] | None:
+        _, candidate_text = candidate
+
+        for index in range(len(previous_events) - 1, -1, -1):
+            previous_event = previous_events[index]
+            if self._is_user_event(previous_event):
+                continue
+
+            for ref, text in self._iter_event_text(previous_event, index + 1):
+                if candidate_text in text and any(cue in text for cue in self.ASSUMPTION_CUES):
+                    return ref, candidate_text
+
         return None
 
     def _was_user_requested(self, previous_events: list[CanonicalEvent], candidate_text: str) -> bool:
-        for previous_event in previous_events:
-            for _, value in _walk_strings(previous_event.inputs):
-                lowered = value.lower()
-                if candidate_text in lowered and not any(cue in lowered for cue in self.ASSUMPTION_CUES):
+        for index, previous_event in enumerate(previous_events, start=1):
+            if not self._is_user_event(previous_event):
+                continue
+            for _, text in self._iter_event_text(previous_event, index):
+                if candidate_text in text:
                     return True
         return False
 
+    def _is_user_event(self, event: CanonicalEvent) -> bool:
+        return event.agent_id.lower() == "user"
 
-class PolicyDivergenceHeuristic(RiskHeuristic):
-    """Detect actions that contradict loaded project rules."""
+    def _iter_event_text(self, event: CanonicalEvent, event_index: int) -> list[tuple[str, str]]:
+        refs: list[tuple[str, str]] = []
+        refs.extend(self._flatten_strings(event.inputs, prefix=f"event:{event_index}.inputs"))
+        refs.extend(self._flatten_strings(event.outputs, prefix=f"event:{event_index}.outputs"))
+        return refs
 
-    READ_ONLY_ACTIONS = {"read", "grep", "glob", "ls"}
+    def _flatten_strings(self, value: object, prefix: str) -> list[tuple[str, str]]:
+        flattened: list[tuple[str, str]] = []
 
-    @property
-    def name(self) -> str:
-        return "policy_divergence"
+        if isinstance(value, str):
+            flattened.append((prefix, value.lower()))
+            return flattened
 
-    def check(self, event: CanonicalEvent, context: dict) -> RiskClassification | None:
-        project_rules = context.get("project_rules", [])
-        if not project_rules or event.action.lower() in self.READ_ONLY_ACTIONS:
-            return None
+        if isinstance(value, dict):
+            for key, nested_value in value.items():
+                flattened.extend(self._flatten_strings(nested_value, f"{prefix}.{key}"))
+            return flattened
 
-        command = _normalise_text(event.inputs.get("command"))
-        for index, rule in enumerate(project_rules):
-            if str(rule.get("rule_type", "")).lower() != "forbid_force_push":
-                continue
-            if "git push" in command and ("--force" in command or " -f" in f" {command}"):
-                source_ref = str(rule.get("source_ref") or f"context.project_rules[{index}]")
-                return RiskClassification(
-                    policy_divergence=True,
-                    explanations={
-                        "policy_divergence": ExplanationPayload(
-                            reason="Action conflicts with a loaded project policy rule.",
-                            confidence=0.93,
-                            evidence_refs=["metadata.tool_use_id", "inputs.command", source_ref],
-                        )
-                    },
-                )
-        return None
+        if isinstance(value, list):
+            for index, nested_value in enumerate(value):
+                flattened.extend(self._flatten_strings(nested_value, f"{prefix}[{index}]"))
+            return flattened
 
-
-class ConstraintViolationHeuristic(RiskHeuristic):
-    """Detect destructive actions taken without required explicit confirmation."""
-
-    DESTRUCTIVE_ACTIONS = {"bash", "exec", "write", "edit"}
-    DESTRUCTIVE_COMMAND_MARKERS = ("rm -rf", "rm -f", "git reset --hard", "git clean -fd")
-
-    @property
-    def name(self) -> str:
-        return "constraint_violation"
-
-    def check(self, event: CanonicalEvent, context: dict) -> RiskClassification | None:
-        if not context.get("session_constraints") or not self._is_destructive_action(event):
-            return None
-        if self._has_explicit_confirmation(context.get("explicit_confirmations", [])):
-            return None
-
-        for index, constraint in enumerate(context.get("session_constraints", [])):
-            if str(constraint.get("constraint_type", "")).lower() != "requires_confirmation_for_destructive_actions":
-                continue
-            source_ref = str(constraint.get("source_ref") or f"context.session_constraints[{index}]")
-            evidence = ["metadata.tool_use_id"]
-            if "command" in event.inputs:
-                evidence.append("inputs.command")
-            evidence.append(source_ref)
-            return RiskClassification(
-                constraint_violation=True,
-                explanations={
-                    "constraint_violation": ExplanationPayload(
-                        reason="Destructive action occurred without required explicit confirmation.",
-                        confidence=0.95,
-                        evidence_refs=evidence,
-                    )
-                },
-            )
-        return None
-
-    def _is_destructive_action(self, event: CanonicalEvent) -> bool:
-        action = event.action.lower()
-        if action not in self.DESTRUCTIVE_ACTIONS:
-            return False
-        if action in {"write", "edit"}:
-            return True
-        command = _normalise_text(event.inputs.get("command"))
-        return any(marker in command for marker in self.DESTRUCTIVE_COMMAND_MARKERS)
-
-    def _has_explicit_confirmation(self, confirmations: list[dict]) -> bool:
-        return any(str(item.get("confirmation_type", "")).lower() == "destructive_action" for item in confirmations)
+        return flattened
 
 
 class ContextContaminationHeuristic(RiskHeuristic):

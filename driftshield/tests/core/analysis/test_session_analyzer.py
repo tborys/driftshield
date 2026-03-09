@@ -1,19 +1,32 @@
 """Tests for session analysis orchestration."""
 
+from datetime import datetime, timezone
 from pathlib import Path
-
-import pytest
+from uuid import uuid4
 
 from driftshield.core.analysis.session import analyze_session, AnalysisResult
+from driftshield.core.models import CanonicalEvent, EventType
 from driftshield.parsers.claude_code import ClaudeCodeParser
 from tests.fixtures.scenarios import (
     coverage_gap_scenario,
-    assumption_introduction_scenario,
     cross_tool_contamination_scenario,
 )
 
 
 FIXTURES_DIR = Path(__file__).parent.parent.parent / "fixtures" / "transcripts"
+
+
+def make_event(**kwargs) -> CanonicalEvent:
+    defaults = {
+        "id": uuid4(),
+        "session_id": "test-session",
+        "timestamp": datetime.now(timezone.utc),
+        "event_type": EventType.TOOL_CALL,
+        "agent_id": "test-agent",
+        "action": "test_action",
+    }
+    defaults.update(kwargs)
+    return CanonicalEvent(**defaults)
 
 
 class TestAnalyzeSession:
@@ -96,6 +109,28 @@ class TestAnalyzeSession:
         assert result.graph is not None
         assert len(result.events) > 0
         # Inflection may be None if no risks detected (expected for clean session)
+
+    def test_detects_assumption_mutation_in_dogfood_session(self):
+        parser = ClaudeCodeParser()
+        events = parser.parse_file(str(FIXTURES_DIR / "dogfood" / "assumption_mutation_session.jsonl"))
+
+        result = analyze_session(events)
+
+        assert result.risk_summary["assumption_mutation"] == 1
+        flagged_event = result.events[-1]
+        assert flagged_event.risk_classification is not None
+        assert flagged_event.risk_classification.assumption_mutation is True
+
+    def test_does_not_flag_assumption_mutation_for_clean_or_multi_flag_regressions(self):
+        parser = ClaudeCodeParser()
+
+        clean_events = parser.parse_file(str(FIXTURES_DIR / "dogfood" / "clean_session.jsonl"))
+        clean_result = analyze_session(clean_events)
+        assert clean_result.risk_summary["assumption_mutation"] == 0
+
+        multi_flag_events = parser.parse_file(str(FIXTURES_DIR / "dogfood" / "multi_flag_session.jsonl"))
+        multi_flag_result = analyze_session(multi_flag_events)
+        assert multi_flag_result.risk_summary["assumption_mutation"] == 0
 
 
 class TestAnalysisResult:
