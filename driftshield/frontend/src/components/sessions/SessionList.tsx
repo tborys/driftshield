@@ -11,6 +11,12 @@ interface SessionListProps {
   isLoading: boolean
 }
 
+function formatProvenance(session: SessionSummary) {
+  const parser = session.provenance?.parser_version ?? 'unknown parser'
+  const sourcePath = session.provenance?.source_path ?? 'unknown source'
+  return `${parser} · ${sourcePath}`
+}
+
 export function SessionList({ sessions, isLoading }: SessionListProps) {
   const navigate = useNavigate()
 
@@ -32,6 +38,7 @@ export function SessionList({ sessions, isLoading }: SessionListProps) {
           <TableHead>Risk Flags</TableHead>
           <TableHead>Inflection</TableHead>
           <TableHead>Recurrence</TableHead>
+          <TableHead>Provenance</TableHead>
           <TableHead>Started</TableHead>
           <TableHead className="text-right">Action</TableHead>
         </TableRow>
@@ -94,6 +101,9 @@ export function SessionList({ sessions, isLoading }: SessionListProps) {
               ) : (
                 <span className="text-muted-foreground">new/unknown</span>
               )}
+            </TableCell>
+            <TableCell className="max-w-72 text-xs text-muted-foreground">
+              <div className="truncate">{formatProvenance(session)}</div>
             </TableCell>
             <TableCell className="text-sm text-muted-foreground">
               {new Date(session.started_at).toLocaleString()}

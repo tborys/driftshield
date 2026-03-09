@@ -1,3 +1,10 @@
+export interface SessionProvenance {
+  source_session_id: string | null
+  source_path: string | null
+  parser_version: string | null
+  ingested_at: string | null
+}
+
 export interface SessionSummary {
   id: string
   agent_id: string | null
@@ -10,6 +17,7 @@ export interface SessionSummary {
   recurrence_level: 'new' | 'recurring' | 'systemic' | null
   recurrence_probability: 'low' | 'medium' | 'high' | null
   recurrence_count: number | null
+  provenance: SessionProvenance | null
 }
 
 export interface SessionDetail extends SessionSummary {
@@ -24,6 +32,13 @@ export interface PaginatedResponse<T> {
   page: number
   per_page: number
   pages: number
+}
+
+export interface SessionListFilters {
+  flaggedOnly?: boolean
+  riskClass?: string
+  source?: string
+  sinceHours?: number
 }
 
 export interface ReportSummary {
