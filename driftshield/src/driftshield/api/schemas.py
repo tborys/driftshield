@@ -11,6 +11,23 @@ class ExplanationPayloadResponse(BaseModel):
     evidence_refs: list[str] = Field(default_factory=list)
 
 
+class SessionProvenanceResponse(BaseModel):
+    source_session_id: str | None = None
+    source_path: str | None = None
+    parser_version: str | None = None
+    ingested_at: datetime | None = None
+
+
+class SessionExplanationItemResponse(BaseModel):
+    node_id: uuid.UUID
+    payload: ExplanationPayloadResponse
+
+
+class SessionExplanationsResponse(BaseModel):
+    risk_explanations: dict[str, list[SessionExplanationItemResponse]] = Field(default_factory=dict)
+    inflection_explanation: SessionExplanationItemResponse | None = None
+
+
 class SessionSummary(BaseModel):
     id: uuid.UUID
     agent_id: str | None = None
@@ -23,12 +40,14 @@ class SessionSummary(BaseModel):
     recurrence_level: str | None = None
     recurrence_probability: str | None = None
     recurrence_count: int | None = None
+    provenance: SessionProvenanceResponse | None = None
 
 
 class SessionDetail(SessionSummary):
     total_events: int = 0
     flagged_events: int = 0
     risk_summary: dict[str, int] = Field(default_factory=dict)
+    explanations: SessionExplanationsResponse | None = None
 
 
 class GraphNodeResponse(BaseModel):
@@ -53,6 +72,7 @@ class GraphEdgeResponse(BaseModel):
 
 class GraphResponse(BaseModel):
     session_id: uuid.UUID
+    provenance: SessionProvenanceResponse | None = None
     nodes: list[GraphNodeResponse]
     edges: list[GraphEdgeResponse]
 

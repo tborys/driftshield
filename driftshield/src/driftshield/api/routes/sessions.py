@@ -13,10 +13,14 @@ from driftshield.api.schemas import (
     GraphResponse,
     PaginatedResponse,
     SessionDetail,
+    SessionExplanationItemResponse,
+    SessionExplanationsResponse,
+    SessionProvenanceResponse,
     SessionSummary,
     ValidationCreateRequest,
     ValidationResponse,
 )
+from driftshield.core.models import RiskClassification
 from driftshield.db.models import (
     DecisionNodeModel,
     RecurrenceSignatureModel,
@@ -43,6 +47,15 @@ def _count_risks(nodes: list[DecisionNodeModel]) -> int:
             ]
         )
     )
+
+
+def _risk_summary(nodes: list[DecisionNodeModel]) -> dict[str, int]:
+    summary = {flag_name: 0 for flag_name in RiskClassification.FLAG_FIELDS}
+    for node in nodes:
+        for flag_name in RiskClassification.FLAG_FIELDS:
+            if getattr(node, flag_name):
+                summary[flag_name] += 1
+    return summary
 
 
 def _recurrence_summary(db: DBSession, session_id: uuid.UUID) -> tuple[str | None, str | None, int | None]:
@@ -94,15 +107,68 @@ def _risk_explanations_for_node(node: DecisionNodeModel) -> dict[str, Explanatio
     }
 
 
+def _session_provenance(session: SessionModel) -> SessionProvenanceResponse | None:
+    if not any(
+        [
+            session.source_session_id,
+            session.source_path,
+            session.parser_version,
+            session.ingested_at,
+        ]
+    ):
+        return None
+    return SessionProvenanceResponse(
+        source_session_id=session.source_session_id,
+        source_path=session.source_path,
+        parser_version=session.parser_version,
+        ingested_at=session.ingested_at,
+    )
+
+
+def _session_explanations(nodes: list[DecisionNodeModel]) -> SessionExplanationsResponse:
+    risk_explanations: dict[str, list[SessionExplanationItemResponse]] = {}
+    inflection_explanation: SessionExplanationItemResponse | None = None
+
+    for node in nodes:
+        for flag_name, explanation in _risk_explanations_for_node(node).items():
+            risk_explanations.setdefault(flag_name, []).append(
+                SessionExplanationItemResponse(node_id=node.id, payload=explanation)
+            )
+        if node.is_inflection_node and node.inflection_explanation is not None:
+            inflection_explanation = SessionExplanationItemResponse(
+                node_id=node.id,
+                payload=ExplanationPayloadResponse(**node.inflection_explanation),
+            )
+
+    return SessionExplanationsResponse(
+        risk_explanations=risk_explanations,
+        inflection_explanation=inflection_explanation,
+    )
+
+
 @router.get("/api/sessions")
 def list_sessions(
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=20, ge=1, le=100),
+    flagged_only: bool = Query(default=False),
+    risk_class: str | None = Query(default=None),
+    source: str | None = Query(default=None),
+    since_hours: int | None = Query(default=None, ge=1),
     api_key: str = Depends(require_api_key),
     db: DBSession = Depends(get_db),
 ):
     service = PersistenceService(db)
-    sessions, total = service.list_sessions(page=page, per_page=per_page)
+    try:
+        sessions, total = service.list_sessions(
+            page=page,
+            per_page=per_page,
+            flagged_only=flagged_only,
+            risk_class=risk_class,
+            source=source,
+            since_hours=since_hours,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     pages = math.ceil(total / per_page) if total > 0 else 0
 
     items = []
@@ -126,6 +192,7 @@ def list_sessions(
                 recurrence_level=recurrence_level,
                 recurrence_probability=recurrence_probability,
                 recurrence_count=recurrence_count,
+                provenance=_session_provenance(session),
             )
         )
 
@@ -150,7 +217,7 @@ def get_session(
 
     nodes = db.query(DecisionNodeModel).filter(
         DecisionNodeModel.session_id == session_id
-    ).all()
+    ).order_by(DecisionNodeModel.sequence_num).all()
     risk_count = _count_risks(nodes)
     recurrence_level, recurrence_probability, recurrence_count = _recurrence_summary(db, session_id)
 
@@ -166,8 +233,11 @@ def get_session(
         recurrence_level=recurrence_level,
         recurrence_probability=recurrence_probability,
         recurrence_count=recurrence_count,
+        provenance=_session_provenance(session),
         total_events=len(nodes),
         flagged_events=risk_count,
+        risk_summary=_risk_summary(nodes),
+        explanations=_session_explanations(nodes),
     )
 
 
@@ -213,7 +283,12 @@ def get_session_graph(
         if node.parent_node_id is not None:
             edges.append(GraphEdgeResponse(source=node.parent_node_id, target=node.id))
 
-    return GraphResponse(session_id=session_id, nodes=graph_nodes, edges=edges)
+    return GraphResponse(
+        session_id=session_id,
+        provenance=_session_provenance(session),
+        nodes=graph_nodes,
+        edges=edges,
+    )
 
 
 @router.get("/api/sessions/{session_id}/validations")

@@ -1,7 +1,8 @@
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session as DBSession
 
 from driftshield.core.analysis.session import AnalysisResult
@@ -203,9 +204,53 @@ class PersistenceService:
         return graph
 
     def list_sessions(
-        self, page: int = 1, per_page: int = 20
+        self,
+        page: int = 1,
+        per_page: int = 20,
+        flagged_only: bool = False,
+        risk_class: str | None = None,
+        source: str | None = None,
+        since_hours: int | None = None,
     ) -> tuple[list[SessionModel], int]:
-        query = self._db.query(SessionModel).order_by(SessionModel.started_at.desc())
+        query = self._db.query(SessionModel)
+
+        if source:
+            pattern = f"%{source.lower()}%"
+            query = query.filter(
+                or_(
+                    SessionModel.source_path.ilike(pattern),
+                    SessionModel.source_session_id.ilike(pattern),
+                    SessionModel.parser_version.ilike(pattern),
+                    SessionModel.agent_id.ilike(pattern),
+                )
+            )
+
+        if since_hours is not None:
+            cutoff = datetime.now(timezone.utc) - timedelta(hours=since_hours)
+            query = query.filter(SessionModel.started_at >= cutoff)
+
+        if flagged_only or risk_class:
+            node_query = self._db.query(DecisionNodeModel.session_id)
+            if risk_class:
+                allowed_risk_classes = set(RiskClassification.FLAG_FIELDS)
+                if risk_class not in allowed_risk_classes:
+                    raise ValueError(f"Unsupported risk_class: {risk_class}")
+                node_query = node_query.filter(getattr(DecisionNodeModel, risk_class).is_(True))
+            else:
+                node_query = node_query.filter(
+                    or_(
+                        DecisionNodeModel.assumption_mutation.is_(True),
+                        DecisionNodeModel.policy_divergence.is_(True),
+                        DecisionNodeModel.constraint_violation.is_(True),
+                        DecisionNodeModel.context_contamination.is_(True),
+                        DecisionNodeModel.coverage_gap.is_(True),
+                    )
+                )
+            query = query.filter(
+                SessionModel.id.in_(select(node_query.distinct().subquery().c.session_id))
+            )
+
+        query = query.order_by(SessionModel.started_at.desc())
         total = query.count()
         offset = (page - 1) * per_page
         sessions = query.offset(offset).limit(per_page).all()

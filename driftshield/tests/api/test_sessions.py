@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -52,6 +52,10 @@ def seeded_session(db_session):
         agent_id="test-agent",
         started_at=datetime.now(timezone.utc),
         status="completed",
+        source_session_id="source-session-1",
+        source_path="uploads/daily/test-agent.jsonl",
+        parser_version="claude_code@1",
+        ingested_at=datetime.now(timezone.utc),
     )
     node = DecisionNodeModel(
         id=uuid.uuid4(),
@@ -61,6 +65,18 @@ def seeded_session(db_session):
         action="read_file",
         coverage_gap=True,
         is_inflection_node=True,
+        risk_explanations={
+            "coverage_gap": {
+                "reason": "Output referenced fewer items than were provided in the input.",
+                "confidence": 0.86,
+                "evidence_refs": ["inputs.sections", "outputs.reviewed_sections"],
+            }
+        },
+        inflection_explanation={
+            "reason": "Selected as the inflection point because it is the closest flagged node on the path to the failure node.",
+            "confidence": 1.0,
+            "evidence_refs": ["risk:coverage_gap"],
+        },
     )
     db_session.add_all([s, node])
     db_session.commit()
@@ -74,6 +90,12 @@ def test_list_sessions(client, auth_headers, seeded_session):
     assert data["total"] == 1
     assert len(data["items"]) == 1
     assert data["items"][0]["agent_id"] == "test-agent"
+    assert data["items"][0]["provenance"] == {
+        "source_session_id": "source-session-1",
+        "source_path": "uploads/daily/test-agent.jsonl",
+        "parser_version": "claude_code@1",
+        "ingested_at": data["items"][0]["provenance"]["ingested_at"],
+    }
 
 
 def test_list_sessions_pagination(client, auth_headers, db_session):
@@ -97,6 +119,81 @@ def test_get_session_detail(client, auth_headers, seeded_session):
     data = response.json()
     assert data["id"] == str(seeded_session)
     assert data["agent_id"] == "test-agent"
+    assert data["provenance"]["source_session_id"] == "source-session-1"
+    assert data["risk_summary"]["coverage_gap"] == 1
+    assert data["explanations"]["risk_explanations"] == {
+        "coverage_gap": [
+            {
+                "node_id": data["explanations"]["risk_explanations"]["coverage_gap"][0]["node_id"],
+                "payload": {
+                    "reason": "Output referenced fewer items than were provided in the input.",
+                    "confidence": 0.86,
+                    "evidence_refs": ["inputs.sections", "outputs.reviewed_sections"],
+                },
+            }
+        ]
+    }
+    assert data["explanations"]["inflection_explanation"] == {
+        "node_id": data["explanations"]["inflection_explanation"]["node_id"],
+        "payload": {
+            "reason": "Selected as the inflection point because it is the closest flagged node on the path to the failure node.",
+            "confidence": 1.0,
+            "evidence_refs": ["risk:coverage_gap"],
+        },
+    }
+
+
+def test_get_session_detail_orders_explanations_by_sequence(client, auth_headers, db_session):
+    session_id = uuid.uuid4()
+    db_session.add(
+        SessionModel(
+            id=session_id,
+            agent_id="ordered-agent",
+            started_at=datetime.now(timezone.utc),
+            status="completed",
+        )
+    )
+    db_session.add_all(
+        [
+            DecisionNodeModel(
+                id=uuid.uuid4(),
+                session_id=session_id,
+                sequence_num=2,
+                event_type="TOOL_CALL",
+                action="later",
+                coverage_gap=True,
+                risk_explanations={
+                    "coverage_gap": {
+                        "reason": "later",
+                        "confidence": 0.5,
+                        "evidence_refs": [],
+                    }
+                },
+            ),
+            DecisionNodeModel(
+                id=uuid.uuid4(),
+                session_id=session_id,
+                sequence_num=1,
+                event_type="TOOL_CALL",
+                action="earlier",
+                coverage_gap=True,
+                risk_explanations={
+                    "coverage_gap": {
+                        "reason": "earlier",
+                        "confidence": 0.5,
+                        "evidence_refs": [],
+                    }
+                },
+            ),
+        ]
+    )
+    db_session.commit()
+
+    response = client.get(f"/api/sessions/{session_id}", headers=auth_headers)
+
+    assert response.status_code == 200
+    explanations = response.json()["explanations"]["risk_explanations"]["coverage_gap"]
+    assert [item["payload"]["reason"] for item in explanations] == ["earlier", "later"]
 
 
 def test_session_endpoints_include_recurrence_summary(client, auth_headers, db_session):
@@ -136,6 +233,58 @@ def test_session_endpoints_include_recurrence_summary(client, auth_headers, db_s
     assert detail["recurrence_count"] == 3
 
 
+def test_list_sessions_supports_triage_filters(client, auth_headers, db_session):
+    now = datetime.now(timezone.utc)
+    flagged_session = SessionModel(
+        id=uuid.uuid4(),
+        agent_id="flagged-agent",
+        started_at=now - timedelta(hours=2),
+        status="completed",
+        source_path="uploads/dogfood/claude-session.jsonl",
+        parser_version="claude_code@1",
+    )
+    unflagged_session = SessionModel(
+        id=uuid.uuid4(),
+        agent_id="quiet-agent",
+        started_at=now - timedelta(days=2),
+        status="completed",
+        source_path="uploads/dogfood/openai-session.jsonl",
+        parser_version="openai@1",
+    )
+    db_session.add_all([flagged_session, unflagged_session])
+    db_session.flush()
+    db_session.add(
+        DecisionNodeModel(
+            id=uuid.uuid4(),
+            session_id=flagged_session.id,
+            sequence_num=1,
+            event_type="TOOL_CALL",
+            action="summarise",
+            coverage_gap=True,
+        )
+    )
+    db_session.add(
+        DecisionNodeModel(
+            id=uuid.uuid4(),
+            session_id=unflagged_session.id,
+            sequence_num=1,
+            event_type="OUTPUT",
+            action="reply",
+        )
+    )
+    db_session.commit()
+
+    response = client.get(
+        "/api/sessions?flagged_only=true&risk_class=coverage_gap&source=claude&since_hours=24",
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert [item["id"] for item in payload["items"]] == [str(flagged_session.id)]
+
+
 def test_get_session_not_found(client, auth_headers):
     response = client.get(f"/api/sessions/{uuid.uuid4()}", headers=auth_headers)
     assert response.status_code == 404
@@ -150,6 +299,10 @@ def test_graph_endpoint_returns_risk_and_inflection_explanations(client, auth_he
             agent_id="test-agent",
             started_at=datetime.now(timezone.utc),
             status="completed",
+            source_session_id="source-session-graph",
+            source_path="uploads/graph-session.jsonl",
+            parser_version="claude_code@1",
+            ingested_at=datetime.now(timezone.utc),
         )
     )
     db_session.add(
@@ -181,6 +334,12 @@ def test_graph_endpoint_returns_risk_and_inflection_explanations(client, auth_he
 
     assert response.status_code == 200
     payload = response.json()
+    assert payload["provenance"] == {
+        "source_session_id": "source-session-graph",
+        "source_path": "uploads/graph-session.jsonl",
+        "parser_version": "claude_code@1",
+        "ingested_at": payload["provenance"]["ingested_at"],
+    }
     assert payload["nodes"][0]["risk_flags"] == ["coverage_gap"]
     assert payload["nodes"][0]["risk_explanations"] == {
         "coverage_gap": {
@@ -242,17 +401,14 @@ def test_create_session_validation_and_list_for_node(client, auth_headers, seede
 
 def test_create_session_validation_for_missing_session_returns_404(client, auth_headers):
     payload = {
-        "target_type": "risk_flag",
-        "target_ref": f"{uuid.uuid4()}:coverage_gap",
+        "target_type": "inflection",
+        "target_ref": str(uuid.uuid4()),
         "verdict": "accept",
-        "reviewer": "analyst",
-        "confidence": 0.8,
+        "reviewer": "devin",
     }
-
-    response = client.post(
+    resp = client.post(
         f"/api/sessions/{uuid.uuid4()}/validations",
         headers=auth_headers,
         json=payload,
     )
-
-    assert response.status_code == 404
+    assert resp.status_code == 404
