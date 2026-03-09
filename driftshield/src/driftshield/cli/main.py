@@ -13,6 +13,7 @@ from driftshield.cli.commands.report_graveyard import report_graveyard
 from driftshield.cli.commands.generate_fixtures import generate_fixtures
 from driftshield.cli.commands.evaluate_classifier import evaluate_classifier
 from driftshield.cli.commands.evaluate_signatures import evaluate_signatures
+from driftshield.cli.commands.ingest import ingest
 
 app = typer.Typer(
     name="driftshield",
@@ -31,6 +32,7 @@ app.command(name="report-graveyard")(report_graveyard)
 app.command(name="generate-fixtures")(generate_fixtures)
 app.command(name="evaluate-classifier")(evaluate_classifier)
 app.command(name="evaluate-signatures")(evaluate_signatures)
+app.command()(ingest)
 
 
 def version_callback(value: bool) -> None:

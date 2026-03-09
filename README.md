@@ -45,6 +45,37 @@ Backend (`driftshield/.env`):
 Frontend (`driftshield/frontend/.env`):
 - `VITE_API_KEY=dev-api-key`
 
+## Transcript ingest CLI
+
+From `driftshield/` you can upload a transcript directly to the local or remote ingest API:
+
+```bash
+DRIFTSHIELD_API_URL=http://localhost:8000 \
+DRIFTSHIELD_API_KEY=dev-api-key \
+PYTHONPATH=src python3 -m driftshield.cli.main ingest --path tests/fixtures/transcripts/sample_claude_code_session.jsonl
+```
+
+Discovery shortcuts reuse the Claude project session lookup already used by the CLI:
+
+```bash
+# latest session for the current Claude project
+DRIFTSHIELD_API_KEY=dev-api-key PYTHONPATH=src python3 -m driftshield.cli.main ingest --project
+DRIFTSHIELD_API_KEY=dev-api-key PYTHONPATH=src python3 -m driftshield.cli.main ingest --latest
+```
+
+A thin Dealer hook wrapper is available at `scripts/dealer-hook.sh`:
+
+```bash
+# local DriftShield CLI
+CLAUDE_TRANSCRIPT_PATH=/path/to/session.jsonl scripts/dealer-hook.sh local
+
+# direct VPS ingest
+CLAUDE_TRANSCRIPT_PATH=/path/to/session.jsonl \
+DRIFTSHIELD_API_URL=https://driftshield.example \
+DRIFTSHIELD_API_KEY=prod-api-key \
+scripts/dealer-hook.sh vps
+```
+
 ## Local Postgres
 
 Postgres is managed through:
