@@ -107,7 +107,7 @@ def test_roundtrip_save_and_load_explanations(pg_session):
         {"session_id": session_id},
     ).one()
     assert row.risk_explanations["coverage_gap"]["reason"] == "Output referenced fewer items than were provided in the input."
-    assert row.inflection_explanation["reason"] == "Selected as the inflection point because it is the closest flagged node on the path to the failure node."
+    assert row.inflection_explanation["reason"] == "Selected as the inflection point using weighted scoring across severity, compounding risk, recovery opportunity, and point-of-no-return behaviour."
 
     graph = service.load_graph(session_id)
     assert graph is not None

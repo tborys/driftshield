@@ -3,11 +3,9 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-import pytest
-
 from driftshield.core.models import CanonicalEvent, EventType, RiskClassification
 from driftshield.core.graph.builder import build_graph
-from driftshield.core.analysis.inflection import find_inflection_node
+from driftshield.core.analysis.inflection import find_inflection_node, select_inflection_node
 from tests.fixtures.scenarios import (
     coverage_gap_scenario,
     assumption_introduction_scenario,
@@ -101,6 +99,40 @@ class TestFindInflectionNode:
         result = find_inflection_node(graph, event2.id)
 
         assert result.action == "failure_with_risk"
+
+    def test_weighted_scoring_prefers_more_meaningful_earlier_divergence(self):
+        """Weighted scoring can beat simple walkback when earlier risk compounds."""
+        event1 = make_event(
+            action="seed_wrong_assumption",
+            risk_classification=RiskClassification(policy_divergence=True),
+        )
+        event2 = make_event(
+            action="compound_bad_state_once",
+            parent_event_id=event1.id,
+            risk_classification=RiskClassification(assumption_mutation=True),
+        )
+        event3 = make_event(
+            action="compound_bad_state_twice",
+            parent_event_id=event2.id,
+            risk_classification=RiskClassification(coverage_gap=True),
+        )
+        event4 = make_event(
+            action="failure",
+            parent_event_id=event3.id,
+        )
+
+        graph = build_graph([event1, event2, event3, event4], session_id="test")
+
+        result = find_inflection_node(graph, event4.id)
+        selection = select_inflection_node(graph, event4.id)
+
+        assert result is not None
+        assert result.action == "seed_wrong_assumption"
+        assert selection.explanation is not None
+        assert selection.strategy == "weighted"
+        assert selection.explanation.confidence == 0.68
+        assert "weighted scoring" in selection.explanation.reason
+        assert any(ref.startswith("inflection_reason:") for ref in selection.explanation.evidence_refs)
 
 
 class TestInflectionWithScenarios:

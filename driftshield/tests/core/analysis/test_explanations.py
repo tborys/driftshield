@@ -97,9 +97,15 @@ def test_analyze_session_emits_inflection_explanation_from_flagged_node() -> Non
     assert result.inflection_node is not None
     assert result.inflection_node.id == risky_event.id
     assert result.inflection_explanation == ExplanationPayload(
-        reason="Selected as the inflection point because it is the closest flagged node on the path to the failure node.",
+        reason="Selected as the inflection point using weighted scoring across severity, compounding risk, recovery opportunity, and point-of-no-return behaviour.",
         confidence=1.0,
-        evidence_refs=[f"node:{risky_event.id}", "risk:coverage_gap"],
+        evidence_refs=[
+            f"node:{risky_event.id}",
+            "risk:coverage_gap",
+            "inflection_reason:severity from coverage_gap",
+            "inflection_reason:proximity to the observed failure",
+            "inflection_reason:recovery penalty for 1 clean node(s) after this point",
+        ],
     )
     assert result.inflection_node.event.risk_classification is not None
     assert result.inflection_node.event.risk_classification.explanations["coverage_gap"] == ExplanationPayload(

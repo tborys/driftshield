@@ -12,7 +12,7 @@ from driftshield.core.analysis.heuristics import (
 )
 from driftshield.core.analysis.recurrence import RecurrenceAssessment, RecurrenceEngine
 from driftshield.core.analysis.risk import RiskAnalyzer
-from driftshield.core.analysis.inflection import find_inflection_node
+from driftshield.core.analysis.inflection import select_inflection_node
 from driftshield.core.graph.builder import build_graph
 from driftshield.core.graph.models import DecisionNode, LineageGraph
 from driftshield.core.models import CanonicalEvent, ExplanationPayload
@@ -52,22 +52,6 @@ class AnalysisResult:
 
         return summary
 
-
-def _build_inflection_explanation(inflection_node: DecisionNode | None) -> ExplanationPayload | None:
-    if inflection_node is None or inflection_node.event.risk_classification is None:
-        return None
-
-    active_flags = inflection_node.event.risk_classification.active_flags()
-    if not active_flags:
-        return None
-
-    return ExplanationPayload(
-        reason="Selected as the inflection point because it is the closest flagged node on the path to the failure node.",
-        confidence=1.0,
-        evidence_refs=[f"node:{inflection_node.id}", *[f"risk:{flag}" for flag in active_flags]],
-    )
-
-
 def analyze_session(
     events: list[CanonicalEvent],
     session_id: str | None = None,
@@ -101,9 +85,12 @@ def analyze_session(
     graph = build_graph(analyzed_events, session_id=session_id)
 
     inflection_node = None
+    inflection_explanation = None
     if graph.nodes:
         last_node = graph.nodes[-1]
-        inflection_node = find_inflection_node(graph, last_node.id)
+        selection = select_inflection_node(graph, last_node.id)
+        inflection_node = selection.node
+        inflection_explanation = selection.explanation
 
     flagged_count = sum(1 for event in analyzed_events if event.has_risk_flags())
 
@@ -121,5 +108,5 @@ def analyze_session(
         total_events=len(analyzed_events),
         flagged_events=flagged_count,
         recurrence=recurrence,
-        inflection_explanation=_build_inflection_explanation(inflection_node),
+        inflection_explanation=inflection_explanation,
     )

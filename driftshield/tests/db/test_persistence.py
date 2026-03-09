@@ -334,9 +334,15 @@ def test_save_and_load_graph_round_trip_explanations(db_session):
         }
     }
     assert saved_node.inflection_explanation == {
-        "reason": "Selected as the inflection point because it is the closest flagged node on the path to the failure node.",
+        "reason": "Selected as the inflection point using weighted scoring across severity, compounding risk, recovery opportunity, and point-of-no-return behaviour.",
         "confidence": 1.0,
-        "evidence_refs": [f"node:{event.id}", "risk:coverage_gap"],
+        "evidence_refs": [
+            f"node:{event.id}",
+            "risk:coverage_gap",
+            "inflection_reason:severity from coverage_gap",
+            "inflection_reason:proximity to the observed failure",
+            "inflection_reason:point-of-no-return position near the observed failure",
+        ],
     }
 
     graph = service.load_graph(session_id)
@@ -351,7 +357,13 @@ def test_save_and_load_graph_round_trip_explanations(db_session):
         evidence_refs=["inputs.sections", "outputs.reviewed_sections"],
     )
     assert loaded_event.metadata["inflection_explanation"] == {
-        "reason": "Selected as the inflection point because it is the closest flagged node on the path to the failure node.",
+        "reason": "Selected as the inflection point using weighted scoring across severity, compounding risk, recovery opportunity, and point-of-no-return behaviour.",
         "confidence": 1.0,
-        "evidence_refs": [f"node:{event.id}", "risk:coverage_gap"],
+        "evidence_refs": [
+            f"node:{event.id}",
+            "risk:coverage_gap",
+            "inflection_reason:severity from coverage_gap",
+            "inflection_reason:proximity to the observed failure",
+            "inflection_reason:point-of-no-return position near the observed failure",
+        ],
     }
