@@ -2,6 +2,8 @@ import hashlib
 import uuid
 from datetime import datetime, timezone
 
+import os
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DBSession
@@ -35,6 +37,10 @@ def ingest_transcript(
 
     parser = get_parser(normalised)
     raw_bytes = file.file.read()
+    max_request_bytes = int(os.environ.get("MAX_REQUEST_BYTES", str(25 * 1024 * 1024)))
+    if len(raw_bytes) > max_request_bytes:
+        raise HTTPException(status_code=413, detail=f"Request body exceeds {max_request_bytes} bytes")
+
     content = raw_bytes.decode("utf-8")
     events = parser.parse(content)
 

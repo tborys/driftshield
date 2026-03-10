@@ -79,6 +79,26 @@ require_cmd git
 require_cmd docker
 require_cmd curl
 
+is_placeholder_secret() {
+  local value="${1:-}"
+  [[ -z "$value" \
+    || "$value" == "changeme" \
+    || "$value" == "your-api-key-here" \
+    || "$value" == "replace-with-a-long-random-api-key" \
+    || "$value" == "replace-with-a-strong-db-password" \
+    || "$value" == "dev-api-key" \
+    || "$value" == "dev-key" ]]
+}
+
+validate_positive_integer() {
+  local name="$1"
+  local value="$2"
+  if ! [[ "$value" =~ ^[0-9]+$ ]] || [[ "$value" -le 0 ]]; then
+    log "ERROR: ${name} must be a positive integer (got: ${value})"
+    exit 1
+  fi
+}
+
 if [[ ! -d "$PROJECT_ROOT/.git" ]]; then
   log "ERROR: PROJECT_ROOT does not look like a git checkout: $PROJECT_ROOT"
   exit 1
@@ -113,14 +133,44 @@ TARGET_COMMIT=$(git -C "$PROJECT_ROOT" rev-parse "$REMOTE/$BRANCH")
 log "Current commit: $CURRENT_COMMIT"
 log "Target commit:  $TARGET_COMMIT"
 
-if [[ -f "$APP_DIR/.env" ]]; then
-  # shellcheck disable=SC1091
-  set -a && source "$APP_DIR/.env" && set +a
+if [[ ! -f "$APP_DIR/.env" ]]; then
+  log "ERROR: missing server-side env file: $APP_DIR/.env"
+  exit 1
 fi
+
+# shellcheck disable=SC1091
+set -a && source "$APP_DIR/.env" && set +a
 
 APP_PORT="${PORT:-8080}"
 DB_USER_LOCAL="${DB_USER:-drift}"
 DB_NAME_LOCAL="${DB_NAME:-driftshield}"
+ENVIRONMENT_VALUE="${ENVIRONMENT:-production}"
+MAX_REQUEST_BYTES_VALUE="${MAX_REQUEST_BYTES:-26214400}"
+
+validate_positive_integer "PORT" "$APP_PORT"
+validate_positive_integer "MAX_REQUEST_BYTES" "$MAX_REQUEST_BYTES_VALUE"
+
+if [[ "$ENVIRONMENT_VALUE" != "production" ]]; then
+  log "ERROR: ENVIRONMENT must be set to production on the dogfood VPS (got: ${ENVIRONMENT_VALUE})"
+  exit 1
+fi
+
+if is_placeholder_secret "${API_KEY:-}"; then
+  log "ERROR: API_KEY is missing or still using a placeholder/dev value."
+  exit 1
+fi
+
+if [[ "${DB_PASSWORD:-}" == "drift" ]]; then
+  log "ERROR: DB_PASSWORD must not use the default value on the dogfood VPS."
+  exit 1
+fi
+
+if is_placeholder_secret "${DB_PASSWORD:-}"; then
+  log "ERROR: DB_PASSWORD is missing or still using a placeholder/dev value."
+  exit 1
+fi
+
+log "Environment checks OK: ENVIRONMENT=${ENVIRONMENT_VALUE}, PORT=${APP_PORT}, MAX_REQUEST_BYTES=${MAX_REQUEST_BYTES_VALUE}"
 
 # Snapshot/backup step
 mkdir -p "$BACKUP_DIR"
