@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from driftshield.api.routes.connectors import router as connectors_router
 from driftshield.api.routes.health import router as health_router
 from driftshield.api.routes.ingest import router as ingest_router
 from driftshield.api.routes.reports import router as reports_router
@@ -17,6 +18,7 @@ def create_app() -> FastAPI:
         description="AI Decision Forensics API",
         version="0.1.0",
     )
+    app.include_router(connectors_router)
     app.include_router(health_router)
     app.include_router(ingest_router)
     app.include_router(sessions_router)

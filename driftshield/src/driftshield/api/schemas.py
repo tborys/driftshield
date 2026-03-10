@@ -86,6 +86,41 @@ class IngestResponse(BaseModel):
     deduplicated: bool = False
 
 
+class ConnectorResponse(BaseModel):
+    id: uuid.UUID
+    source_type: str
+    display_name: str
+    root_path: str
+    parser_name: str
+    consent_state: str
+    status: str
+    watchable: bool
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    last_scanned_at: datetime | None = None
+    last_seen_activity_at: datetime | None = None
+    last_error: str | None = None
+
+
+class ConnectorListResponse(BaseModel):
+    items: list[ConnectorResponse]
+
+
+class ConnectorDiscoverRequest(BaseModel):
+    project_dir: str | None = None
+
+
+class ConnectorApproveRequest(BaseModel):
+    mode: str = "once"
+
+
+class ConnectorScanResponse(BaseModel):
+    connector_id: uuid.UUID
+    session_count: int
+    newest_session_id: str | None = None
+    newest_session_path: str | None = None
+    newest_modified_at: datetime | None = None
+
+
 class PaginatedResponse(BaseModel):
     items: list[Any]
     total: int
