@@ -37,3 +37,21 @@ def test_request_with_valid_api_key_returns_200(protected_app, monkeypatch):
     response = client.get("/protected", headers={"X-API-Key": "test-key-123"})
     assert response.status_code == 200
     assert response.json()["message"] == "ok"
+
+
+def test_request_without_configured_api_key_returns_503(protected_app, monkeypatch):
+    monkeypatch.delenv("API_KEY", raising=False)
+    client = TestClient(protected_app)
+    response = client.get("/protected", headers={"X-API-Key": "anything"})
+    assert response.status_code == 503
+    assert response.json()["detail"] == "API key is not configured"
+
+
+@pytest.mark.parametrize("placeholder_key", ["your-api-key-here", "replace-with-a-long-random-api-key"])
+def test_request_with_placeholder_api_key_in_production_returns_503(protected_app, monkeypatch, placeholder_key):
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("API_KEY", placeholder_key)
+    client = TestClient(protected_app)
+    response = client.get("/protected", headers={"X-API-Key": placeholder_key})
+    assert response.status_code == 503
+    assert response.json()["detail"] == "API key is not safely configured for production"

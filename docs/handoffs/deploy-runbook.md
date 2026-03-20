@@ -39,6 +39,10 @@ Why:
   - prechecks, backup, deploy, health verification, auto-rollback on failure
 - `scripts/vps-verify-access.sh`
   - verifies local + tailnet health endpoint and basic exposure checks
+- `docs/openclaw-vps-reference.md`
+  - canonical dogfood VPS env/deploy/backup/restore reference
+- `docs/vps-security-report-2026-02-25.md`
+  - security baseline and residual risk summary
 
 ---
 

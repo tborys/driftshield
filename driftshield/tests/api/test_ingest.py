@@ -215,3 +215,40 @@ def test_ingest_unsupported_format(client, auth_headers):
         data={"format": "unknown-format"},
     )
     assert response.status_code == 422
+
+
+def test_ingest_rejects_request_over_max_size_by_content_length(client, auth_headers, sample_transcript, monkeypatch):
+    monkeypatch.setenv("MAX_REQUEST_BYTES", "32")
+    oversized_client = TestClient(create_app())
+
+    from driftshield.api.dependencies import get_db
+    oversized_client.app.dependency_overrides[get_db] = lambda: client.app.dependency_overrides[get_db]()
+
+    response = oversized_client.post(
+        "/api/ingest",
+        headers={**auth_headers, "content-length": "64"},
+        files={"file": ("transcript.jsonl", io.BytesIO(sample_transcript), "application/jsonl")},
+        data={"format": "claude_code"},
+    )
+
+    assert response.status_code == 413
+    assert response.json()["detail"] == "Request body exceeds 32 bytes"
+
+
+
+def test_ingest_rejects_invalid_content_length_header(client, auth_headers, sample_transcript, monkeypatch):
+    monkeypatch.setenv("MAX_REQUEST_BYTES", "1024")
+    oversized_client = TestClient(create_app())
+
+    from driftshield.api.dependencies import get_db
+    oversized_client.app.dependency_overrides[get_db] = lambda: client.app.dependency_overrides[get_db]()
+
+    response = oversized_client.post(
+        "/api/ingest",
+        headers={**auth_headers, "content-length": "not-a-number"},
+        files={"file": ("transcript.jsonl", io.BytesIO(sample_transcript), "application/jsonl")},
+        data={"format": "claude_code"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Invalid Content-Length header"

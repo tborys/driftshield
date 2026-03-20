@@ -12,8 +12,10 @@ services:
       DB_PORT: 5432
       DB_USER: ${DB_USER:-drift}
       API_KEY: ${API_KEY:?API_KEY is required}
+      ENVIRONMENT: ${ENVIRONMENT:-production}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       WORKERS: ${WORKERS:-1}
+      MAX_REQUEST_BYTES: ${MAX_REQUEST_BYTES:-26214400}
     depends_on:
       db:
         condition: service_healthy
@@ -48,7 +50,9 @@ services:
       DB_PORT: 5432
       DB_USER: ${DB_USER:-drift}
       API_KEY: ${API_KEY:-dev-key}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
       LOG_LEVEL: debug
+      MAX_REQUEST_BYTES: ${MAX_REQUEST_BYTES:-26214400}
     volumes:
       - ./src:/app/src
     command: >
