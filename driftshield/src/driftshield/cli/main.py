@@ -9,6 +9,7 @@ from driftshield.cli.commands.inspect import inspect
 from driftshield.cli.commands.report import report_command
 from driftshield.cli.commands.export_validations import export_validations
 from driftshield.cli.commands.collect_graveyard import collect_graveyard
+from driftshield.cli.commands.connectors import app as connectors_app
 from driftshield.cli.commands.report_graveyard import report_graveyard
 from driftshield.cli.commands.generate_fixtures import generate_fixtures
 from driftshield.cli.commands.evaluate_classifier import evaluate_classifier
@@ -33,6 +34,7 @@ app.command(name="generate-fixtures")(generate_fixtures)
 app.command(name="evaluate-classifier")(evaluate_classifier)
 app.command(name="evaluate-signatures")(evaluate_signatures)
 app.command()(ingest)
+app.add_typer(connectors_app, name="connectors")
 
 
 def version_callback(value: bool) -> None:

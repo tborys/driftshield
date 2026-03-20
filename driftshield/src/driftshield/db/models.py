@@ -37,6 +37,34 @@ class SessionModel(Base):
     ingested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class ConnectorModel(Base):
+    __tablename__ = "connectors"
+    __table_args__ = (
+        Index("ix_connectors_connector_key", "connector_key", unique=True),
+        Index("ix_connectors_source_type_status", "source_type", "status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    connector_key: Mapped[str] = mapped_column(String, nullable=False)
+    source_type: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    display_name: Mapped[str] = mapped_column(String, nullable=False)
+    root_path: Mapped[str] = mapped_column(String, nullable=False)
+    parser_name: Mapped[str] = mapped_column(String, nullable=False)
+    consent_state: Mapped[str] = mapped_column(String, nullable=False, default="pending")
+    status: Mapped[str] = mapped_column(String, nullable=False, default="proposed")
+    watchable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    last_scanned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_seen_activity_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class DecisionNodeModel(Base):
     __tablename__ = "decision_nodes"
 

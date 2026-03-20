@@ -1,7 +1,7 @@
-"""Session discovery for Claude Code projects."""
+"""Session discovery helpers for local transcript sources."""
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -18,7 +18,7 @@ class SessionInfo:
     @property
     def age_description(self) -> str:
         """Human-readable age description."""
-        delta = datetime.now() - self.modified_at
+        delta = datetime.now(timezone.utc) - self.modified_at
         if delta.days > 1:
             return f"{delta.days} days ago"
         elif delta.days == 1:
@@ -64,6 +64,11 @@ def discover_sessions(
     project_key = path_to_project_key(project_dir)
     sessions_path = projects_dir / project_key
 
+    return discover_sessions_in_path(sessions_path)
+
+
+def discover_sessions_in_path(sessions_path: Path) -> list[SessionInfo]:
+    """Discover session files from a concrete sessions directory."""
     if not sessions_path.exists():
         return []
 
@@ -74,7 +79,7 @@ def discover_sessions(
             SessionInfo(
                 path=file,
                 session_id=file.stem,
-                modified_at=datetime.fromtimestamp(stat.st_mtime),
+                modified_at=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
                 size_bytes=stat.st_size,
             )
         )
