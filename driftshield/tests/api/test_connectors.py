@@ -6,10 +6,12 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session as DBSession
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from driftshield.api.app import create_app
 from driftshield.cli.discovery import path_to_project_key
+from driftshield.connectors.watcher import ConnectorWatchService
 from driftshield.db.models import Base
 
 
@@ -47,9 +49,48 @@ def _write_claude_session(base_dir: Path, project_dir: Path, session_id: str = "
     sessions_dir.mkdir(parents=True, exist_ok=True)
     session_path = sessions_dir / f"{session_id}.jsonl"
     session_path.write_text(
-        json.dumps({"sessionId": session_id, "type": "assistant"}) + "\n"
+        json.dumps(
+            {
+                "sessionId": session_id,
+                "type": "assistant",
+                "timestamp": "2026-03-20T12:00:00+00:00",
+                "message": {
+                    "model": "claude-sonnet",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "tool_1",
+                            "name": "Read",
+                            "input": {"file_path": "/tmp/example.txt"},
+                        }
+                    ],
+                },
+            }
+        )
+        + "\n"
     )
     os.utime(session_path, (1_800_000_000, 1_800_000_000))
+
+
+def _append_claude_text_event(base_dir: Path, project_dir: Path, session_id: str, text: str) -> None:
+    project_key = path_to_project_key(project_dir)
+    session_path = base_dir / ".claude" / "projects" / project_key / f"{session_id}.jsonl"
+    with session_path.open("a", encoding="utf-8") as handle:
+        handle.write(
+            json.dumps(
+                {
+                    "sessionId": session_id,
+                    "type": "assistant",
+                    "timestamp": "2026-03-20T12:00:00+00:00",
+                    "message": {
+                        "model": "claude-sonnet",
+                        "content": [{"type": "text", "text": text}],
+                    },
+                }
+            )
+            + "\n"
+        )
+    os.utime(session_path, None)
 
 
 def _assert_has_offset(value: str) -> None:
@@ -73,6 +114,7 @@ def test_connector_discovery_approve_and_rescan_flow(client, auth_headers, tmp_p
     assert connector["source_type"] == "claude_code"
     assert connector["consent_state"] == "pending"
     assert connector["status"] == "proposed"
+    assert connector["watch_status"] == "disabled"
     assert connector["last_scanned_at"] is None
 
     blocked = client.post(
@@ -88,6 +130,7 @@ def test_connector_discovery_approve_and_rescan_flow(client, auth_headers, tmp_p
     )
     assert approved.status_code == 200
     assert approved.json()["consent_state"] == "approved_always"
+    assert approved.json()["watch_status"] == "idle"
 
     rescanned = client.post(
         f"/api/connectors/{connector['id']}/rescan",
@@ -104,5 +147,75 @@ def test_connector_discovery_approve_and_rescan_flow(client, auth_headers, tmp_p
     )
     assert status.status_code == 200
     assert status.json()["status"] == "ready"
+    assert status.json()["watch_status"] == "idle"
     assert status.json()["metadata"]["session_count"] == 1
     _assert_has_offset(status.json()["last_seen_activity_at"])
+
+
+def test_connector_api_exposes_watch_status_and_resume_flow(
+    client,
+    auth_headers,
+    tmp_path,
+    monkeypatch,
+    db_session,
+):
+    project_dir = tmp_path / "repo"
+    project_dir.mkdir()
+    _write_claude_session(tmp_path, project_dir, session_id="watch-api")
+    monkeypatch.setenv("CLAUDE_HOME", str(tmp_path / ".claude"))
+
+    discover = client.post(
+        "/api/connectors/discover",
+        headers=auth_headers,
+        json={"project_dir": str(project_dir)},
+    )
+    connector = discover.json()["items"][0]
+
+    approved = client.post(
+        f"/api/connectors/{connector['id']}/approve",
+        headers=auth_headers,
+        json={"mode": "always"},
+    )
+    assert approved.status_code == 200
+
+    session_factory = sessionmaker(bind=db_session.bind, expire_on_commit=False)
+    ConnectorWatchService(session_factory).run_once()
+
+    watched = client.get(
+        f"/api/connectors/{connector['id']}",
+        headers=auth_headers,
+    )
+    assert watched.status_code == 200
+    payload = watched.json()
+    assert payload["watch_status"] == "idle"
+    assert payload["last_ingested_at"] is not None
+    assert payload["metadata"]["tracked_session_count"] == 1
+    assert payload["metadata"]["ingested_session_count"] == 1
+    _assert_has_offset(payload["last_ingested_at"])
+
+    paused = client.post(
+        f"/api/connectors/{connector['id']}/pause",
+        headers=auth_headers,
+    )
+    assert paused.status_code == 200
+    assert paused.json()["status"] == "paused"
+    assert paused.json()["watch_status"] == "paused"
+
+    _append_claude_text_event(tmp_path, project_dir, "watch-api", "wait until resumed")
+    ConnectorWatchService(session_factory).run_once()
+
+    still_paused = client.get(
+        f"/api/connectors/{connector['id']}",
+        headers=auth_headers,
+    )
+    assert still_paused.status_code == 200
+    assert still_paused.json()["status"] == "paused"
+    assert still_paused.json()["watch_status"] == "paused"
+
+    resumed = client.post(
+        f"/api/connectors/{connector['id']}/resume",
+        headers=auth_headers,
+    )
+    assert resumed.status_code == 200
+    assert resumed.json()["status"] == "ready"
+    assert resumed.json()["watch_status"] == "idle"

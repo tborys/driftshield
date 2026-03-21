@@ -51,7 +51,30 @@ class PersistenceService:
         session: DomainSession,
         result: AnalysisResult,
         provenance: IngestProvenance,
+        existing_session_id: uuid.UUID | None = None,
     ) -> IngestOutcome:
+        if existing_session_id is not None:
+            existing_session = self._db.get(SessionModel, existing_session_id)
+            if existing_session is not None and (
+                existing_session.transcript_hash == provenance.transcript_hash
+                and existing_session.parser_version == provenance.parser_version
+            ):
+                return self._outcome_for_existing_session(existing_session)
+
+            duplicate = self.get_ingest_outcome(provenance)
+            if duplicate is not None and duplicate.session_id != existing_session_id:
+                return duplicate
+
+            self.upsert(session, result, provenance=provenance)
+            return IngestOutcome(
+                session_id=session.id,
+                total_events=result.total_events,
+                flagged_events=result.flagged_events,
+                has_inflection=result.inflection_node is not None,
+                status="updated" if existing_session is not None else "created",
+                deduplicated=False,
+            )
+
         existing = self.get_ingest_outcome(provenance)
         if existing is not None:
             return existing
@@ -86,22 +109,73 @@ class PersistenceService:
         result: AnalysisResult,
         provenance: IngestProvenance | None = None,
     ) -> SessionModel:
-        session_model = SessionModel(
-            id=session.id,
-            external_id=getattr(session, "external_id", None),
-            agent_id=session.agent_id,
-            started_at=session.started_at,
-            ended_at=getattr(session, "ended_at", None),
-            status=session.status.value,
-            metadata_json=getattr(session, "metadata", None),
-            transcript_hash=provenance.transcript_hash if provenance else None,
-            source_session_id=provenance.source_session_id if provenance else None,
-            source_path=provenance.source_path if provenance else None,
-            parser_version=provenance.parser_version if provenance else None,
-            ingested_at=provenance.ingested_at if provenance else None,
+        session_model = SessionModel(id=session.id)
+        self._apply_session_fields(
+            session_model,
+            session=session,
+            provenance=provenance,
         )
         self._db.add(session_model)
         self._db.flush()
+        self._save_result(session, result)
+        return session_model
+
+    def upsert(
+        self,
+        session: DomainSession,
+        result: AnalysisResult,
+        provenance: IngestProvenance | None = None,
+    ) -> SessionModel:
+        session_model = self._db.get(SessionModel, session.id)
+        if session_model is None:
+            return self.save(session, result, provenance=provenance)
+
+        self._apply_session_fields(
+            session_model,
+            session=session,
+            provenance=provenance,
+        )
+        self._replace_session_result(session.id)
+        self._save_result(session, result)
+        return session_model
+
+    def _apply_session_fields(
+        self,
+        session_model: SessionModel,
+        *,
+        session: DomainSession,
+        provenance: IngestProvenance | None,
+    ) -> None:
+        session_model.external_id = getattr(session, "external_id", None)
+        session_model.agent_id = session.agent_id
+        session_model.started_at = session.started_at
+        session_model.ended_at = getattr(session, "ended_at", None)
+        session_model.status = session.status.value
+        session_model.metadata_json = getattr(session, "metadata", None)
+        session_model.transcript_hash = provenance.transcript_hash if provenance else None
+        session_model.source_session_id = provenance.source_session_id if provenance else None
+        session_model.source_path = provenance.source_path if provenance else None
+        session_model.parser_version = provenance.parser_version if provenance else None
+        session_model.ingested_at = provenance.ingested_at if provenance else None
+
+    def _replace_session_result(self, session_id: uuid.UUID) -> None:
+        (
+            self._db.query(SessionSignatureModel)
+            .filter(SessionSignatureModel.session_id == session_id)
+            .delete(synchronize_session=False)
+        )
+        (
+            self._db.query(DecisionNodeModel)
+            .filter(DecisionNodeModel.session_id == session_id)
+            .delete(synchronize_session=False)
+        )
+        self._db.flush()
+
+    def _save_result(
+        self,
+        session: DomainSession,
+        result: AnalysisResult,
+    ) -> None:
 
         for node in result.graph.nodes:
             risk = node.event.risk_classification or RiskClassification()
@@ -169,8 +243,6 @@ class PersistenceService:
                 matched_nodes=[],
             )
             self._db.add(mapping)
-
-        return session_model
 
     def load_session(self, session_id: uuid.UUID) -> DomainSession | None:
         model = self._db.get(SessionModel, session_id)

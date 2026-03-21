@@ -54,6 +54,7 @@ class ConnectorService:
                     consent_state="pending",
                     status="proposed",
                     watchable=candidate.watchable,
+                    watch_status="disabled",
                     metadata_json=metadata,
                     created_at=now,
                     updated_at=now,
@@ -70,6 +71,7 @@ class ConnectorService:
                 **(connector.metadata_json or {}),
                 **metadata,
             }
+            connector.watch_status = self._default_watch_status(connector)
             connector.updated_at = now
 
         self._db.flush()
@@ -92,6 +94,8 @@ class ConnectorService:
         connector.consent_state = "approved_always" if mode == "always" else "approved_once"
         connector.status = "ready"
         connector.last_error = None
+        connector.last_error_at = None
+        connector.watch_status = self._default_watch_status(connector)
         connector.updated_at = datetime.now(timezone.utc)
         self._db.flush()
         return connector
@@ -100,6 +104,7 @@ class ConnectorService:
         connector = self._require_connector(connector_id)
         connector.consent_state = "denied"
         connector.status = "denied"
+        connector.watch_status = self._default_watch_status(connector)
         connector.updated_at = datetime.now(timezone.utc)
         self._db.flush()
         return connector
@@ -107,6 +112,19 @@ class ConnectorService:
     def pause_connector(self, connector_id: uuid.UUID) -> ConnectorModel:
         connector = self._require_connector(connector_id)
         connector.status = "paused"
+        connector.watch_status = "paused"
+        connector.updated_at = datetime.now(timezone.utc)
+        self._db.flush()
+        return connector
+
+    def resume_connector(self, connector_id: uuid.UUID) -> ConnectorModel:
+        connector = self._require_connector(connector_id)
+        if connector.consent_state not in _APPROVED_CONSENT_STATES:
+            raise ValueError("Connector requires approval before it can be resumed")
+        connector.status = "ready"
+        connector.watch_status = self._default_watch_status(connector)
+        connector.last_error = None
+        connector.last_error_at = None
         connector.updated_at = datetime.now(timezone.utc)
         self._db.flush()
         return connector
@@ -115,6 +133,7 @@ class ConnectorService:
         connector = self._require_connector(connector_id)
         connector.consent_state = "pending"
         connector.status = "disconnected"
+        connector.watch_status = self._default_watch_status(connector)
         connector.updated_at = datetime.now(timezone.utc)
         self._db.flush()
         return connector
@@ -128,7 +147,9 @@ class ConnectorService:
             sessions = adapter.scan(Path(connector.root_path))
         except Exception as exc:
             connector.status = "error"
+            connector.watch_status = "error"
             connector.last_error = str(exc)
+            connector.last_error_at = datetime.now(timezone.utc)
             connector.updated_at = datetime.now(timezone.utc)
             self._db.flush()
             raise
@@ -138,6 +159,7 @@ class ConnectorService:
         connector.last_scanned_at = now
         connector.last_seen_activity_at = newest.modified_at if newest else None
         connector.last_error = None
+        connector.last_error_at = None
         connector.metadata_json = {
             **(connector.metadata_json or {}),
             "path_exists": Path(connector.root_path).exists(),
@@ -150,6 +172,7 @@ class ConnectorService:
             connector.status = "proposed"
         else:
             connector.status = "ready"
+        connector.watch_status = self._default_watch_status(connector)
         connector.updated_at = now
         self._db.flush()
 
@@ -173,3 +196,14 @@ class ConnectorService:
             raise ValueError(f"Connector is {connector.status} and cannot be scanned")
         if connector.consent_state not in _APPROVED_CONSENT_STATES:
             raise ValueError("Connector requires explicit approval before scanning")
+
+    def _default_watch_status(self, connector: ConnectorModel) -> str:
+        if connector.status == "paused":
+            return "paused"
+        if not connector.watchable:
+            return "disabled"
+        if connector.status in {"denied", "disconnected"}:
+            return "disabled"
+        if connector.consent_state == "approved_always":
+            return "idle"
+        return "disabled"

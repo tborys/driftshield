@@ -47,9 +47,13 @@ def _connector_response(connector: ConnectorModel) -> ConnectorResponse:
         status=connector.status,
         watchable=connector.watchable,
         metadata=connector.metadata_json or {},
+        watch_status=connector.watch_status,
         last_scanned_at=_ensure_utc(connector.last_scanned_at),
+        last_watch_heartbeat_at=_ensure_utc(connector.last_watch_heartbeat_at),
+        last_ingested_at=_ensure_utc(connector.last_ingested_at),
         last_seen_activity_at=_ensure_utc(connector.last_seen_activity_at),
         last_error=connector.last_error,
+        last_error_at=_ensure_utc(connector.last_error_at),
     )
 
 
@@ -143,6 +147,24 @@ def pause_connector(
         connector = service.pause_connector(connector_id)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    db.commit()
+    return _connector_response(connector)
+
+
+@router.post("/api/connectors/{connector_id}/resume", response_model=ConnectorResponse)
+def resume_connector(
+    connector_id: uuid.UUID,
+    api_key: str = Depends(require_api_key),
+    db: DBSession = Depends(get_db),
+):
+    del api_key
+    service = ConnectorService(db)
+    try:
+        connector = service.resume_connector(connector_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     db.commit()
     return _connector_response(connector)
 

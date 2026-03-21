@@ -96,9 +96,13 @@ class ConnectorResponse(BaseModel):
     status: str
     watchable: bool
     metadata: dict[str, Any] = Field(default_factory=dict)
+    watch_status: str
     last_scanned_at: datetime | None = None
+    last_watch_heartbeat_at: datetime | None = None
+    last_ingested_at: datetime | None = None
     last_seen_activity_at: datetime | None = None
     last_error: str | None = None
+    last_error_at: datetime | None = None
 
 
 class ConnectorListResponse(BaseModel):

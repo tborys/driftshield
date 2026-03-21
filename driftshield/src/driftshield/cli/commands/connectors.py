@@ -11,6 +11,7 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
+from driftshield.connectors.watcher import ConnectorWatchService
 from driftshield.db.connector_service import ConnectorService
 from driftshield.db.engine import get_engine, get_session_factory
 from driftshield.db.models import Base, ConnectorModel
@@ -43,9 +44,20 @@ def _connector_payload(connector: ConnectorModel) -> dict[str, object]:
         "status": connector.status,
         "watchable": connector.watchable,
         "metadata": connector.metadata_json or {},
+        "watch_status": connector.watch_status,
         "last_scanned_at": (
             _ensure_utc(connector.last_scanned_at).isoformat()
             if connector.last_scanned_at
+            else None
+        ),
+        "last_watch_heartbeat_at": (
+            _ensure_utc(connector.last_watch_heartbeat_at).isoformat()
+            if connector.last_watch_heartbeat_at
+            else None
+        ),
+        "last_ingested_at": (
+            _ensure_utc(connector.last_ingested_at).isoformat()
+            if connector.last_ingested_at
             else None
         ),
         "last_seen_activity_at": (
@@ -54,6 +66,11 @@ def _connector_payload(connector: ConnectorModel) -> dict[str, object]:
             else None
         ),
         "last_error": connector.last_error,
+        "last_error_at": (
+            _ensure_utc(connector.last_error_at).isoformat()
+            if connector.last_error_at
+            else None
+        ),
     }
 
 
@@ -90,7 +107,7 @@ def discover_connectors(
     for connector in payload:
         console.print(
             f"{connector['id']} {connector['display_name']} "
-            f"[dim]{connector['status']} / {connector['consent_state']}[/dim]"
+            f"[dim]{connector['status']} / {connector['consent_state']} / watch={connector['watch_status']}[/dim]"
         )
 
 
@@ -114,7 +131,7 @@ def list_connectors(
     for connector in payload:
         console.print(
             f"{connector['id']} {connector['display_name']} "
-            f"[dim]{connector['status']} / {connector['consent_state']}[/dim]"
+            f"[dim]{connector['status']} / {connector['consent_state']} / watch={connector['watch_status']}[/dim]"
         )
 
 
@@ -211,6 +228,23 @@ def disconnect_connector(
     console.print(f"Disconnected {connector.display_name} ({connector.id}).")
 
 
+@app.command("resume")
+def resume_connector(
+    connector_id: uuid.UUID = typer.Argument(..., help="Connector identifier."),
+) -> None:
+    """Resume a paused or errored connector for background watch."""
+    with _open_db() as db:
+        service = ConnectorService(db)
+        try:
+            connector = service.resume_connector(connector_id)
+        except (LookupError, ValueError) as exc:
+            console.print(f"[red]Error:[/red] {exc}")
+            raise typer.Exit(1) from exc
+        db.commit()
+
+    console.print(f"Resumed {connector.display_name} ({connector.id}).")
+
+
 @app.command("rescan")
 def rescan_connector(
     connector_id: uuid.UUID = typer.Argument(..., help="Connector identifier."),
@@ -243,3 +277,52 @@ def rescan_connector(
         f"Rescanned {scan.connector_id}: {scan.session_count} session(s), "
         f"latest={scan.newest_session_id or 'none'}."
     )
+
+
+@app.command("watch")
+def watch_connectors(
+    once: bool = typer.Option(False, "--once", help="Run a single watch cycle and exit."),
+    poll_interval: float = typer.Option(
+        5.0,
+        "--poll-interval",
+        min=0.25,
+        help="Seconds between watch cycles.",
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Output JSON for --once mode."),
+) -> None:
+    """Watch approved connectors for incremental ingest updates."""
+    if json_output and not once:
+        console.print("[red]Error:[/red] --json requires --once.")
+        raise typer.Exit(1)
+
+    engine = get_engine()
+    Base.metadata.create_all(engine)
+    session_factory = get_session_factory(engine)
+    watcher = ConnectorWatchService(session_factory, poll_interval_seconds=poll_interval)
+
+    if once:
+        result = watcher.run_once()
+        payload = {
+            "connectors_seen": result.connectors_seen,
+            "connectors_processed": result.connectors_processed,
+            "sessions_seen": result.sessions_seen,
+            "sessions_ingested": result.sessions_ingested,
+        }
+        if json_output:
+            typer.echo(json.dumps(payload))
+            return
+
+        console.print(
+            "Watch cycle complete "
+            f"(connectors={result.connectors_processed}/{result.connectors_seen}, "
+            f"sessions={result.sessions_seen}, ingested={result.sessions_ingested})."
+        )
+        return
+
+    console.print(
+        f"Watching approved connectors every {poll_interval:.2f}s. Press Ctrl+C to stop."
+    )
+    try:
+        watcher.run_forever()
+    except KeyboardInterrupt:
+        console.print("Watcher stopped.")

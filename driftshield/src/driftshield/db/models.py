@@ -60,7 +60,62 @@ class ConnectorModel(Base):
     last_seen_activity_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    watch_status: Mapped[str] = mapped_column(
+        String,
+        nullable=False,
+        default="disabled",
+        server_default="disabled",
+    )
+    last_watch_heartbeat_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    last_ingested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_error_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ConnectorSessionStateModel(Base):
+    __tablename__ = "connector_session_states"
+    __table_args__ = (
+        Index(
+            "ix_connector_session_states_connector_source_path",
+            "connector_id",
+            "source_path",
+            unique=True,
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    connector_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("connectors.id"),
+        nullable=False,
+        index=True,
+    )
+    source_session_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    source_path: Mapped[str] = mapped_column(String, nullable=False)
+    parser_name: Mapped[str] = mapped_column(String, nullable=False)
+    session_model_id: Mapped[uuid.UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("sessions.id"),
+        nullable=True,
+        index=True,
+    )
+    last_modified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_transcript_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    last_activity_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_ingested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_error_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 

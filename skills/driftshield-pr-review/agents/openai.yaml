@@ -1,0 +1,4 @@
+interface:
+  display_name: "DriftShield PR Review"
+  short_description: "Review DriftShield backend and frontend PRs"
+  default_prompt: "Use $driftshield-pr-review to review this DriftShield PR for regressions, missing tests, and repo-specific risks."
