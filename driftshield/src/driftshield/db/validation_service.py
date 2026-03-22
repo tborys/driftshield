@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -10,9 +10,23 @@ import uuid
 
 from sqlalchemy.orm import Session as DBSession
 
-from driftshield.db.models import AnalystValidationModel
+from driftshield.db.models import AnalystValidationModel, SessionModel
 
 _ALLOWED_VERDICTS = {"accept", "reject", "needs_review"}
+_ALLOWED_REVIEW_OUTCOMES = {
+    "useful_failure",
+    "noise",
+    "true_inflection",
+    "wrong_inflection",
+    "needs_follow_up",
+}
+_REVIEW_OUTCOME_VERDICTS = {
+    "useful_failure": "accept",
+    "true_inflection": "accept",
+    "noise": "reject",
+    "wrong_inflection": "reject",
+    "needs_follow_up": "needs_review",
+}
 
 
 @dataclass(slots=True)
@@ -34,6 +48,33 @@ class ValidationService:
     def __init__(self, db: DBSession):
         self._db = db
 
+    def _normalise_metadata(self, metadata_json: dict | None) -> dict | None:
+        if metadata_json is None:
+            return None
+
+        metadata = dict(metadata_json)
+        review_outcome = metadata.get("review_outcome")
+        if review_outcome is not None:
+            if not isinstance(review_outcome, dict):
+                raise ValueError("review_outcome metadata must be an object")
+
+            label = review_outcome.get("label")
+            if label not in _ALLOWED_REVIEW_OUTCOMES:
+                allowed = ", ".join(sorted(_ALLOWED_REVIEW_OUTCOMES))
+                raise ValueError(f"review_outcome.label must be one of: {allowed}")
+
+            target_type = review_outcome.get("target_type")
+            if target_type is not None and not isinstance(target_type, str):
+                raise ValueError("review_outcome.target_type must be a string")
+
+            expected_verdict = _REVIEW_OUTCOME_VERDICTS[label]
+            if metadata.get("verdict") not in (None, expected_verdict):
+                raise ValueError(
+                    f"review_outcome.label {label!r} requires verdict {expected_verdict!r}"
+                )
+
+        return metadata
+
     def _record(
         self,
         *,
@@ -50,6 +91,12 @@ class ValidationService:
         if verdict not in _ALLOWED_VERDICTS:
             raise ValueError("verdict must be accept/reject/needs_review")
 
+        normalised_metadata = self._normalise_metadata(
+            None if metadata_json is None else {**metadata_json, "verdict": verdict}
+        )
+        if normalised_metadata is not None:
+            normalised_metadata.pop("verdict", None)
+
         row = AnalystValidationModel(
             session_id=session_id,
             target_type=target_type,
@@ -58,7 +105,7 @@ class ValidationService:
             confidence=confidence,
             reviewer=reviewer,
             notes=notes,
-            metadata_json=metadata_json,
+            metadata_json=normalised_metadata,
             shareable=shareable,
             created_at=datetime.now(timezone.utc),
         )
@@ -166,7 +213,8 @@ class ValidationService:
 
     def export_training_dataset_jsonl(self, path: Path) -> int:
         rows = (
-            self._db.query(AnalystValidationModel)
+            self._db.query(AnalystValidationModel, SessionModel)
+            .join(SessionModel, SessionModel.id == AnalystValidationModel.session_id)
             .filter(AnalystValidationModel.shareable.is_(True))
             .order_by(AnalystValidationModel.created_at.asc())
             .all()
@@ -174,21 +222,35 @@ class ValidationService:
 
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("w", encoding="utf-8") as f:
-            for row in rows:
+            for validation, session in rows:
+                review_outcome = None
+                if validation.metadata_json:
+                    outcome = validation.metadata_json.get("review_outcome")
+                    if isinstance(outcome, dict):
+                        review_outcome = outcome
+
                 payload = {
-                    "validation_id": str(row.id),
-                    "session_id": str(row.session_id),
-                    "target_type": row.target_type,
-                    "target_ref": row.target_ref,
-                    "verdict": row.verdict,
-                    "confidence": row.confidence,
-                    "reviewer": row.reviewer,
-                    "notes": row.notes,
-                    "metadata": row.metadata_json,
-                    "created_at": row.created_at.isoformat(),
+                    "validation_id": str(validation.id),
+                    "session_id": str(validation.session_id),
+                    "target_type": validation.target_type,
+                    "target_ref": validation.target_ref,
+                    "verdict": validation.verdict,
+                    "confidence": validation.confidence,
+                    "reviewer": validation.reviewer,
+                    "notes": validation.notes,
+                    "metadata": validation.metadata_json,
+                    "review_outcome": review_outcome,
+                    "created_at": validation.created_at.isoformat(),
+                    "session_provenance": {
+                        "source_session_id": session.source_session_id,
+                        "source_path": session.source_path,
+                        "parser_version": session.parser_version,
+                        "transcript_hash": session.transcript_hash,
+                        "ingested_at": session.ingested_at.isoformat() if session.ingested_at else None,
+                    },
                 }
-                if row.target_type == "signature" and row.metadata_json:
-                    payload["signature_hash"] = row.metadata_json.get("signature_hash")
+                if validation.target_type == "signature" and validation.metadata_json:
+                    payload["signature_hash"] = validation.metadata_json.get("signature_hash")
 
                 f.write(json.dumps(payload, sort_keys=True) + "\n")
 

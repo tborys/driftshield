@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import json
 import uuid
 
 from sqlalchemy.orm import Session
@@ -27,18 +28,25 @@ def test_export_validations_command_writes_jsonl(tmp_path, monkeypatch):
                 started_at=datetime.now(timezone.utc),
                 status="completed",
                 agent_id="agent",
+                source_session_id="dogfood-session-123",
+                source_path="fixtures/dogfood/session.jsonl",
+                parser_version="openclaw@1",
             )
         )
         db.add(
             AnalystValidationModel(
                 session_id=session_id,
-                target_type="signature",
-                target_ref="abc123",
+                target_type="risk_flag",
+                target_ref="abc123:coverage_gap",
                 verdict="accept",
                 confidence=0.9,
                 reviewer="demo",
                 notes="ok",
-                metadata_json={"signature_hash": "abc123"},
+                metadata_json={
+                    "node_id": "abc123",
+                    "flag_name": "coverage_gap",
+                    "review_outcome": {"label": "useful_failure", "target_type": "risk_flag"},
+                },
                 shareable=True,
                 created_at=datetime.now(timezone.utc),
             )
@@ -51,4 +59,6 @@ def test_export_validations_command_writes_jsonl(tmp_path, monkeypatch):
     assert result.exit_code == 0
     assert "Exported 1 validation record" in result.output
     assert output.exists()
-    assert output.read_text().strip() != ""
+    payload = json.loads(output.read_text().strip())
+    assert payload["review_outcome"]["label"] == "useful_failure"
+    assert payload["session_provenance"]["source_session_id"] == "dogfood-session-123"

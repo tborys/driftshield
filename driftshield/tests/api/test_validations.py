@@ -61,7 +61,12 @@ def test_create_and_list_validations(client, auth_headers, seeded_session):
         "reviewer": "demo",
         "confidence": 0.87,
         "notes": "Looks correct",
-        "shareable": False,
+        "metadata_json": {
+            "node_id": str(uuid.uuid4()),
+            "flag_name": "coverage_gap",
+            "review_outcome": {"label": "useful_failure", "target_type": "risk_flag"},
+        },
+        "shareable": True,
     }
 
     post = client.post(
@@ -73,6 +78,7 @@ def test_create_and_list_validations(client, auth_headers, seeded_session):
     created = post.json()
     assert created["target_type"] == "risk_flag"
     assert created["verdict"] == "accept"
+    assert created["metadata_json"]["review_outcome"]["label"] == "useful_failure"
 
     get_resp = client.get(
         f"/api/sessions/{seeded_session}/validations",
@@ -83,6 +89,81 @@ def test_create_and_list_validations(client, auth_headers, seeded_session):
     assert len(rows) == 1
     assert rows[0]["reviewer"] == "demo"
 
+
+def test_create_validation_rejects_invalid_review_outcome(client, auth_headers, seeded_session):
+    payload = {
+        "target_type": "inflection",
+        "target_ref": str(uuid.uuid4()),
+        "verdict": "accept",
+        "reviewer": "devin",
+        "metadata_json": {
+            "review_outcome": {"label": "definitely_not_real"},
+        },
+    }
+    resp = client.post(
+        f"/api/sessions/{seeded_session}/validations",
+        headers=auth_headers,
+        json=payload,
+    )
+    assert resp.status_code == 400
+    assert "review_outcome.label" in resp.json()["detail"]
+
+
+
+
+def test_create_validation_accepts_null_metadata_json(client, auth_headers, seeded_session):
+    payload = {
+        "target_type": "inflection",
+        "target_ref": str(uuid.uuid4()),
+        "verdict": "accept",
+        "reviewer": "devin",
+        "metadata_json": None,
+    }
+    resp = client.post(
+        f"/api/sessions/{seeded_session}/validations",
+        headers=auth_headers,
+        json=payload,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["metadata_json"] is None
+
+
+def test_create_validation_rejects_non_object_review_outcome(client, auth_headers, seeded_session):
+    payload = {
+        "target_type": "inflection",
+        "target_ref": str(uuid.uuid4()),
+        "verdict": "accept",
+        "reviewer": "devin",
+        "metadata_json": {
+            "review_outcome": "useful_failure",
+        },
+    }
+    resp = client.post(
+        f"/api/sessions/{seeded_session}/validations",
+        headers=auth_headers,
+        json=payload,
+    )
+    assert resp.status_code == 400
+    assert "review_outcome metadata must be an object" in resp.json()["detail"]
+
+
+def test_create_validation_rejects_contradictory_review_outcome_verdict(client, auth_headers, seeded_session):
+    payload = {
+        "target_type": "risk_flag",
+        "target_ref": f"{uuid.uuid4()}:coverage_gap",
+        "verdict": "reject",
+        "reviewer": "devin",
+        "metadata_json": {
+            "review_outcome": {"label": "useful_failure", "target_type": "risk_flag"},
+        },
+    }
+    resp = client.post(
+        f"/api/sessions/{seeded_session}/validations",
+        headers=auth_headers,
+        json=payload,
+    )
+    assert resp.status_code == 400
+    assert "requires verdict 'accept'" in resp.json()["detail"]
 
 def test_create_validation_for_missing_session_returns_404(client, auth_headers):
     payload = {

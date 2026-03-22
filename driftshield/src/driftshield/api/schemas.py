@@ -140,6 +140,7 @@ class ValidationCreateRequest(BaseModel):
     reviewer: str
     confidence: float | None = None
     notes: str | None = None
+    metadata_json: dict[str, Any] | None = None
     shareable: bool = False
 
 

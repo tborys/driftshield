@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useCreateSessionValidation, useSessionValidations } from '@/api/sessions'
 import type { GraphNode } from '@/types/graph'
-import type { ValidationRecord } from '@/types/validation'
+import type { ReviewOutcomeLabel, ValidationRecord } from '@/types/validation'
 
 interface ReviewDrawerProps {
   open: boolean
@@ -12,7 +12,13 @@ interface ReviewDrawerProps {
   onClose: () => void
 }
 
-const verdictOptions: Array<'accept' | 'reject' | 'needs_review'> = ['accept', 'reject', 'needs_review']
+const reviewOutcomeLabels: ReviewOutcomeLabel[] = [
+  'useful_failure',
+  'noise',
+  'true_inflection',
+  'wrong_inflection',
+  'needs_follow_up',
+]
 
 function isValidationForNode(validation: ValidationRecord, nodeId: string) {
   if (validation.target_ref === nodeId) {
@@ -31,11 +37,42 @@ function isValidationForNode(validation: ValidationRecord, nodeId: string) {
   return metadataNodeId === nodeId
 }
 
+function prettifyReviewOutcome(label: ReviewOutcomeLabel) {
+  return label.replace(/_/g, ' ')
+}
+
+function defaultOutcomeForNode(node: GraphNode | null): ReviewOutcomeLabel {
+  if (!node) {
+    return 'needs_follow_up'
+  }
+
+  if (node.is_inflection) {
+    return 'true_inflection'
+  }
+
+  return node.risk_flags.length > 0 ? 'useful_failure' : 'needs_follow_up'
+}
+
+function verdictForOutcome(label: ReviewOutcomeLabel): 'accept' | 'reject' | 'needs_review' {
+  switch (label) {
+    case 'useful_failure':
+    case 'true_inflection':
+      return 'accept'
+    case 'noise':
+    case 'wrong_inflection':
+      return 'reject'
+    case 'needs_follow_up':
+      return 'needs_review'
+  }
+}
+
 export function ReviewDrawer({ open, sessionId, node, onClose }: ReviewDrawerProps) {
   const [reviewer, setReviewer] = useState('analyst')
   const [verdict, setVerdict] = useState<'accept' | 'reject' | 'needs_review'>('accept')
+  const [reviewOutcome, setReviewOutcome] = useState<ReviewOutcomeLabel>('needs_follow_up')
   const [notes, setNotes] = useState('')
   const [confidence, setConfidence] = useState('0.8')
+  const [shareable, setShareable] = useState(true)
   const [saveStatus, setSaveStatus] = useState<string | null>(null)
 
   const { data: validations = [], isLoading } = useSessionValidations(sessionId)
@@ -56,6 +93,9 @@ export function ReviewDrawer({ open, sessionId, node, onClose }: ReviewDrawerPro
 
   useEffect(() => {
     if (open && node) {
+      const defaultOutcome = defaultOutcomeForNode(node)
+      setReviewOutcome(defaultOutcome)
+      setVerdict(verdictForOutcome(defaultOutcome))
       setTimeout(() => {
         const input = document.getElementById('reviewer-input') as HTMLInputElement | null
         input?.focus()
@@ -85,13 +125,21 @@ export function ReviewDrawer({ open, sessionId, node, onClose }: ReviewDrawerPro
         verdict,
         notes: notes || undefined,
         confidence: Number.isNaN(parsedConfidence) ? undefined : parsedConfidence,
-        shareable: false,
+        metadata_json: {
+          node_id: node.id,
+          ...(node.risk_flags.length > 0 ? { flag_name: node.risk_flags[0] } : {}),
+          review_outcome: {
+            label: reviewOutcome,
+            target_type: node.is_inflection ? 'inflection' : 'risk_flag',
+          },
+        },
+        shareable,
       })
 
       setNotes('')
-      setSaveStatus('Validation saved.')
+      setSaveStatus('Review outcome saved.')
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Validation save failed.'
+      const message = error instanceof Error ? error.message : 'Review outcome save failed.'
       setSaveStatus(message)
     }
   }
@@ -125,18 +173,29 @@ export function ReviewDrawer({ open, sessionId, node, onClose }: ReviewDrawerPro
           </div>
 
           <div className="space-y-2">
-            <label className="text-xs text-muted-foreground">Verdict</label>
+            <label className="text-xs text-muted-foreground">Dogfood review outcome</label>
             <div className="flex gap-2 flex-wrap">
-              {verdictOptions.map((option) => (
+              {reviewOutcomeLabels.map((option) => (
                 <Button
                   key={option}
                   size="sm"
-                  variant={verdict === option ? 'default' : 'outline'}
-                  onClick={() => setVerdict(option)}
+                  variant={reviewOutcome === option ? 'default' : 'outline'}
+                  onClick={() => {
+                    setReviewOutcome(option)
+                    setVerdict(verdictForOutcome(option))
+                  }}
                 >
-                  {option}
+                  {prettifyReviewOutcome(option)}
                 </Button>
               ))}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs text-muted-foreground">Verdict</label>
+            <div className="rounded-md border px-3 py-2 text-sm">
+              <span className="font-medium">{verdict}</span>
+              <span className="text-muted-foreground"> {' '}derived from the selected dogfood outcome</span>
             </div>
           </div>
 
@@ -152,6 +211,11 @@ export function ReviewDrawer({ open, sessionId, node, onClose }: ReviewDrawerPro
             )}
           </div>
 
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={shareable} onChange={(e) => setShareable(e.target.checked)} />
+            Include in evaluation/training exports
+          </label>
+
           <div className="space-y-2">
             <label className="text-xs text-muted-foreground">Notes</label>
             <textarea
@@ -163,30 +227,38 @@ export function ReviewDrawer({ open, sessionId, node, onClose }: ReviewDrawerPro
           </div>
 
           <Button onClick={save} disabled={createValidation.isPending || !canSave}>
-            {createValidation.isPending ? 'Saving...' : 'Save validation'}
+            {createValidation.isPending ? 'Saving...' : 'Save review outcome'}
           </Button>
 
           {saveStatus && (
-            <p className={`text-xs ${saveStatus === 'Validation saved.' ? 'text-emerald-600' : 'text-destructive'}`} aria-live="polite">
+            <p className={`text-xs ${saveStatus === 'Review outcome saved.' ? 'text-emerald-600' : 'text-destructive'}`} aria-live="polite">
               {saveStatus}
             </p>
           )}
 
           <div className="pt-2 border-t">
-            <h4 className="text-sm font-medium mb-2">Validation history</h4>
+            <h4 className="text-sm font-medium mb-2">Review history</h4>
             {isLoading ? (
               <p className="text-sm text-muted-foreground">Loading...</p>
             ) : nodeValidations.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No validations yet for this node.</p>
+              <p className="text-sm text-muted-foreground">No reviews yet for this node.</p>
             ) : (
               <ul className="space-y-2">
-                {nodeValidations.map((v) => (
-                  <li key={v.id} className="text-xs border rounded p-2">
-                    <p><span className="font-medium">{v.verdict}</span> by {v.reviewer}</p>
-                    <p className="text-muted-foreground">{new Date(v.created_at).toLocaleString()}</p>
-                    {v.notes ? <p>{v.notes}</p> : null}
-                  </li>
-                ))}
+                {nodeValidations.map((v) => {
+                  const rawReviewOutcomeLabel = v.metadata_json?.review_outcome?.label
+                  const reviewOutcomeLabel =
+                    typeof rawReviewOutcomeLabel === 'string' ? rawReviewOutcomeLabel as ReviewOutcomeLabel : null
+                  return (
+                    <li key={v.id} className="text-xs border rounded p-2">
+                      <p>
+                        <span className="font-medium">{reviewOutcomeLabel ? prettifyReviewOutcome(reviewOutcomeLabel) : v.verdict}</span>
+                        {' '}by {v.reviewer}
+                      </p>
+                      <p className="text-muted-foreground">{new Date(v.created_at).toLocaleString()}</p>
+                      {v.notes ? <p>{v.notes}</p> : null}
+                    </li>
+                  )
+                })}
               </ul>
             )}
           </div>

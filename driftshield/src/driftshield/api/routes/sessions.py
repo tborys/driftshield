@@ -333,18 +333,22 @@ def create_session_validation(
         raise HTTPException(status_code=404, detail="Session not found")
 
     service = ValidationService(db)
-    row = service._record(
-        session_id=session_id,
-        target_type=payload.target_type,
-        target_ref=payload.target_ref,
-        verdict=payload.verdict,
-        reviewer=payload.reviewer,
-        confidence=payload.confidence,
-        notes=payload.notes,
-        metadata_json=None,
-        shareable=payload.shareable,
-    )
-    db.commit()
+    try:
+        row = service._record(
+            session_id=session_id,
+            target_type=payload.target_type,
+            target_ref=payload.target_ref,
+            verdict=payload.verdict,
+            reviewer=payload.reviewer,
+            confidence=payload.confidence,
+            notes=payload.notes,
+            metadata_json=payload.metadata_json,
+            shareable=payload.shareable,
+        )
+        db.commit()
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     created = ValidationResponse(
         id=row.id,
