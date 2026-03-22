@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from driftshield.parsers.claude_code import ClaudeCodeParser
+from driftshield.parsers.openclaw import OpenClawParser
 from driftshield.parsers.protocol import TranscriptParser
 
 
@@ -14,6 +15,7 @@ class ParserNotFoundError(Exception):
 
 PARSERS: dict[str, type[TranscriptParser]] = {
     "claude_code": ClaudeCodeParser,
+    "openclaw": OpenClawParser,
 }
 
 
@@ -51,6 +53,9 @@ def detect_parser(path: Path) -> str | None:
         Parser name or None if cannot detect
     """
     path_str = str(path.resolve())
+    if ".openclaw/agents/" in path_str and "/sessions/" in path_str:
+        return "openclaw"
+
     if ".claude/projects/" in path_str or ".claude\\projects\\" in path_str:
         return "claude_code"
 

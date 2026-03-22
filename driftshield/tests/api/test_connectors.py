@@ -72,6 +72,14 @@ def _write_claude_session(base_dir: Path, project_dir: Path, session_id: str = "
     os.utime(session_path, (1_800_000_000, 1_800_000_000))
 
 
+def _write_openclaw_session(base_dir: Path, agent_name: str, session_id: str = "session-1") -> None:
+    sessions_dir = base_dir / ".openclaw" / "agents" / agent_name / "sessions"
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+    session_path = sessions_dir / f"{session_id}.jsonl"
+    session_path.write_text(json.dumps({"type": "session", "id": session_id}) + "\n")
+    os.utime(session_path, (1_800_000_000, 1_800_000_000))
+
+
 def _append_claude_text_event(base_dir: Path, project_dir: Path, session_id: str, text: str) -> None:
     project_key = path_to_project_key(project_dir)
     session_path = base_dir / ".claude" / "projects" / project_key / f"{session_id}.jsonl"
@@ -150,6 +158,24 @@ def test_connector_discovery_approve_and_rescan_flow(client, auth_headers, tmp_p
     assert status.json()["watch_status"] == "idle"
     assert status.json()["metadata"]["session_count"] == 1
     _assert_has_offset(status.json()["last_seen_activity_at"])
+
+
+def test_connector_discovery_lists_openclaw_agents(client, auth_headers, tmp_path, monkeypatch):
+    project_dir = tmp_path / "repo"
+    project_dir.mkdir()
+    _write_openclaw_session(tmp_path, "business", session_id="biz-1")
+    monkeypatch.setenv("OPENCLAW_HOME", str(tmp_path / ".openclaw"))
+
+    discover = client.post(
+        "/api/connectors/discover",
+        headers=auth_headers,
+        json={"project_dir": str(project_dir)},
+    )
+
+    assert discover.status_code == 200
+    items = discover.json()["items"]
+    assert any(item["source_type"] == "openclaw_business" for item in items)
+    assert any(item["parser_name"] == "openclaw" for item in items)
 
 
 def test_connector_api_exposes_watch_status_and_resume_flow(

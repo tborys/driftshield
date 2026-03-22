@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -78,8 +79,54 @@ class ClaudeCodeConnectorAdapter(ConnectorAdapter):
         return discover_sessions_in_path(root_path)
 
 
+class OpenClawAgentConnectorAdapter(ConnectorAdapter):
+    parser_name = "openclaw"
+    watchable = True
+
+    def __init__(self, *, source_type: str, agent_name: str, display_name: str):
+        self.source_type = source_type
+        self.agent_name = agent_name
+        self.display_name = display_name
+
+    def build_candidate(self, context: DiscoveryContext) -> ConnectorCandidate | None:
+        openclaw_home = Path(os.environ.get("OPENCLAW_HOME", Path.home() / ".openclaw")).expanduser()
+        root_path = openclaw_home / "agents" / self.agent_name / "sessions"
+        if not root_path.exists():
+            return None
+
+        return ConnectorCandidate(
+            source_type=self.source_type,
+            display_name=self.display_name,
+            root_path=root_path,
+            parser_name=self.parser_name,
+            watchable=self.watchable,
+            metadata={
+                "agent_name": self.agent_name,
+                "openclaw_home": str(openclaw_home),
+            },
+        )
+
+    def scan(self, root_path: Path) -> list[SessionInfo]:
+        return discover_sessions_in_path(root_path)
+
+
 CONNECTOR_ADAPTERS: dict[str, ConnectorAdapter] = {
     "claude_code": ClaudeCodeConnectorAdapter(),
+    "openclaw_main": OpenClawAgentConnectorAdapter(
+        source_type="openclaw_main",
+        agent_name="main",
+        display_name="OpenClaw Main",
+    ),
+    "openclaw_business": OpenClawAgentConnectorAdapter(
+        source_type="openclaw_business",
+        agent_name="business",
+        display_name="OpenClaw Business",
+    ),
+    "openclaw_engineering": OpenClawAgentConnectorAdapter(
+        source_type="openclaw_engineering",
+        agent_name="engineering",
+        display_name="OpenClaw Engineering",
+    ),
 }
 
 

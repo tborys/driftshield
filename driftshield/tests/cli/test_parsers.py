@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from driftshield.cli.parsers import get_parser, detect_parser, ParserNotFoundError
+from driftshield.cli.parsers import ParserNotFoundError, detect_parser, get_parser
 
 
 class TestGetParser:
@@ -17,6 +17,11 @@ class TestGetParser:
         """Auto parser returns claude_code for now."""
         parser = get_parser("auto")
         assert parser.source_type == "claude_code"
+
+    def test_get_openclaw_parser(self):
+        """Can get openclaw parser by name."""
+        parser = get_parser("openclaw")
+        assert parser.source_type == "openclaw"
 
     def test_unknown_parser_raises(self):
         """Unknown parser name raises ParserNotFoundError."""
@@ -40,6 +45,15 @@ class TestDetectParser:
 
         parser_name = detect_parser(claude_path)
         assert parser_name == "claude_code"
+
+    def test_detects_openclaw_sessions_path(self, tmp_path):
+        """Files under ~/.openclaw/agents/*/sessions/ detected as openclaw."""
+        openclaw_path = tmp_path / ".openclaw" / "agents" / "engineering" / "sessions" / "session.jsonl"
+        openclaw_path.parent.mkdir(parents=True)
+        openclaw_path.touch()
+
+        parser_name = detect_parser(openclaw_path)
+        assert parser_name == "openclaw"
 
     def test_unknown_format_returns_none(self):
         """Unknown format returns None."""

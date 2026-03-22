@@ -40,6 +40,14 @@ def _write_claude_session(base_dir: Path, project_dir: Path, session_id: str = "
     os.utime(session_path, (1_800_000_000, 1_800_000_000))
 
 
+def _write_openclaw_session(base_dir: Path, agent_name: str, session_id: str = "session-1") -> None:
+    sessions_dir = base_dir / ".openclaw" / "agents" / agent_name / "sessions"
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+    session_path = sessions_dir / f"{session_id}.jsonl"
+    session_path.write_text(json.dumps({"type": "session", "id": session_id}) + "\n")
+    os.utime(session_path, (1_800_000_000, 1_800_000_000))
+
+
 def _append_claude_text_event(base_dir: Path, project_dir: Path, session_id: str, text: str) -> None:
     project_key = path_to_project_key(project_dir)
     session_path = base_dir / ".claude" / "projects" / project_key / f"{session_id}.jsonl"
@@ -112,6 +120,28 @@ def test_connectors_cli_discovery_and_rescan_flow(tmp_path, monkeypatch):
     assert payload["status"] == "ready"
     assert payload["watch_status"] == "idle"
     _assert_has_offset(payload["last_seen_activity_at"])
+
+
+def test_connectors_cli_discovers_openclaw_agents(tmp_path, monkeypatch):
+    project_dir = tmp_path / "repo"
+    project_dir.mkdir()
+    _write_openclaw_session(tmp_path, "main", session_id="main-1")
+    _write_openclaw_session(tmp_path, "engineering", session_id="eng-1")
+
+    db_path = tmp_path / "connectors.db"
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_path}")
+    monkeypatch.setenv("OPENCLAW_HOME", str(tmp_path / ".openclaw"))
+
+    discovered = runner.invoke(
+        app,
+        ["connectors", "discover", "--project-dir", str(project_dir), "--json"],
+    )
+    assert discovered.exit_code == 0
+
+    items = json.loads(discovered.stdout)
+    source_types = {item["source_type"] for item in items}
+    assert "openclaw_main" in source_types
+    assert "openclaw_engineering" in source_types
 
 
 def test_connectors_cli_watch_pause_and_resume_flow(tmp_path, monkeypatch):
