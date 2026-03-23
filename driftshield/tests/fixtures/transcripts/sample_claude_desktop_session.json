@@ -1,0 +1,33 @@
+{
+  "session_id": "claude-desktop-session-1",
+  "started_at": "2026-03-20T12:00:00Z",
+  "messages": [
+    {
+      "id": "m1",
+      "role": "user",
+      "timestamp": "2026-03-20T12:00:01Z",
+      "content": "Please inspect the README and summarise the risks."
+    },
+    {
+      "id": "m2",
+      "role": "assistant",
+      "timestamp": "2026-03-20T12:00:05Z",
+      "tool_calls": [
+        {
+          "id": "tool-1",
+          "name": "Read",
+          "arguments": {
+            "file_path": "README.md"
+          },
+          "result": "# DriftShield\n"
+        }
+      ]
+    },
+    {
+      "id": "m3",
+      "role": "assistant",
+      "timestamp": "2026-03-20T12:00:06Z",
+      "content": "The README is short and has no obvious issues."
+    }
+  ]
+}

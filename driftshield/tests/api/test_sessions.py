@@ -91,6 +91,7 @@ def test_list_sessions(client, auth_headers, seeded_session):
     assert len(data["items"]) == 1
     assert data["items"][0]["agent_id"] == "test-agent"
     assert data["items"][0]["provenance"] == {
+        "source_type": "claude_code",
         "source_session_id": "source-session-1",
         "source_path": "uploads/daily/test-agent.jsonl",
         "parser_version": "claude_code@1",
@@ -119,6 +120,7 @@ def test_get_session_detail(client, auth_headers, seeded_session):
     data = response.json()
     assert data["id"] == str(seeded_session)
     assert data["agent_id"] == "test-agent"
+    assert data["provenance"]["source_type"] == "claude_code"
     assert data["provenance"]["source_session_id"] == "source-session-1"
     assert data["risk_summary"]["coverage_gap"] == 1
     assert data["explanations"]["risk_explanations"] == {
@@ -335,6 +337,7 @@ def test_graph_endpoint_returns_risk_and_inflection_explanations(client, auth_he
     assert response.status_code == 200
     payload = response.json()
     assert payload["provenance"] == {
+        "source_type": "claude_code",
         "source_session_id": "source-session-graph",
         "source_path": "uploads/graph-session.jsonl",
         "parser_version": "claude_code@1",

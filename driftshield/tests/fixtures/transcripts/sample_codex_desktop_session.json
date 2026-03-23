@@ -1,0 +1,44 @@
+{
+  "id": "codex-desktop-session-1",
+  "messages": [
+    {
+      "id": "m1",
+      "role": "user",
+      "timestamp": "2026-03-20T14:00:01Z",
+      "content": [
+        {
+          "type": "text",
+          "text": "Rename foo to bar in app.py."
+        }
+      ]
+    },
+    {
+      "id": "m2",
+      "role": "assistant",
+      "timestamp": "2026-03-20T14:00:05Z",
+      "content": [
+        {
+          "type": "tool_call",
+          "id": "tool-1",
+          "name": "edit",
+          "arguments": {
+            "file_path": "app.py",
+            "instruction": "Rename foo to bar"
+          },
+          "result": "Updated app.py"
+        }
+      ]
+    },
+    {
+      "id": "m3",
+      "role": "assistant",
+      "timestamp": "2026-03-20T14:00:06Z",
+      "content": [
+        {
+          "type": "text",
+          "text": "Renamed foo to bar in app.py."
+        }
+      ]
+    }
+  ]
+}

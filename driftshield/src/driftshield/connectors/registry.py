@@ -5,12 +5,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from driftshield.cli.discovery import (
-    SessionInfo,
-    discover_sessions_in_path,
-    get_claude_projects_dir,
-    path_to_project_key,
-)
+from driftshield.cli.discovery import SessionInfo, discover_sessions_in_path, get_claude_projects_dir, path_to_project_key
 
 
 @dataclass(frozen=True)
@@ -76,6 +71,41 @@ class ClaudeCodeConnectorAdapter(ConnectorAdapter):
         )
 
     def scan(self, root_path: Path) -> list[SessionInfo]:
+        return discover_sessions_in_path(root_path, patterns=("*.jsonl",))
+
+
+class FixedPathConnectorAdapter(ConnectorAdapter):
+    watchable = True
+
+    def __init__(self, *, source_type: str, display_name: str, parser_name: str, root_dir_name: str):
+        self.source_type = source_type
+        self.display_name = display_name
+        self.parser_name = parser_name
+        self.root_dir_name = root_dir_name
+
+    def build_candidate(self, context: DiscoveryContext) -> ConnectorCandidate:
+        if self.source_type.startswith("codex"):
+            configured_home = context.codex_home or Path.home() / ".codex"
+        else:
+            configured_home = context.claude_home or Path.home() / ".claude"
+
+        configured_home = configured_home.expanduser()
+        if configured_home.name.startswith("."):
+            sessions_root = configured_home.parent
+        else:
+            sessions_root = configured_home
+
+        root_path = sessions_root / self.root_dir_name / "sessions"
+        return ConnectorCandidate(
+            source_type=self.source_type,
+            display_name=self.display_name,
+            root_path=root_path,
+            parser_name=self.parser_name,
+            watchable=self.watchable,
+            metadata={},
+        )
+
+    def scan(self, root_path: Path) -> list[SessionInfo]:
         return discover_sessions_in_path(root_path)
 
 
@@ -112,6 +142,24 @@ class OpenClawAgentConnectorAdapter(ConnectorAdapter):
 
 CONNECTOR_ADAPTERS: dict[str, ConnectorAdapter] = {
     "claude_code": ClaudeCodeConnectorAdapter(),
+    "claude_desktop": FixedPathConnectorAdapter(
+        source_type="claude_desktop",
+        display_name="Claude Desktop",
+        parser_name="claude_desktop",
+        root_dir_name=".claude-desktop",
+    ),
+    "codex_cli": FixedPathConnectorAdapter(
+        source_type="codex_cli",
+        display_name="Codex CLI",
+        parser_name="codex_cli",
+        root_dir_name=".codex",
+    ),
+    "codex_desktop": FixedPathConnectorAdapter(
+        source_type="codex_desktop",
+        display_name="Codex Desktop",
+        parser_name="codex_desktop",
+        root_dir_name=".codex-desktop",
+    ),
     "openclaw_main": OpenClawAgentConnectorAdapter(
         source_type="openclaw_main",
         agent_name="main",

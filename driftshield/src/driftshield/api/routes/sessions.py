@@ -117,7 +117,11 @@ def _session_provenance(session: SessionModel) -> SessionProvenanceResponse | No
         ]
     ):
         return None
+    source_type = None
+    if session.parser_version:
+        source_type = session.parser_version.split("@", 1)[0]
     return SessionProvenanceResponse(
+        source_type=source_type,
         source_session_id=session.source_session_id,
         source_path=session.source_path,
         parser_version=session.parser_version,

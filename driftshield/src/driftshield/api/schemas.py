@@ -12,6 +12,7 @@ class ExplanationPayloadResponse(BaseModel):
 
 
 class SessionProvenanceResponse(BaseModel):
+    source_type: str | None = None
     source_session_id: str | None = None
     source_path: str | None = None
     parser_version: str | None = None

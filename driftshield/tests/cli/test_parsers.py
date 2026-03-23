@@ -5,57 +5,81 @@ from pathlib import Path
 import pytest
 
 from driftshield.cli.parsers import ParserNotFoundError, detect_parser, get_parser
+from driftshield.parsers.claude_desktop import ClaudeDesktopParser
+from driftshield.parsers.codex_cli import CodexCliParser
+from driftshield.parsers.codex_desktop import CodexDesktopParser
 
 
 class TestGetParser:
     def test_get_claude_code_parser(self):
-        """Can get claude_code parser by name."""
         parser = get_parser("claude_code")
         assert parser.source_type == "claude_code"
 
     def test_get_auto_defaults_to_claude_code(self):
-        """Auto parser returns claude_code for now."""
         parser = get_parser("auto")
         assert parser.source_type == "claude_code"
 
     def test_get_openclaw_parser(self):
-        """Can get openclaw parser by name."""
         parser = get_parser("openclaw")
         assert parser.source_type == "openclaw"
 
+    def test_get_claude_desktop_parser(self):
+        parser = get_parser("claude_desktop")
+        assert isinstance(parser, ClaudeDesktopParser)
+
+    def test_get_codex_cli_parser(self):
+        parser = get_parser("codex_cli")
+        assert isinstance(parser, CodexCliParser)
+
+    def test_get_codex_desktop_parser(self):
+        parser = get_parser("codex_desktop")
+        assert isinstance(parser, CodexDesktopParser)
+
     def test_unknown_parser_raises(self):
-        """Unknown parser name raises ParserNotFoundError."""
         with pytest.raises(ParserNotFoundError) as exc_info:
             get_parser("unknown")
         assert "unknown" in str(exc_info.value)
-        assert "claude_code" in str(exc_info.value)  # Lists available
+        assert "claude_code" in str(exc_info.value)
 
 
 class TestDetectParser:
     def test_detects_jsonl_as_claude_code(self):
-        """JSONL files detected as claude_code."""
-        parser_name = detect_parser(Path("session.jsonl"))
-        assert parser_name == "claude_code"
+        assert detect_parser(Path("session.jsonl")) == "claude_code"
 
     def test_detects_claude_projects_path(self, tmp_path):
-        """Files under ~/.claude/projects/ detected as claude_code."""
-        claude_path = tmp_path / ".claude" / "projects" / "test" / "session.jsonl"
-        claude_path.parent.mkdir(parents=True)
-        claude_path.touch()
+        path = tmp_path / ".claude" / "projects" / "test" / "session.jsonl"
+        path.parent.mkdir(parents=True)
+        path.touch()
 
-        parser_name = detect_parser(claude_path)
-        assert parser_name == "claude_code"
+        assert detect_parser(path) == "claude_code"
 
     def test_detects_openclaw_sessions_path(self, tmp_path):
-        """Files under ~/.openclaw/agents/*/sessions/ detected as openclaw."""
-        openclaw_path = tmp_path / ".openclaw" / "agents" / "engineering" / "sessions" / "session.jsonl"
-        openclaw_path.parent.mkdir(parents=True)
-        openclaw_path.touch()
+        path = tmp_path / ".openclaw" / "agents" / "engineering" / "sessions" / "session.jsonl"
+        path.parent.mkdir(parents=True)
+        path.touch()
 
-        parser_name = detect_parser(openclaw_path)
-        assert parser_name == "openclaw"
+        assert detect_parser(path) == "openclaw"
+
+    def test_detects_claude_desktop_path(self, tmp_path):
+        path = tmp_path / ".claude-desktop" / "sessions" / "session.json"
+        path.parent.mkdir(parents=True)
+        path.touch()
+
+        assert detect_parser(path) == "claude_desktop"
+
+    def test_detects_codex_cli_path(self, tmp_path):
+        path = tmp_path / ".codex" / "sessions" / "session.jsonl"
+        path.parent.mkdir(parents=True)
+        path.touch()
+
+        assert detect_parser(path) == "codex_cli"
+
+    def test_detects_codex_desktop_path(self, tmp_path):
+        path = tmp_path / ".codex-desktop" / "sessions" / "session.json"
+        path.parent.mkdir(parents=True)
+        path.touch()
+
+        assert detect_parser(path) == "codex_desktop"
 
     def test_unknown_format_returns_none(self):
-        """Unknown format returns None."""
-        parser_name = detect_parser(Path("unknown.xyz"))
-        assert parser_name is None
+        assert detect_parser(Path("unknown.xyz")) is None

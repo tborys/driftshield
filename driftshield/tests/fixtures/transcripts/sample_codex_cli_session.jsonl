@@ -1,0 +1,4 @@
+{"session_id":"codex-cli-session-1","type":"session_meta","timestamp":"2026-03-20T13:00:00Z"}
+{"session_id":"codex-cli-session-1","type":"message","role":"user","timestamp":"2026-03-20T13:00:01Z","content":"Run the test suite."}
+{"session_id":"codex-cli-session-1","type":"message","role":"assistant","timestamp":"2026-03-20T13:00:03Z","tool_calls":[{"id":"tool-1","name":"shell","arguments":{"command":"pytest -q"},"result":"test-suite ok"}]}
+{"session_id":"codex-cli-session-1","type":"message","role":"assistant","timestamp":"2026-03-20T13:00:04Z","content":"Tests are green."}

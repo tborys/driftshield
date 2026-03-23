@@ -5,7 +5,8 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from driftshield.cli.discovery import path_to_project_key
+from driftshield.cli.discovery import discover_sessions_in_path, path_to_project_key
+from driftshield.connectors.registry import CONNECTOR_ADAPTERS, DiscoveryContext
 from driftshield.db.connector_service import ConnectorService
 from driftshield.db.models import Base
 
@@ -32,18 +33,23 @@ def test_refresh_candidates_persists_unscanned_connector(tmp_path, db_session):
     project_dir.mkdir()
 
     service = ConnectorService(db_session)
-    connectors = service.refresh_candidates(project_dir=project_dir, claude_home=tmp_path / ".claude")
+    connectors = service.refresh_candidates(
+        project_dir=project_dir,
+        claude_home=tmp_path / ".claude",
+        codex_home=tmp_path / ".codex",
+    )
 
-    assert len(connectors) == 1
-    connector = connectors[0]
-    assert connector.source_type == "claude_code"
-    assert connector.root_path == str(
+    source_types = {connector.source_type for connector in connectors}
+    assert {"claude_code", "claude_desktop", "codex_cli", "codex_desktop"}.issubset(source_types)
+
+    claude_code = next(connector for connector in connectors if connector.source_type == "claude_code")
+    assert claude_code.root_path == str(
         tmp_path / ".claude" / "projects" / path_to_project_key(project_dir)
     )
-    assert connector.consent_state == "pending"
-    assert connector.status == "proposed"
-    assert connector.last_scanned_at is None
-    assert connector.metadata_json["path_exists"] is False
+    assert claude_code.consent_state == "pending"
+    assert claude_code.status == "proposed"
+    assert claude_code.last_scanned_at is None
+    assert claude_code.metadata_json["path_exists"] is False
 
 
 def test_rescan_requires_explicit_approval_and_consumes_approve_once(tmp_path, db_session):
@@ -102,3 +108,23 @@ def test_connector_supports_deny_pause_disconnect_and_reapprove(tmp_path, db_ses
     reapproved = service.approve_connector(connector.id, mode="always")
     assert reapproved.status == "ready"
     assert reapproved.consent_state == "approved_always"
+
+
+def test_discover_sessions_in_path_can_limit_patterns(tmp_path):
+    sessions_dir = tmp_path / "sessions"
+    sessions_dir.mkdir()
+    (sessions_dir / "session.jsonl").write_text('{"sessionId": "abc"}\n')
+    (sessions_dir / "not-a-session.json").write_text('{"foo": "bar"}')
+
+    sessions = discover_sessions_in_path(sessions_dir, patterns=("*.jsonl",))
+
+    assert [session.path.name for session in sessions] == ["session.jsonl"]
+
+
+def test_fixed_path_connector_uses_explicit_non_dot_home_as_base_root(tmp_path):
+    adapter = CONNECTOR_ADAPTERS["codex_desktop"]
+    context = DiscoveryContext(project_dir=tmp_path / "repo", codex_home=tmp_path / "codex-data")
+
+    candidate = adapter.build_candidate(context)
+
+    assert candidate.root_path == tmp_path / "codex-data" / ".codex-desktop" / "sessions"
