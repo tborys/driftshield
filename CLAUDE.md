@@ -212,6 +212,31 @@ When working with the Contributor Telegram bot or the Cloud VPS, read `docs/open
 - `/ship` – Run backend tests → frontend build → e2e tests → generate PR description.
 - `/browser-check` – Run Playwright health check against current frontend changes.
 
+## Automated PR Review
+
+Claude reviews every PR via `.github/workflows/claude-review.yml`. The review runs on `opened`, `synchronize` and `reopened` events. You can also tag `@claude` in a PR comment to trigger a review.
+
+### Review Priorities (ordered)
+
+1. **Hardcoded secrets** or credentials in source, config or test files
+2. **Missing error handling** on async operations, API calls or DB queries
+3. **Client vs server component misuse** (marketing site uses Next.js 15 App Router)
+4. **Missing loading/error states** in React components that fetch data
+5. **Type safety regressions**: `any` usage, missing return types, untyped props
+6. **Accessibility**: missing alt text, unlabelled form controls, keyboard nav gaps
+7. **Test coverage**: new functions without tests, untested edge cases
+8. **Bundle size**: unnecessary imports, missing tree shaking, large dependencies added without justification
+
+### Code Style Rules (for reviewers)
+
+- TypeScript strict mode, no `any` types
+- Named exports preferred over default exports
+- Server components by default in the marketing site, `'use client'` only when needed
+- Tailwind for styling, no inline style objects
+- Max 150 lines per component file (split if larger)
+- Conventional commits (`feat:`, `fix:`, `chore:`, `docs:`, `test:`)
+- One logical change per PR
+
 ## Common Pitfalls
 
 - **Timezone**: All DB timestamps must be timezone-aware. Use `DateTime(timezone=True)` in models and `datetime.now(timezone.utc)` in Python code.
