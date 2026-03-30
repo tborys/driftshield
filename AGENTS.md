@@ -8,6 +8,15 @@
 - If a change touches frontend or UI behaviour, include browser based verification as part of completion, not just static or unit checks.
 - When browser testing is needed, use the real browser tooling available in the environment and report what flow was exercised.
 
+## Issue Hygiene
+
+- When working from GitHub issues, keep the issue body, linked parent issue, and GitHub Project status in sync with the real state of the work.
+- If an issue is closed as completed, update all relevant checkboxes in the issue body first.
+- If an issue is closed as superseded, cancelled, or intentionally not completed, leave incomplete checkboxes only if the closing comment explains why.
+- When a child issue is completed, update any parent issue checklist entry that tracks it.
+- Do not mark an issue done until acceptance criteria, test plan, linked parent checklist, and project status all reflect the actual outcome.
+- If work is blocked, prefer leaving the issue open with a clear blocker comment and the `blocked` label instead of closing it.
+
 ## Handoffs
 
 - When preparing a prompt for another agent, make it autonomous by default.

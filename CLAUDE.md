@@ -218,24 +218,29 @@ Claude reviews every PR via `.github/workflows/claude-review.yml`. The review ru
 
 ### Review Priorities (ordered)
 
-1. **Hardcoded secrets** or credentials in source, config or test files
-2. **Missing error handling** on async operations, API calls or DB queries
-3. **Client vs server component misuse** (marketing site uses Next.js 15 App Router)
-4. **Missing loading/error states** in React components that fetch data
-5. **Type safety regressions**: `any` usage, missing return types, untyped props
-6. **Accessibility**: missing alt text, unlabelled form controls, keyboard nav gaps
-7. **Test coverage**: new functions without tests, untested edge cases
-8. **Bundle size**: unnecessary imports, missing tree shaking, large dependencies added without justification
+1. **Correctness and regressions**: broken logic, stale references, missing error handling, API or CLI breakage
+2. **OSS boundary and release safety**: proprietary feature leakage, sensitive docs or assets in tracked files, hardcoded secrets
+3. **Backend and data integrity**: schema drift, migration gaps, persistence mismatches, backend/frontend contract mismatches
+4. **Frontend and browser behaviour**: broken routes, dead navigation, missing loading or error states, dashboard usability regressions
+5. **Type safety and maintainability**: `any` usage, missing types, weak interfaces, untested assumptions
+6. **Test coverage and verification**: changed behaviour without targeted tests, missing browser verification when UI changed
+7. **Documentation and workflow consistency**: linked issue acceptance criteria not met, docs or PR summary no longer matching the implementation
 
 ### Code Style Rules (for reviewers)
 
 - TypeScript strict mode, no `any` types
 - Named exports preferred over default exports
-- Server components by default in the marketing site, `'use client'` only when needed
-- Tailwind for styling, no inline style objects
-- Max 150 lines per component file (split if larger)
+- Use the actual stack conventions for the touched area: FastAPI, Typer, SQLAlchemy, React, Vite, and Tailwind
+- Tailwind for styling in the app UI, no unnecessary inline style objects
 - Conventional commits (`feat:`, `fix:`, `chore:`, `docs:`, `test:`)
 - One logical change per PR
+
+### Review Workflow
+
+- Read the linked issue first and judge the PR against that scope before suggesting follow-up work.
+- Findings come first. Prioritise bugs, regressions, boundary leaks, and missing verification over style-only feedback.
+- If frontend behaviour changed, expect browser verification in the PR or call out the missing check explicitly.
+- If the PR is clean, say so explicitly and note any residual risks or manual QA still required.
 
 ## Common Pitfalls
 
