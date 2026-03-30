@@ -13,6 +13,11 @@
 
 Closes #
 
+## Workflow
+
+- [ ] Linked issue remains `In Progress` until this PR is merged
+- [ ] Project status and issue checkboxes will be synced when this PR lands
+
 ## Follow-Ups
 
 - List any follow-up issues or known gaps

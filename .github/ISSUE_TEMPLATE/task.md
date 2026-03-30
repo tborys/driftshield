@@ -38,3 +38,10 @@ One sentence describing the user-visible or system-level outcome.
 - [ ] Public pushes or releases
 - [ ] External service settings changes
 - [ ] None
+
+## Workflow Expectations
+
+- Move the linked project item to `In Progress` when implementation starts
+- Open or update a PR linked to this issue after local verification passes
+- Keep the issue and project item `In Progress` while the PR is open or under review
+- Close the issue and move the project item to `Done` only after the PR is merged
