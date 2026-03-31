@@ -76,6 +76,47 @@ DRIFTSHIELD_API_KEY=prod-api-key \
 scripts/dealer-hook.sh vps
 ```
 
+## Public signature extension seam
+
+The OSS package exposes a small, interface-only public surface for external
+signature packs at `driftshield.signatures`.
+
+- Import `SignatureProvider`, `SignaturePackMetadata`, and `SignatureDefinition`
+  from `driftshield.signatures`
+- Implement the protocol in a separate package such as a future
+  `driftshield-intel` install or a community-maintained pack
+- The OSS repo does not bundle proprietary signature packs, recurrence engines,
+  or matching behavior through this surface
+
+Minimal example:
+
+```python
+from collections.abc import Iterable
+
+from driftshield.signatures import (
+    SignatureDefinition,
+    SignaturePackMetadata,
+    SignatureProvider,
+)
+
+
+class CommunityPack:
+    def describe(self) -> SignaturePackMetadata:
+        return SignaturePackMetadata(
+            name="community-general",
+            version="1.0.0",
+            description="General-purpose failure signatures.",
+        )
+
+    def iter_signatures(self) -> Iterable[SignatureDefinition]:
+        yield SignatureDefinition(
+            signature_id="SIG-COMM-001",
+            title="Coverage Gap",
+            summary="Required evidence is skipped before completion.",
+            failure_shape="collect->branch->skip->complete",
+        )
+```
+
 ## Local Postgres
 
 Postgres is managed through:
