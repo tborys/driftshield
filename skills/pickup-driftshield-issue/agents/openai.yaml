@@ -1,0 +1,4 @@
+interface:
+  display_name: "Pick Up DriftShield Issue"
+  short_description: "Start a DriftShield issue from URL to PR"
+  default_prompt: "Use $pickup-driftshield-issue for issue <url> and carry it from issue context through spec, plan, implementation, verification, and a draft PR."
