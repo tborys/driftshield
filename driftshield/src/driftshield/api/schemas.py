@@ -38,9 +38,6 @@ class SessionSummary(BaseModel):
     ended_at: datetime | None = None
     risk_flag_count: int = 0
     has_inflection: bool = False
-    recurrence_level: str | None = None
-    recurrence_probability: str | None = None
-    recurrence_count: int | None = None
     provenance: SessionProvenanceResponse | None = None
 
 

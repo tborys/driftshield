@@ -2,18 +2,15 @@ import uuid
 from datetime import datetime, timezone
 
 import pytest
-from sqlalchemy import create_engine, JSON
-from sqlalchemy.dialects import postgresql, sqlite
+from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from driftshield.db.models import (
     AnalystValidationModel,
     Base,
     DecisionNodeModel,
-    RecurrenceSignatureModel,
     ReportModel,
     SessionModel,
-    SessionSignatureModel,
 )
 
 
@@ -171,81 +168,9 @@ def test_decision_node_parent_child(db_session):
     assert loaded_child.parent_node_id == parent.id
 
 
-def test_create_recurrence_signature(db_session):
-    sig_id = uuid.uuid4()
-    sig = RecurrenceSignatureModel(
-        id=sig_id,
-        signature_hash="abc123def456",
-        pattern={"sequence": ["TOOL_CALL", "BRANCH", "OUTPUT"]},
-        first_seen_at=datetime.now(timezone.utc),
-        last_seen_at=datetime.now(timezone.utc),
-        occurrence_count=3,
-        severity="medium",
-    )
-    db_session.add(sig)
-    db_session.commit()
-
-    loaded = db_session.get(RecurrenceSignatureModel, sig_id)
-    assert loaded.signature_hash == "abc123def456"
-    assert loaded.occurrence_count == 3
-    assert loaded.severity == "medium"
-
-
-def test_session_signature_junction(db_session):
-    session_id = uuid.uuid4()
-    s = SessionModel(id=session_id, started_at=datetime.now(timezone.utc), status="completed")
-    sig_id = uuid.uuid4()
-    sig = RecurrenceSignatureModel(
-        id=sig_id,
-        signature_hash="hash1",
-        pattern={},
-        first_seen_at=datetime.now(timezone.utc),
-        last_seen_at=datetime.now(timezone.utc),
-        occurrence_count=1,
-        severity="low",
-    )
-    db_session.add_all([s, sig])
-    db_session.flush()
-
-    node_id = uuid.uuid4()
-    junction = SessionSignatureModel(
-        session_id=session_id,
-        signature_id=sig_id,
-        matched_nodes=[str(node_id)],
-    )
-    db_session.add(junction)
-    db_session.commit()
-
-    loaded = db_session.query(SessionSignatureModel).first()
-    assert loaded.session_id == session_id
-    assert loaded.signature_id == sig_id
-
-
-def test_session_signature_matched_nodes_type_is_uuid_array_on_postgres():
-    column_type = SessionSignatureModel.__table__.c.matched_nodes.type
-    compiled = str(column_type.compile(dialect=postgresql.dialect()))
-
-    assert compiled == "UUID[]"
-
-
-def test_session_signature_matched_nodes_type_falls_back_to_json_on_sqlite():
-    column_type = SessionSignatureModel.__table__.c.matched_nodes.type
-    sqlite_impl = column_type.dialect_impl(sqlite.dialect())
-
-    assert isinstance(sqlite_impl, JSON)
-
-
-def test_session_signature_insert_compiles_uuid_array_value_on_postgres():
-    statement = SessionSignatureModel.__table__.insert().values(
-        session_id=uuid.uuid4(),
-        signature_id=uuid.uuid4(),
-        matched_nodes=[],
-    )
-
-    compiled_sql = str(statement.compile(dialect=postgresql.dialect()))
-
-    assert "%(matched_nodes)s::UUID[]" in compiled_sql
-    assert "::JSON" not in compiled_sql
+def test_oss_metadata_omits_private_recurrence_tables():
+    assert "recurrence_signatures" not in Base.metadata.tables
+    assert "session_signatures" not in Base.metadata.tables
 
 
 def test_create_report(db_session):

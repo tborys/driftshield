@@ -44,7 +44,6 @@ def test_render_full_report_markdown(full_report_data):
     assert "Inflection Node Identification" in md
     assert "Risk State Transition Mapping" in md
     assert "Systemic Exposure Assessment" in md
-    assert "Recurrence Risk Analysis" in md
 
 
 def test_render_has_node_table(full_report_data):
@@ -71,5 +70,5 @@ def test_render_summary_report():
     md = render_markdown(data)
     assert "# Forensic Analysis Report" in md
     assert "Behavioural Lineage Reconstruction" in md
-    # Summary should NOT have sections 3-5
+    # Summary should NOT have the full report-only sections.
     assert "Risk State Transition Mapping" not in md

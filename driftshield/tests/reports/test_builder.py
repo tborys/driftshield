@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 import pytest
 
 from driftshield.core.models import (
-    CanonicalEvent, EventType, RiskClassification, Session as DomainSession, SessionStatus,
+    CanonicalEvent, EventType, Session as DomainSession, SessionStatus,
 )
 from driftshield.core.analysis.session import analyze_session
 from driftshield.reports.builder import ReportBuilder
@@ -42,12 +42,11 @@ def test_build_full_report(sample_result):
     assert report_data.session_id == session.id
     assert report_data.agent_id == "test"
     assert report_data.report_type == ReportType.FULL
-    assert len(report_data.sections) == 5
+    assert len(report_data.sections) == 4
     assert report_data.sections[0].title == "Behavioural Lineage Reconstruction"
     assert report_data.sections[1].title == "Inflection Node Identification"
     assert report_data.sections[2].title == "Risk State Transition Mapping"
     assert report_data.sections[3].title == "Systemic Exposure Assessment"
-    assert report_data.sections[4].title == "Recurrence Risk Analysis"
 
 
 def test_build_summary_report(sample_result):

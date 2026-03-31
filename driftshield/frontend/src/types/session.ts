@@ -14,9 +14,6 @@ export interface SessionSummary {
   ended_at: string | null
   risk_flag_count: number
   has_inflection: boolean
-  recurrence_level: 'new' | 'recurring' | 'systemic' | null
-  recurrence_probability: 'low' | 'medium' | 'high' | null
-  recurrence_count: number | null
   provenance: SessionProvenance | null
 }
 
@@ -56,9 +53,4 @@ export interface ReportDetail {
   content_markdown: string
   content_json: Record<string, unknown>
   generated_by: string | null
-}
-
-export interface GraveyardSummary {
-  path: string
-  content_markdown: string
 }

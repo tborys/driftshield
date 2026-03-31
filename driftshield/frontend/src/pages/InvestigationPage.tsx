@@ -55,24 +55,12 @@ export function InvestigationPage() {
             <Badge variant="outline">Loading session...</Badge>
           ) : session ? (
             <>
-              <Badge variant="secondary">{session.agent_id}</Badge>
+              <Badge variant="secondary">{session.agent_id ?? 'Unknown agent'}</Badge>
               <Badge variant="outline">{session.status}</Badge>
-              {session.recurrence_level && (
-                <Badge
-                  variant={
-                    session.recurrence_level === 'systemic'
-                      ? 'destructive'
-                      : session.recurrence_level === 'recurring'
-                        ? 'secondary'
-                        : 'outline'
-                  }
-                >
-                  {session.recurrence_level}
-                </Badge>
-              )}
-              {session.recurrence_probability && (
-                <Badge variant="outline">{session.recurrence_probability} confidence</Badge>
-              )}
+              <Badge variant={session.risk_flag_count > 0 ? 'destructive' : 'outline'}>
+                {session.risk_flag_count} flagged
+              </Badge>
+              {session.has_inflection && <Badge variant="outline">Inflection detected</Badge>}
             </>
           ) : (
             <Badge variant="outline">Session metadata unavailable</Badge>
@@ -80,13 +68,6 @@ export function InvestigationPage() {
         </div>
         <ReportTrigger sessionId={id!} onReportGenerated={setPreviewReportId} />
       </div>
-      {session?.recurrence_level && (
-        <div className="px-6 py-2 border-b text-sm text-muted-foreground">
-          Recurrence insight: this pattern is currently classified as <span className="font-medium">{session.recurrence_level}</span>
-          {session.recurrence_count ? ` (${session.recurrence_count} observed session${session.recurrence_count > 1 ? 's' : ''})` : ''}.
-          {session.recurrence_probability ? ` Confidence: ${session.recurrence_probability}.` : ''}
-        </div>
-      )}
 
       <div className="px-6 py-3 border-b">
         <div className="flex items-center justify-between mb-2">

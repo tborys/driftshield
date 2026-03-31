@@ -115,8 +115,8 @@ export function SessionListPage() {
     () => sessions.filter((session) => session.risk_flag_count > 0),
     [sessions],
   )
-  const systemicSessions = useMemo(
-    () => sessions.filter((session) => session.recurrence_level === 'systemic'),
+  const sessionsWithProvenance = useMemo(
+    () => sessions.filter((session) => session.provenance !== null),
     [sessions],
   )
   const inflectionSessions = useMemo(
@@ -147,7 +147,7 @@ export function SessionListPage() {
       <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <h2 className="text-xl font-semibold">Session triage</h2>
-          <p className="text-sm text-muted-foreground">Use the session home for daily review of flagged work, recurrence and provenance.</p>
+          <p className="text-sm text-muted-foreground">Use the session home for daily review of flagged work, inflection, and provenance.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {activeFilterCount > 0 && <Badge variant="outline">{activeFilterCount} filter{activeFilterCount > 1 ? 's' : ''} active</Badge>}
@@ -192,9 +192,9 @@ export function SessionListPage() {
           hint="Sessions with a detected inflection point in the current slice."
         />
         <StatCard
-          title="Systemic in slice"
-          value={String(systemicSessions.length)}
-          hint="Sessions on this page that are marked as systemic recurrences."
+          title="With provenance"
+          value={String(sessionsWithProvenance.length)}
+          hint="Sessions on this page that include ingest source metadata."
         />
       </div>
 
@@ -293,7 +293,6 @@ export function SessionListPage() {
                         <span className="font-mono text-sm">{session.id.slice(0, 8)}...</span>
                         <Badge variant="secondary">{session.agent_id ?? 'Unknown agent'}</Badge>
                         <Badge variant="destructive">{session.risk_flag_count} flagged</Badge>
-                        {session.recurrence_level && <Badge variant="outline">{session.recurrence_level}</Badge>}
                       </div>
                       <div className="text-sm text-muted-foreground">
                         {sourceDisplayLabel(session)} · {parserLabel(session)}
@@ -366,7 +365,7 @@ export function SessionListPage() {
         <Card>
           <CardHeader>
             <CardTitle>Session queue</CardTitle>
-            <CardDescription>The main review table stays in place, now with provenance alongside risk and recurrence.</CardDescription>
+            <CardDescription>The main review table stays in place, now with provenance alongside risk and inflection.</CardDescription>
           </CardHeader>
           <CardContent>
             <SessionList sessions={sessions} isLoading={isLoading} />

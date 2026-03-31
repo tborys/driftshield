@@ -47,4 +47,3 @@ class ReportData:
     total_events: int = 0
     flagged_events: int = 0
     classification: str = "isolated"
-    recurrence_probability: str = "unknown"

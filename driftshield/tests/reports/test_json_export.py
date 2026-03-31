@@ -35,7 +35,7 @@ def test_export_json_returns_dict(report_data):
     assert isinstance(data, dict)
     assert "session_id" in data
     assert "sections" in data
-    assert len(data["sections"]) == 5
+    assert len(data["sections"]) == 4
 
 
 def test_export_json_is_serialisable(report_data):

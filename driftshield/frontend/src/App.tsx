@@ -3,7 +3,6 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AppShell } from './components/layout/AppShell'
 import { SessionListPage } from './pages/SessionListPage'
 import { InvestigationPage } from './pages/InvestigationPage'
-import { ReportsPage } from './pages/ReportsPage'
 
 const queryClient = new QueryClient()
 
@@ -16,7 +15,8 @@ function App() {
             <Route path="/" element={<Navigate to="/sessions" replace />} />
             <Route path="/sessions" element={<SessionListPage />} />
             <Route path="/sessions/:id" element={<InvestigationPage />} />
-            <Route path="/reports" element={<ReportsPage />} />
+            <Route path="/reports" element={<Navigate to="/sessions" replace />} />
+            <Route path="*" element={<Navigate to="/sessions" replace />} />
           </Route>
         </Routes>
       </BrowserRouter>

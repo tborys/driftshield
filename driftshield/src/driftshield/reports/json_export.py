@@ -14,7 +14,6 @@ def export_json(report: ReportData) -> dict[str, Any]:
         "inflection_node_id": str(report.inflection_node_id) if report.inflection_node_id else None,
         "inflection_action": report.inflection_action,
         "classification": report.classification,
-        "recurrence_probability": report.recurrence_probability,
         "sections": [
             {
                 "title": s.title,

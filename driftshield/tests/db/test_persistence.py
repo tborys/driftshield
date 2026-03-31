@@ -18,9 +18,7 @@ from driftshield.core.models import (
 from driftshield.db.models import (
     Base,
     DecisionNodeModel,
-    RecurrenceSignatureModel,
     SessionModel,
-    SessionSignatureModel,
 )
 from driftshield.db.persistence import IngestProvenance, PersistenceService
 
@@ -185,39 +183,6 @@ def test_list_sessions_pagination(db_session):
     assert len(sessions) == 1
 
 
-def test_save_persists_recurrence_signature_mapping(db_session):
-    session_id = uuid.uuid4()
-    event = CanonicalEvent(
-        id=uuid.uuid4(),
-        session_id=str(session_id),
-        timestamp=datetime.now(timezone.utc),
-        event_type=EventType.TOOL_CALL,
-        agent_id="test-agent",
-        action="review_indemnity",
-        risk_classification=RiskClassification(coverage_gap=True),
-    )
-    session = DomainSession(
-        id=session_id,
-        agent_id="test-agent",
-        started_at=datetime.now(timezone.utc),
-        status=SessionStatus.COMPLETED,
-    )
-    result = analyze_session([event], historical_recurrence_counts={})
-
-    service = PersistenceService(db_session)
-    service.save(session, result)
-    db_session.commit()
-
-    signatures = db_session.query(RecurrenceSignatureModel).all()
-    mappings = db_session.query(SessionSignatureModel).all()
-
-    assert len(signatures) == 1
-    assert signatures[0].signature_hash == result.recurrence.signature_hash
-    assert signatures[0].occurrence_count == 1
-    assert len(mappings) == 1
-    assert mappings[0].session_id == session_id
-
-
 def test_ingest_persists_transcript_provenance(db_session, sample_ingest_payload):
     result, domain_session, provenance = sample_ingest_payload
     service = PersistenceService(db_session)
@@ -319,7 +284,7 @@ def test_save_and_load_graph_round_trip_explanations(db_session):
         started_at=datetime.now(timezone.utc),
         status=SessionStatus.COMPLETED,
     )
-    result = analyze_session([event], historical_recurrence_counts={})
+    result = analyze_session([event])
 
     service = PersistenceService(db_session)
     service.save(session, result)

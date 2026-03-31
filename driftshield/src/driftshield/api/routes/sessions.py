@@ -23,9 +23,7 @@ from driftshield.api.schemas import (
 from driftshield.core.models import RiskClassification
 from driftshield.db.models import (
     DecisionNodeModel,
-    RecurrenceSignatureModel,
     SessionModel,
-    SessionSignatureModel,
 )
 from driftshield.db.persistence import PersistenceService
 from driftshield.db.validation_service import ValidationService
@@ -56,26 +54,6 @@ def _risk_summary(nodes: list[DecisionNodeModel]) -> dict[str, int]:
             if getattr(node, flag_name):
                 summary[flag_name] += 1
     return summary
-
-
-def _recurrence_summary(db: DBSession, session_id: uuid.UUID) -> tuple[str | None, str | None, int | None]:
-    link = db.query(SessionSignatureModel).filter(
-        SessionSignatureModel.session_id == session_id
-    ).first()
-    if link is None:
-        return None, None, None
-
-    sig = db.get(RecurrenceSignatureModel, link.signature_id)
-    if sig is None:
-        return None, None, None
-
-    level = None
-    probability = None
-    if isinstance(sig.pattern, dict):
-        level = sig.pattern.get("level")
-        probability = sig.pattern.get("probability")
-
-    return level, probability or sig.severity, sig.occurrence_count
 
 
 def _risk_flags_for_node(node: DecisionNodeModel) -> list[str]:
@@ -182,7 +160,6 @@ def list_sessions(
         ).all()
         risk_count = _count_risks(nodes)
         has_inflection = any(node.is_inflection_node for node in nodes)
-        recurrence_level, recurrence_probability, recurrence_count = _recurrence_summary(db, session.id)
         items.append(
             SessionSummary(
                 id=session.id,
@@ -193,9 +170,6 @@ def list_sessions(
                 ended_at=session.ended_at,
                 risk_flag_count=risk_count,
                 has_inflection=has_inflection,
-                recurrence_level=recurrence_level,
-                recurrence_probability=recurrence_probability,
-                recurrence_count=recurrence_count,
                 provenance=_session_provenance(session),
             )
         )
@@ -223,7 +197,6 @@ def get_session(
         DecisionNodeModel.session_id == session_id
     ).order_by(DecisionNodeModel.sequence_num).all()
     risk_count = _count_risks(nodes)
-    recurrence_level, recurrence_probability, recurrence_count = _recurrence_summary(db, session_id)
 
     return SessionDetail(
         id=session.id,
@@ -234,9 +207,6 @@ def get_session(
         ended_at=session.ended_at,
         risk_flag_count=risk_count,
         has_inflection=any(node.is_inflection_node for node in nodes),
-        recurrence_level=recurrence_level,
-        recurrence_probability=recurrence_probability,
-        recurrence_count=recurrence_count,
         provenance=_session_provenance(session),
         total_events=len(nodes),
         flagged_events=risk_count,

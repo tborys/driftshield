@@ -4,17 +4,13 @@ import typer
 
 from driftshield import __version__
 from driftshield.cli.commands.analyze import analyze
-from driftshield.cli.commands.list import list_sessions
-from driftshield.cli.commands.inspect import inspect
-from driftshield.cli.commands.report import report_command
-from driftshield.cli.commands.export_validations import export_validations
-from driftshield.cli.commands.collect_graveyard import collect_graveyard
 from driftshield.cli.commands.connectors import app as connectors_app
-from driftshield.cli.commands.report_graveyard import report_graveyard
+from driftshield.cli.commands.export_validations import export_validations
 from driftshield.cli.commands.generate_fixtures import generate_fixtures
-from driftshield.cli.commands.evaluate_classifier import evaluate_classifier
-from driftshield.cli.commands.evaluate_signatures import evaluate_signatures
 from driftshield.cli.commands.ingest import ingest
+from driftshield.cli.commands.inspect import inspect
+from driftshield.cli.commands.list import list_sessions
+from driftshield.cli.commands.report import report_command
 
 app = typer.Typer(
     name="driftshield",
@@ -28,11 +24,7 @@ app.command(name="list")(list_sessions)
 app.command()(inspect)
 app.command(name="report")(report_command)
 app.command(name="export-validations")(export_validations)
-app.command(name="collect-graveyard")(collect_graveyard)
-app.command(name="report-graveyard")(report_graveyard)
 app.command(name="generate-fixtures")(generate_fixtures)
-app.command(name="evaluate-classifier")(evaluate_classifier)
-app.command(name="evaluate-signatures")(evaluate_signatures)
 app.command()(ingest)
 app.add_typer(connectors_app, name="connectors")
 

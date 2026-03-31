@@ -19,11 +19,12 @@ class ReportBuilder:
             self._build_inflection_section(result),
         ]
         if report_type == ReportType.FULL:
-            sections.extend([
-                self._build_risk_transition_section(result),
-                self._build_exposure_section(result),
-                self._build_recurrence_section(result),
-            ])
+            sections.extend(
+                [
+                    self._build_risk_transition_section(result),
+                    self._build_exposure_section(result),
+                ]
+            )
 
         return ReportData(
             session_id=session.id,
@@ -39,9 +40,6 @@ class ReportBuilder:
             ),
             total_events=result.total_events,
             flagged_events=result.flagged_events,
-            recurrence_probability=(
-                result.recurrence.probability if result.recurrence else "unknown"
-            ),
         )
 
     def _build_lineage_section(self, result: AnalysisResult) -> ReportSection:
@@ -112,22 +110,4 @@ class ReportBuilder:
         return ReportSection(
             title="Systemic Exposure Assessment",
             content=classification,
-        )
-
-    def _build_recurrence_section(self, result: AnalysisResult) -> ReportSection:
-        if result.recurrence is None:
-            content = (
-                "Recurrence analysis unavailable: no flagged risk pattern was detected in "
-                "this session."
-            )
-        else:
-            content = (
-                f"Signature hash {result.recurrence.signature_hash[:12]}... observed "
-                f"{result.recurrence.occurrence_count} time(s). "
-                f"Classification: {result.recurrence.level.value}. "
-                f"Recurrence probability: {result.recurrence.probability}."
-            )
-        return ReportSection(
-            title="Recurrence Risk Analysis",
-            content=content,
         )

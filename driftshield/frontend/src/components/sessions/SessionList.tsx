@@ -37,7 +37,6 @@ export function SessionList({ sessions, isLoading }: SessionListProps) {
           <TableHead>Status</TableHead>
           <TableHead>Risk Flags</TableHead>
           <TableHead>Inflection</TableHead>
-          <TableHead>Recurrence</TableHead>
           <TableHead>Provenance</TableHead>
           <TableHead>Started</TableHead>
           <TableHead className="text-right">Action</TableHead>
@@ -78,28 +77,6 @@ export function SessionList({ sessions, isLoading }: SessionListProps) {
                 <Badge variant="outline">Detected</Badge>
               ) : (
                 <span className="text-muted-foreground">{'\u2014'}</span>
-              )}
-            </TableCell>
-            <TableCell>
-              {session.recurrence_level ? (
-                <div className="flex items-center gap-2">
-                  <Badge
-                    variant={
-                      session.recurrence_level === 'systemic'
-                        ? 'destructive'
-                        : session.recurrence_level === 'recurring'
-                          ? 'secondary'
-                          : 'outline'
-                    }
-                  >
-                    {session.recurrence_level}
-                  </Badge>
-                  {session.recurrence_probability && (
-                    <span className="text-xs text-muted-foreground">{session.recurrence_probability}</span>
-                  )}
-                </div>
-              ) : (
-                <span className="text-muted-foreground">new/unknown</span>
               )}
             </TableCell>
             <TableCell className="max-w-72 text-xs text-muted-foreground">

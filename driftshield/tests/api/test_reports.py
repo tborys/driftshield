@@ -1,6 +1,5 @@
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -122,22 +121,10 @@ def test_generated_report_has_real_content(client, auth_headers, seeded_session,
     data = get_response.json()
     assert "Forensic Analysis Report" in data["content_markdown"]
     assert data["content_json"]["sections"] is not None
-    assert len(data["content_json"]["sections"]) == 5
+    assert len(data["content_json"]["sections"]) == 4
+    assert "recurrence_probability" not in data["content_json"]
 
 
-def test_get_graveyard_summary_not_found(client, auth_headers, monkeypatch):
-    monkeypatch.delenv("GRAVEYARD_REPORT_PATH", raising=False)
+def test_graveyard_summary_route_is_removed(client, auth_headers):
     response = client.get("/api/graveyard/summary", headers=auth_headers)
     assert response.status_code == 404
-
-
-def test_get_graveyard_summary_content(client, auth_headers, monkeypatch, tmp_path):
-    report_path = Path(tmp_path / "graveyard-report.md")
-    report_path.write_text("# Graveyard Summary\n\nSignal quality looks stable.", encoding="utf-8")
-    monkeypatch.setenv("GRAVEYARD_REPORT_PATH", str(report_path))
-
-    response = client.get("/api/graveyard/summary", headers=auth_headers)
-    assert response.status_code == 200
-    data = response.json()
-    assert data["path"] == str(report_path)
-    assert "# Graveyard Summary" in data["content_markdown"]

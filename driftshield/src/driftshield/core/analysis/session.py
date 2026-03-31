@@ -10,9 +10,8 @@ from driftshield.core.analysis.heuristics import (
     PolicyDivergenceHeuristic,
     load_analysis_context,
 )
-from driftshield.core.analysis.recurrence import RecurrenceAssessment, RecurrenceEngine
-from driftshield.core.analysis.risk import RiskAnalyzer
 from driftshield.core.analysis.inflection import select_inflection_node
+from driftshield.core.analysis.risk import RiskAnalyzer
 from driftshield.core.graph.builder import build_graph
 from driftshield.core.graph.models import DecisionNode, LineageGraph
 from driftshield.core.models import CanonicalEvent, ExplanationPayload
@@ -27,7 +26,6 @@ class AnalysisResult:
     inflection_node: DecisionNode | None
     total_events: int
     flagged_events: int
-    recurrence: RecurrenceAssessment | None = None
     inflection_explanation: ExplanationPayload | None = None
 
     @property
@@ -52,10 +50,10 @@ class AnalysisResult:
 
         return summary
 
+
 def analyze_session(
     events: list[CanonicalEvent],
     session_id: str | None = None,
-    historical_recurrence_counts: dict[str, int] | None = None,
 ) -> AnalysisResult:
     if not events:
         return AnalysisResult(
@@ -64,7 +62,6 @@ def analyze_session(
             inflection_node=None,
             total_events=0,
             flagged_events=0,
-            recurrence=None,
             inflection_explanation=None,
         )
 
@@ -94,19 +91,11 @@ def analyze_session(
 
     flagged_count = sum(1 for event in analyzed_events if event.has_risk_flags())
 
-    recurrence = None
-    if flagged_count > 0:
-        recurrence = RecurrenceEngine().evaluate(
-            analyzed_events,
-            historical_counts=historical_recurrence_counts,
-        )
-
     return AnalysisResult(
         events=analyzed_events,
         graph=graph,
         inflection_node=inflection_node,
         total_events=len(analyzed_events),
         flagged_events=flagged_count,
-        recurrence=recurrence,
         inflection_explanation=inflection_explanation,
     )

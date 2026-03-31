@@ -9,9 +9,6 @@ export function Header() {
           <NavLink to="/sessions" className={({ isActive }) => (isActive ? 'font-medium' : 'text-muted-foreground')}>
             Sessions
           </NavLink>
-          <NavLink to="/reports" className={({ isActive }) => (isActive ? 'font-medium' : 'text-muted-foreground')}>
-            Reports
-          </NavLink>
         </nav>
       </div>
       <span className="text-sm text-muted-foreground">AI Decision Forensics</span>

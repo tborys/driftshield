@@ -12,9 +12,7 @@ from driftshield.db.models import (
     AnalystValidationModel,
     Base,
     DecisionNodeModel,
-    RecurrenceSignatureModel,
     SessionModel,
-    SessionSignatureModel,
 )
 
 
@@ -97,6 +95,7 @@ def test_list_sessions(client, auth_headers, seeded_session):
         "parser_version": "claude_code@1",
         "ingested_at": data["items"][0]["provenance"]["ingested_at"],
     }
+    assert "recurrence_level" not in data["items"][0]
 
 
 def test_list_sessions_pagination(client, auth_headers, db_session):
@@ -143,6 +142,7 @@ def test_get_session_detail(client, auth_headers, seeded_session):
             "evidence_refs": ["risk:coverage_gap"],
         },
     }
+    assert "recurrence_level" not in data
 
 
 def test_get_session_detail_orders_explanations_by_sequence(client, auth_headers, db_session):
@@ -196,43 +196,6 @@ def test_get_session_detail_orders_explanations_by_sequence(client, auth_headers
     assert response.status_code == 200
     explanations = response.json()["explanations"]["risk_explanations"]["coverage_gap"]
     assert [item["payload"]["reason"] for item in explanations] == ["earlier", "later"]
-
-
-def test_session_endpoints_include_recurrence_summary(client, auth_headers, db_session):
-    session_id = uuid.uuid4()
-    s = SessionModel(
-        id=session_id,
-        agent_id="test-agent",
-        started_at=datetime.now(timezone.utc),
-        status="completed",
-    )
-    sig_id = uuid.uuid4()
-    sig = RecurrenceSignatureModel(
-        id=sig_id,
-        signature_hash="abc123",
-        pattern={"level": "recurring", "probability": "medium"},
-        first_seen_at=datetime.now(timezone.utc),
-        last_seen_at=datetime.now(timezone.utc),
-        occurrence_count=3,
-        severity="medium",
-    )
-    link = SessionSignatureModel(session_id=session_id, signature_id=sig_id, matched_nodes=[])
-    db_session.add_all([s, sig, link])
-    db_session.commit()
-
-    list_resp = client.get("/api/sessions", headers=auth_headers)
-    assert list_resp.status_code == 200
-    item = next(i for i in list_resp.json()["items"] if i["id"] == str(session_id))
-    assert item["recurrence_level"] == "recurring"
-    assert item["recurrence_probability"] == "medium"
-    assert item["recurrence_count"] == 3
-
-    detail_resp = client.get(f"/api/sessions/{session_id}", headers=auth_headers)
-    assert detail_resp.status_code == 200
-    detail = detail_resp.json()
-    assert detail["recurrence_level"] == "recurring"
-    assert detail["recurrence_probability"] == "medium"
-    assert detail["recurrence_count"] == 3
 
 
 def test_list_sessions_supports_triage_filters(client, auth_headers, db_session):
