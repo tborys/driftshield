@@ -1,6 +1,16 @@
-# DriftShield Agentic
+# DriftShield (OSS)
 
-Local development bootstrap and verification workflow for DriftShield.
+DriftShield is the open-source toolkit for local development, bootstrap, and
+verification of the DriftShield OSS surface.
+
+The current private working repository is still named
+`demouser/driftshield-agentic` during the split, but the OSS product/package name
+presented in public-facing docs should be `DriftShield`.
+
+## License
+
+This repository is released under the GNU Affero General Public License v3.0 or
+later (AGPL-3.0-or-later). See [`LICENSE`](./LICENSE).
 
 ## One-command setup
 
@@ -28,6 +38,16 @@ Verification covers:
 - backend regression tests (`PYTHONPATH=src python3 -m pytest -q`)
 - frontend checks (`npm run build`)
 - ingest smoke tests (`PYTHONPATH=src python3 -m pytest tests/api/test_ingest.py -q`)
+
+## Clean-clone bootstrap checklist
+
+After cloning this repository on a fresh machine:
+
+1. Run `./scripts/dev-setup.sh`
+2. Run `./scripts/dev-verify.sh`
+3. Confirm frontend build succeeds and backend tests pass without private services
+
+No private SaaS dependencies are required for these local bootstrap steps.
 
 ## Environment files
 
@@ -76,46 +96,11 @@ DRIFTSHIELD_API_KEY=prod-api-key \
 scripts/dealer-hook.sh vps
 ```
 
-## Public signature extension seam
+## OSS boundary notes
 
-The OSS package exposes a small, interface-only public surface for external
-signature packs at `driftshield.signatures`.
-
-- Import `SignatureProvider`, `SignaturePackMetadata`, and `SignatureDefinition`
-  from `driftshield.signatures`
-- Implement the protocol in a separate package such as a future
-  `driftshield-intel` install or a community-maintained pack
-- The OSS repo does not bundle proprietary signature packs, recurrence engines,
-  or matching behavior through this surface
-
-Minimal example:
-
-```python
-from collections.abc import Iterable
-
-from driftshield.signatures import (
-    SignatureDefinition,
-    SignaturePackMetadata,
-    SignatureProvider,
-)
-
-
-class CommunityPack:
-    def describe(self) -> SignaturePackMetadata:
-        return SignaturePackMetadata(
-            name="community-general",
-            version="1.0.0",
-            description="General-purpose failure signatures.",
-        )
-
-    def iter_signatures(self) -> Iterable[SignatureDefinition]:
-        yield SignatureDefinition(
-            signature_id="SIG-COMM-001",
-            title="Coverage Gap",
-            summary="Required evidence is skipped before completion.",
-            failure_shape="collect->branch->skip->complete",
-        )
-```
+This repository intentionally excludes non-OSS commercial capabilities.
+References to future or commercial-only functionality are maintained outside
+this repository.
 
 ## Local Postgres
 

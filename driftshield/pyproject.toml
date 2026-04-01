@@ -1,8 +1,14 @@
 [project]
 name = "driftshield"
 version = "0.1.0"
-description = "AI Decision Forensics & Continuous Risk Infrastructure"
+description = "Open-source AI decision forensics toolkit"
+license = "AGPL-3.0-or-later"
 requires-python = ">=3.12"
+classifiers = [
+    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+]
 dependencies = [
     "fastapi>=0.109.0",
     "uvicorn[standard]>=0.27.0",

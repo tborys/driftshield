@@ -53,8 +53,16 @@ fi
 if [ -f "$BACKEND_DIR/.venv/bin/activate" ]; then
   # shellcheck disable=SC1091
   source "$BACKEND_DIR/.venv/bin/activate"
-  pip install --upgrade pip
-  pip install -e "$BACKEND_DIR[dev]"
+  if ! python -m pip --version >/dev/null 2>&1; then
+    log "Bootstrapping pip inside virtualenv"
+    if ! python -m ensurepip --upgrade >/dev/null 2>&1; then
+      echo "[dev-setup] Failed to bootstrap pip inside $BACKEND_DIR/.venv" >&2
+      echo "[dev-setup] Ensure your Python installation includes ensurepip support, then rerun ./scripts/dev-setup.sh" >&2
+      exit 1
+    fi
+  fi
+  python -m pip install --upgrade pip
+  python -m pip install -e "$BACKEND_DIR[dev]"
 fi
 
 log "Installing frontend dependencies"
