@@ -12,6 +12,12 @@
 - Keep the issue and project item `In Progress` while the PR is open, under review, or receiving follow-up fixes.
 - Only after the PR is merged should the issue be closed as completed and the project item moved to `Done`.
 
+## Git Naming
+
+- Use standard conventional commit messages such as `feat:`, `fix:`, `docs:`, `chore:`, and `test:`.
+- Do not prefix PR titles with `[codex]`.
+- Do not add tool-provenance prefixes to commit subjects or squash-merge commit titles unless explicitly requested.
+
 ## Issue Hygiene
 
 - When working from GitHub issues, keep the issue body, linked parent issue, and GitHub Project status in sync with the real state of the work.

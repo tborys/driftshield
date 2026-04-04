@@ -127,7 +127,6 @@ Manual device checks:
 - No Helm/Kubernetes path for this dogfood target
 
 ## Related docs
-- `docs/handoffs/deploy-runbook.md`
 - `docs/vps-security-report-2026-02-25.md`
 - `scripts/vps-deploy.sh`
 - `scripts/vps-verify-access.sh`

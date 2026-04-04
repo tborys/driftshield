@@ -1,8 +1,10 @@
 # DriftShield – Claude Code Guide
 
-@sessions/CLAUDE.sessions.md
-
 This file provides instructions for Claude Code when working in the DriftShield codebase.
+
+For active Phase 1 planning and sequencing, treat `../driftshield-meta` as the planning source of truth.
+Start from `../driftshield-meta/docs/phases/phase-1/README.md`, then follow the linked strategy,
+phase plan, and release checklist before making repo-scoped execution changes here.
 
 ## Project Overview
 
