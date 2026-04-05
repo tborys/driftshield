@@ -1,11 +1,16 @@
 """Tests for inspect command."""
 
+import re
 from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
 
 from driftshield.cli.main import app
+
+
+def _strip_ansi(text: str) -> str:
+    return re.sub(r"\x1b\[[0-9;]*m", "", text)
 
 
 runner = CliRunner()
@@ -27,7 +32,7 @@ class TestInspectCommand:
         )
 
         assert result.exit_code == 0
-        assert "Node #0" in result.output
+        assert "Node #0" in _strip_ansi(result.output)
 
     def test_inspect_with_path_to_root(self):
         """Path to root shows ancestry."""
@@ -43,7 +48,7 @@ class TestInspectCommand:
         )
 
         assert result.exit_code == 0
-        assert "Path to Root" in result.output
+        assert "Path to Root" in _strip_ansi(result.output)
 
     def test_inspect_invalid_node(self):
         """Invalid node number shows error."""
@@ -58,7 +63,7 @@ class TestInspectCommand:
         )
 
         assert result.exit_code != 0
-        assert "not found" in result.output.lower()
+        assert "not found" in _strip_ansi(result.output).lower()
 
     def test_inspect_with_json(self):
         """JSON output returns valid JSON."""
@@ -74,4 +79,4 @@ class TestInspectCommand:
         )
 
         assert result.exit_code == 0
-        assert '"action"' in result.output
+        assert '"action"' in _strip_ansi(result.output)
