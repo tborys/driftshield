@@ -52,7 +52,7 @@ def discover_sessions_in_path(
 
     sessions: list[SessionInfo] = []
     for pattern in patterns:
-        for file in sessions_path.glob(pattern):
+        for file in sessions_path.rglob(pattern):
             stat = file.stat()
             sessions.append(
                 SessionInfo(

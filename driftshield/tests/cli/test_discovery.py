@@ -9,6 +9,7 @@ from driftshield.cli.discovery import (
     get_claude_projects_dir,
     path_to_project_key,
     discover_sessions,
+    discover_sessions_in_path,
     resolve_session,
     SessionInfo,
 )
@@ -67,6 +68,43 @@ class TestDiscoverSessions:
 
         assert sessions[0].path.name == "new.jsonl"
         assert sessions[1].path.name == "old.jsonl"
+
+
+class TestDiscoverSessionsInPath:
+    def test_finds_sessions_in_subdirectories(self, tmp_path):
+        """Finds JSONL files nested in year/month/day subdirectories."""
+        nested = tmp_path / "2026" / "03" / "20"
+        nested.mkdir(parents=True)
+        session_file = nested / "session-abc.jsonl"
+        session_file.write_text('{"type":"session_meta"}\n')
+
+        sessions = discover_sessions_in_path(tmp_path)
+
+        assert len(sessions) == 1
+        assert sessions[0].session_id == "session-abc"
+        assert sessions[0].path == session_file
+
+    def test_finds_sessions_at_top_level_and_nested(self, tmp_path):
+        """Finds sessions both at top level and in subdirectories."""
+        top_file = tmp_path / "session-top.jsonl"
+        top_file.write_text('{"type":"session_meta"}\n')
+
+        nested = tmp_path / "2026" / "03" / "20"
+        nested.mkdir(parents=True)
+        nested_file = nested / "session-nested.jsonl"
+        nested_file.write_text('{"type":"session_meta"}\n')
+
+        sessions = discover_sessions_in_path(tmp_path)
+
+        ids = {s.session_id for s in sessions}
+        assert "session-top" in ids
+        assert "session-nested" in ids
+        assert len(sessions) == 2
+
+    def test_returns_empty_for_nonexistent_path(self, tmp_path):
+        """Returns empty list when path does not exist."""
+        sessions = discover_sessions_in_path(tmp_path / "nonexistent")
+        assert sessions == []
 
 
 class TestResolveSession:
