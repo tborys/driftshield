@@ -59,6 +59,12 @@ def ingest_transcript(
         )
         if outcome is None:
             raise
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=422,
+            detail=f"Failed to process transcript: {exc}",
+        ) from exc
 
     if outcome.deduplicated:
         response.status_code = 200
