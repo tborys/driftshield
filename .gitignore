@@ -2,6 +2,11 @@
 # Worktrees
 .worktrees/
 
+# Environment files
+.env
+.env.*
+!.env.example
+
 # Local agent/tooling state
 .serena/
 .claude/agents/
