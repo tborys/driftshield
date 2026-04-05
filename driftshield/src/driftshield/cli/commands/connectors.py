@@ -16,7 +16,7 @@ from driftshield.db.connector_service import ConnectorService
 from driftshield.db.engine import get_engine, get_session_factory
 from driftshield.db.models import Base, ConnectorModel
 
-console = Console()
+console = Console(force_terminal=True)
 app = typer.Typer(help="Manage local transcript connectors.")
 
 

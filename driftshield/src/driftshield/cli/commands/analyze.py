@@ -13,7 +13,7 @@ from driftshield.cli.discovery import discover_sessions, resolve_session
 from driftshield.core.analysis.session import analyze_session
 
 
-console = Console()
+console = Console(force_terminal=True)
 
 
 def analyze(
