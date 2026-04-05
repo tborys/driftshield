@@ -1,11 +1,9 @@
 # DriftShield (OSS)
 
-DriftShield is the open-source toolkit for local development, bootstrap, and
-verification of the DriftShield OSS surface.
+DriftShield is an open source AI decision forensics toolkit.
 
-The current private working repository is still named
-`demouser/driftshield-agentic` during the split, but the OSS product/package name
-presented in public-facing docs should be `DriftShield`.
+It ingests AI session transcripts, analyses them for risk signals, and presents
+findings via a web UI and CLI.
 
 ## License
 
@@ -83,17 +81,11 @@ DRIFTSHIELD_API_KEY=dev-api-key PYTHONPATH=src python3 -m driftshield.cli.main i
 DRIFTSHIELD_API_KEY=dev-api-key PYTHONPATH=src python3 -m driftshield.cli.main ingest --latest
 ```
 
-A thin Dealer hook wrapper is available at `scripts/dealer-hook.sh`:
+A hook wrapper is available at `scripts/dealer-hook.sh`:
 
 ```bash
 # local DriftShield CLI
 CLAUDE_TRANSCRIPT_PATH=/path/to/session.jsonl scripts/dealer-hook.sh local
-
-# direct VPS ingest
-CLAUDE_TRANSCRIPT_PATH=/path/to/session.jsonl \
-DRIFTSHIELD_API_URL=https://driftshield.example \
-DRIFTSHIELD_API_KEY=prod-api-key \
-scripts/dealer-hook.sh vps
 ```
 
 ## OSS boundary notes

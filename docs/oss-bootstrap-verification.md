@@ -3,9 +3,7 @@
 This document defines the public-safe bootstrap path for contributors using a
 clean clone of this repository.
 
-The current private working repository may still be named
-`demouser/driftshield-agentic` during Phase 1, but public-facing OSS
-documentation should refer to the product/package as `DriftShield`.
+All public documentation refers to the product/package as `DriftShield`.
 
 ## Prerequisites
 

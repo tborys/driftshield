@@ -7,10 +7,7 @@
 - Prefer end to end execution. Do not stop at analysis, planning or partial scaffolding when the task can reasonably be completed in one pass.
 - If a change touches frontend or UI behaviour, include browser based verification as part of completion, not just static or unit checks.
 - When browser testing is needed, use the real browser tooling available in the environment and report what flow was exercised.
-- When work begins on a GitHub issue, move its item on the DriftShield Operating Board to `In Progress`.
-- After local verification passes, push the working branch to the current private repo and open or update a PR linked to the issue. This is expected and allowed. It is not a public release step.
-- Keep the issue and project item `In Progress` while the PR is open, under review, or receiving follow-up fixes.
-- Only after the PR is merged should the issue be closed as completed and the project item moved to `Done`.
+- After local verification passes, push the working branch and open or update a PR linked to the issue.
 
 ## Git Naming
 
