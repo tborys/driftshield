@@ -2,23 +2,16 @@
 
 This file provides instructions for Claude Code when working in the DriftShield codebase.
 
-For active Phase 1 planning and sequencing, treat `../driftshield-meta` as the planning source of truth.
-Start from `../driftshield-meta/docs/phases/phase-1/README.md`, then follow the linked strategy,
-phase plan, and release checklist before making repo-scoped execution changes here.
-
 ## Project Overview
 
 DriftShield is an AI Decision Forensics & Continuous Risk Infrastructure platform. It ingests AI session transcripts, analyses them for risk signals, and presents findings via a web UI and CLI.
 
-**Monorepo layout:**
+**Repository layout:**
 
 ```
 driftshield/          # Core product (backend + frontend + CLI + tests)
-marketing/            # Next.js marketing site
-skills/               # Claude Code agent skills
-docs/                 # Architecture plans, handoffs, VPS reference
-scripts/              # Dev utilities (setup, verify, deploy)
-.claude/commands/     # Slash commands (/issue, /ship, /browser-check)
+docs/                 # Architecture docs
+scripts/              # Dev utilities (setup, verify)
 ```
 
 ## Tech Stack
@@ -43,10 +36,7 @@ scripts/              # Dev utilities (setup, verify, deploy)
 - Prefer end-to-end execution. Do not stop at analysis, planning, or partial scaffolding when the task can reasonably be completed in one pass.
 - If a change touches frontend or UI behaviour, include browser-based verification as part of completion, not just static or unit checks.
 - When browser testing is needed, use the real browser tooling available in the environment and report what flow was exercised.
-- When work begins on a GitHub issue, move its item on the DriftShield Operating Board to `In Progress`.
-- After local verification passes, push the working branch to the current private repo and open or update a PR linked to the issue. This is expected and allowed. It is not a public release step.
-- Keep the issue and project item `In Progress` while the PR is open, under review, or receiving follow-up fixes.
-- Only after the PR is merged should the issue be closed as completed and the project item moved to `Done`.
+- After local verification passes, push the working branch and open or update a PR linked to the issue.
 
 ## Verification Commands
 
@@ -180,7 +170,7 @@ driftshield/frontend/src/
 - **Dockerfile**: Multi-stage (Node.js builds frontend → Python 3.12-slim serves app).
 - **Production**: `docker-compose.yml` – app on port 8080, PostgreSQL 16 with health checks.
 - **Development**: `docker-compose.dev.yml` – Postgres only, app runs locally with `uvicorn --reload`.
-- **Deploy**: `scripts/vps-deploy.sh` with rollback support. CI via `.github/workflows/deploy-vps.yml` (manual, main only).
+- **Deploy**: Docker Compose for production. See `docker-compose.yml`.
 
 ## CI/CD
 
@@ -208,13 +198,8 @@ Key variables (see `driftshield/.env.example`):
 - When preparing a prompt for another agent, make it autonomous by default.
 - Tell the agent to inspect the issue and codebase first, produce a concrete spec and plan, then implement, verify, and summarise the result without waiting for a human in the loop.
 
-## OpenClaw / Contributor VPS
-
-When working with the Contributor Telegram bot or the Cloud VPS, read `docs/openclaw-vps-reference.md` for SSH access, server layout, Docker commands, and current configuration state.
-
 ## Slash Commands
 
-- `/issue <number>` – Fetch a GitHub issue, read relevant code, propose a TDD implementation plan.
 - `/ship` – Run backend tests → frontend build → e2e tests → generate PR description.
 - `/browser-check` – Run Playwright health check against current frontend changes.
 

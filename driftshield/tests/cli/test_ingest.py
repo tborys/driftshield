@@ -203,7 +203,7 @@ def test_dealer_hook_wrapper_targets_local_ingest(tmp_path):
     assert capture.read_text().splitlines() == ["ingest", "--path", str(transcript)]
 
 
-def test_dealer_hook_wrapper_targets_vps_ingest(tmp_path):
+def test_dealer_hook_wrapper_targets_remote_ingest(tmp_path):
     assert HOOK_SCRIPT.exists(), "dealer hook wrapper should exist"
 
     fake_curl = tmp_path / "curl"
@@ -213,7 +213,7 @@ def test_dealer_hook_wrapper_targets_vps_ingest(tmp_path):
     )
     fake_curl.chmod(fake_curl.stat().st_mode | stat.S_IEXEC)
 
-    capture = tmp_path / "hook-vps.txt"
+    capture = tmp_path / "hook-remote.txt"
     transcript = FIXTURES_DIR / "sample_claude_code_session.jsonl"
     env = os.environ.copy()
     env.update(
@@ -226,7 +226,7 @@ def test_dealer_hook_wrapper_targets_vps_ingest(tmp_path):
         }
     )
 
-    result = subprocess.run([str(HOOK_SCRIPT), "vps"], env=env, capture_output=True, text=True)
+    result = subprocess.run([str(HOOK_SCRIPT), "remote"], env=env, capture_output=True, text=True)
 
     assert result.returncode == 0, result.stderr
     args = capture.read_text().splitlines()

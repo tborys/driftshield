@@ -13,17 +13,17 @@ case "$MODE" in
   local)
     exec driftshield ingest --path "$TRANSCRIPT_PATH"
     ;;
-  vps)
+  remote)
     API_URL="${DRIFTSHIELD_API_URL:-}"
     API_KEY="${DRIFTSHIELD_API_KEY:-${API_KEY:-}}"
 
     if [ -z "$API_URL" ]; then
-      echo "DRIFTSHIELD_API_URL is required for vps mode" >&2
+      echo "DRIFTSHIELD_API_URL is required for remote mode" >&2
       exit 1
     fi
 
     if [ -z "$API_KEY" ]; then
-      echo "DRIFTSHIELD_API_KEY (or API_KEY) is required for vps mode" >&2
+      echo "DRIFTSHIELD_API_KEY (or API_KEY) is required for remote mode" >&2
       exit 1
     fi
 
@@ -34,7 +34,7 @@ case "$MODE" in
       "${API_URL%/}/api/ingest"
     ;;
   *)
-    echo "Usage: $0 [local|vps]" >&2
+    echo "Usage: $0 [local|remote]" >&2
     exit 1
     ;;
 esac

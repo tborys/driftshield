@@ -1,4 +1,0 @@
-interface:
-  display_name: "DriftShield Implementation"
-  short_description: "Implement DriftShield issues end to end"
-  default_prompt: "Use $driftshield-issue-implementation to implement this DriftShield GitHub issue with the right context, spec, plan, tests, and verification."

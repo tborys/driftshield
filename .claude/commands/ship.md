@@ -32,4 +32,4 @@ cd driftshield/frontend && npx playwright test --reporter=list 2>/dev/null || ec
 #<issue number>
 ```
 
-5. Do not commit or push — leave that to Demo.
+5. Do not commit or push — leave that to the developer.

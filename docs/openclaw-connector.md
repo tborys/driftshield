@@ -1,6 +1,6 @@
 # OpenClaw connector mapping
 
-This documents the first offline ingestion slice for issue #100.
+This documents the offline ingestion slice for OpenClaw sessions.
 
 ## Discovery
 
