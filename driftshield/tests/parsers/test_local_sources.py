@@ -57,3 +57,15 @@ def test_codex_desktop_ingests_representative_session():
     assert events[1].inputs == {"file_path": "app.py", "instruction": "Rename foo to bar"}
     assert events[2].outputs["text"] == "Renamed foo to bar in app.py."
     assert all(event.session_id == "codex-desktop-session-1" for event in events)
+
+
+def test_codex_cli_parse_method_handles_jsonl_content():
+    """parse() routes JSONL content correctly, not just parse_file()."""
+    parser = CodexCliParser()
+    content = (FIXTURES_DIR / "sample_codex_cli_session.jsonl").read_text()
+    events = parser.parse(content)
+
+    assert len(events) == 3
+    assert events[0].agent_id == "user"
+    assert events[1].action == "shell"
+    assert events[2].outputs["text"] == "Tests are green."
