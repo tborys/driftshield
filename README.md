@@ -1,109 +1,204 @@
-# DriftShield (OSS)
+# DriftShield
 
-DriftShield is an open source AI decision forensics toolkit.
+Forensic analysis for AI agent sessions. Investigate what went wrong, where decisions drifted, and why.
 
-It ingests AI session transcripts, analyses them for risk signals, and presents
-findings via a web UI and CLI.
+DriftShield ingests transcripts from AI coding agents, builds a decision graph from the session, runs risk heuristics against every node, and surfaces the failures in a web dashboard and CLI. It turns opaque agent runs into auditable investigations.
 
-## License
+## Supported Sources
 
-This repository is released under the GNU Affero General Public License v3.0 or
-later (AGPL-3.0-or-later). See [`LICENSE`](./LICENSE).
+| Source | Format | Status |
+|--------|--------|--------|
+| Claude Code | JSONL | Stable |
+| Claude Desktop | JSON | Experimental |
+| Codex CLI | JSONL | Experimental |
+| Codex Desktop | JSON | Experimental |
+| OpenClaw | JSONL | Experimental |
 
-## One-command setup
+DriftShield uses a parser protocol. New sources can be added by implementing a single interface.
 
-From repo root:
+## Quick Start
+
+### Prerequisites
+
+- Python 3.12+
+- Node.js 20+
+- Docker (optional, for local Postgres)
+
+### Setup
 
 ```bash
+git clone https://github.com/tborys/driftshield.git
+cd driftshield
 ./scripts/dev-setup.sh
 ```
 
-What it does:
-- creates local env files from examples (backend + frontend)
-- starts Postgres via `driftshield/docker-compose.dev.yml` when Docker is available
-- creates `driftshield/.venv` and installs backend deps (`-e [dev]`), exiting with guidance if `venv` support is unavailable
-- installs frontend deps with `npm ci --include=dev`
+This creates local env files, installs backend and frontend dependencies, and starts Postgres if Docker is available.
 
-## One-command verification
-
-From repo root:
+### Verify
 
 ```bash
 ./scripts/dev-verify.sh
 ```
 
-Verification covers:
-- backend regression tests (`PYTHONPATH=src python3 -m pytest -q`)
-- frontend checks (`npm run build`)
-- ingest smoke tests (`PYTHONPATH=src python3 -m pytest tests/api/test_ingest.py -q`)
-
-## Clean-clone bootstrap checklist
-
-After cloning this repository on a fresh machine:
-
-1. Run `./scripts/dev-setup.sh`
-2. Run `./scripts/dev-verify.sh`
-3. Confirm frontend build succeeds and backend tests pass without private services
-
-No private SaaS dependencies are required for these local bootstrap steps.
-
-## Environment files
-
-`./scripts/dev-setup.sh` creates these if missing:
-
-- `driftshield/.env` (from `driftshield/.env.example`)
-- `driftshield/frontend/.env` (from `driftshield/frontend/.env.example`)
-
-Defaults are safe for local development:
-
-Backend (`driftshield/.env`):
-- `API_KEY=dev-api-key`
-- `DATABASE_URL=postgresql://drift:drift@localhost:5432/driftshield`
-
-Frontend (`driftshield/frontend/.env`):
-- `VITE_API_KEY=dev-api-key`
-
-## Transcript ingest CLI
-
-From `driftshield/` you can upload a transcript directly to the local or remote ingest API:
+### Ingest a transcript
 
 ```bash
+cd driftshield
 DRIFTSHIELD_API_URL=http://localhost:8000 \
 DRIFTSHIELD_API_KEY=dev-api-key \
-PYTHONPATH=src python3 -m driftshield.cli.main ingest --path tests/fixtures/transcripts/sample_claude_code_session.jsonl
+PYTHONPATH=src python3 -m driftshield.cli.main ingest \
+  --path tests/fixtures/transcripts/sample_claude_code_session.jsonl
 ```
 
-Discovery shortcuts reuse the Claude project session lookup already used by the CLI:
+Or ingest the latest Claude Code session for the current project:
 
 ```bash
-# latest session for the current Claude project
-DRIFTSHIELD_API_KEY=dev-api-key PYTHONPATH=src python3 -m driftshield.cli.main ingest --project
-DRIFTSHIELD_API_KEY=dev-api-key PYTHONPATH=src python3 -m driftshield.cli.main ingest --latest
+DRIFTSHIELD_API_KEY=dev-api-key \
+PYTHONPATH=src python3 -m driftshield.cli.main ingest --latest
 ```
 
-A hook wrapper is available at `scripts/dealer-hook.sh`:
+### Open the dashboard
+
+Start the backend:
 
 ```bash
-# local DriftShield CLI
-CLAUDE_TRANSCRIPT_PATH=/path/to/session.jsonl scripts/dealer-hook.sh local
+cd driftshield
+PYTHONPATH=src uvicorn driftshield.api.server:app --port 8000 --reload
 ```
 
-## OSS boundary notes
-
-This repository intentionally excludes non-OSS commercial capabilities.
-References to future or commercial-only functionality are maintained outside
-this repository.
-
-## Local Postgres
-
-Postgres is managed through:
+Start the frontend (in a separate terminal):
 
 ```bash
-docker compose -f driftshield/docker-compose.dev.yml up -d db
+cd driftshield/frontend
+npm run dev
 ```
 
-To stop it:
+Open http://localhost:5173 to view ingested sessions.
+
+## How It Works
+
+```
+Transcript → Parser → Canonical Events → Decision Graph → Risk Heuristics → Report
+```
+
+1. **Parsers** read raw transcripts and produce a sequence of canonical events (tool calls, outputs, branches, handoffs, assumptions, constraint checks)
+2. **Graph builder** connects events into a decision tree with parent/child relationships
+3. **Risk heuristics** scan every node for failure patterns
+4. **Inflection detection** scores points in the session where the agent's trajectory changed
+5. **Reports** present findings as Markdown, JSON, or through the web dashboard
+
+## Built-in Risk Detectors
+
+| Detector | What it catches |
+|----------|----------------|
+| Coverage Gap | Output references fewer items than the input provided |
+| Assumption Mutation | An assumption changed between steps without acknowledgement |
+| Policy Divergence | Agent behaviour contradicts an earlier stated constraint |
+| Constraint Violation | An explicit constraint was checked and then ignored |
+| Context Contamination | Information from one context leaks into an unrelated decision |
+
+Risk detectors are additive. Each implements a `RiskHeuristic` interface and can be extended without modifying existing code.
+
+## CLI Reference
+
+All commands run from the `driftshield/` directory with `PYTHONPATH=src`.
 
 ```bash
-docker compose -f driftshield/docker-compose.dev.yml down
+# Ingest a transcript file
+python3 -m driftshield.cli.main ingest --path <file.jsonl>
+
+# Ingest the latest Claude Code session
+python3 -m driftshield.cli.main ingest --latest
+
+# List ingested sessions
+python3 -m driftshield.cli.main list
+
+# Analyse a session for risk signals
+python3 -m driftshield.cli.main analyze <session-id>
+
+# Inspect a specific node in the decision graph
+python3 -m driftshield.cli.main inspect <file.jsonl> --node 0
+
+# Generate a report
+python3 -m driftshield.cli.main report <session-id>
+
+# Discover available transcript sources
+python3 -m driftshield.cli.main connectors list
 ```
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Backend | Python 3.12, FastAPI, SQLAlchemy 2.0, Alembic, Pydantic |
+| CLI | Typer + Rich |
+| Frontend | React 19, TypeScript, Vite, Tailwind CSS 4, TanStack Query |
+| Graph visualisation | @xyflow/react |
+| Database | PostgreSQL 16 (production), SQLite in-memory (tests) |
+| Testing | pytest (backend), Playwright (e2e), Vitest (frontend unit) |
+| Infrastructure | Docker, docker-compose, GitHub Actions |
+
+## Project Structure
+
+```
+driftshield/
+├── src/driftshield/
+│   ├── api/            # FastAPI routes (ingest, sessions, reports, connectors)
+│   ├── cli/            # Typer commands and session discovery
+│   ├── connectors/     # Auto-discovery of transcript sources
+│   ├── core/
+│   │   ├── analysis/   # Risk heuristics, inflection detection, session analysis
+│   │   ├── graph/      # Decision graph builder and models
+│   │   └── models.py   # Domain models (CanonicalEvent, RiskClassification)
+│   ├── db/             # SQLAlchemy models, persistence, Alembic migrations
+│   ├── parsers/        # Transcript format parsers (protocol + implementations)
+│   └── reports/        # Jinja2 report templates
+├── frontend/           # React investigation dashboard
+├── tests/              # Backend test suite
+└── docker-compose.yml  # Production deployment
+```
+
+## Docker Deployment
+
+```bash
+cd driftshield
+
+# Create .env with required values
+cp .env.example .env
+# Edit .env: set API_KEY and DB_PASSWORD
+
+# Start the stack
+docker compose up -d
+```
+
+The production compose file runs the app on port 8080 with PostgreSQL 16. Both `API_KEY` and `DB_PASSWORD` are required and will fail on startup if missing.
+
+## Contributing
+
+Contributions are welcome. Please follow these steps:
+
+1. **Fork** the repository to your own GitHub account
+2. **Clone** your fork locally
+3. **Create a branch** from `main` for your change
+4. **Make your changes** with tests where applicable
+5. **Run verification** before submitting:
+   ```bash
+   ./scripts/dev-verify.sh
+   ```
+6. **Open a pull request** from your fork's branch to `tborys/driftshield:main`
+
+All pull requests are reviewed and merged by the maintainer. Direct pushes to `main` are not accepted.
+
+### Code style
+
+- Python: Ruff (line length 100), MyPy strict, conventional commits
+- TypeScript: ESLint 9 flat config, strict mode, no `any` types
+- Tailwind CSS for frontend styling
+
+### Adding a parser
+
+Implement the `ParserProtocol` interface in `src/driftshield/parsers/`. Each parser converts a raw transcript format into a list of `CanonicalEvent` objects. See `claude_code.py` for a reference implementation.
+
+## Licence
+
+AGPL-3.0-or-later. See [LICENSE](./LICENSE).
