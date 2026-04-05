@@ -5,8 +5,7 @@ COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 COPY frontend/ ./
 ARG VITE_API_KEY=""
-ENV VITE_API_KEY=${VITE_API_KEY}
-RUN npm run build
+RUN VITE_API_KEY=${VITE_API_KEY} npm run build
 
 # Stage 2: Python application
 FROM python:3.12-slim AS production

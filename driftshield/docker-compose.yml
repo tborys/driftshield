@@ -7,7 +7,7 @@ services:
     ports:
       - "${PORT:-8080}:8080"
     environment:
-      DATABASE_URL: postgresql://${DB_USER:-drift}:${DB_PASSWORD:-drift}@db:5432/${DB_NAME:-driftshield}
+      DATABASE_URL: postgresql://${DB_USER:-drift}:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/${DB_NAME:-driftshield}
       DB_HOST: db
       DB_PORT: 5432
       DB_USER: ${DB_USER:-drift}
@@ -30,7 +30,7 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: ${DB_USER:-drift}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-drift}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
       POSTGRES_DB: ${DB_NAME:-driftshield}
     volumes:
       - postgres_data:/var/lib/postgresql/data
