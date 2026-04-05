@@ -4,6 +4,10 @@ Forensic analysis for AI agent sessions. Investigate what went wrong, where deci
 
 DriftShield ingests transcripts from AI coding agents, builds a decision graph from the session, runs risk heuristics against every node, and surfaces the failures in a web dashboard and CLI. It turns opaque agent runs into auditable investigations.
 
+## Demo
+
+<video src="https://github.com/user-attachments/assets/bc103601-aa85-4106-81a3-cf352d4e10a8" controls width="100%"></video>
+
 ## Supported Sources
 
 | Source | Format | Status |
