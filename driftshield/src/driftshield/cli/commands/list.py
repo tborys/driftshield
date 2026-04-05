@@ -9,7 +9,7 @@ from rich.console import Console
 from driftshield.cli.discovery import discover_sessions, get_claude_projects_dir
 
 
-console = Console()
+console = Console(force_terminal=True)
 
 
 def list_sessions(

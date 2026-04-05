@@ -17,7 +17,7 @@ from driftshield.cli.discovery import discover_sessions, resolve_session
 from driftshield.cli.parsers import detect_parser
 
 
-console = Console()
+console = Console(force_terminal=True)
 
 
 def ingest(

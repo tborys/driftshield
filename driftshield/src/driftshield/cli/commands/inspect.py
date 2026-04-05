@@ -13,7 +13,7 @@ from driftshield.core.graph.builder import build_graph
 from driftshield.core.graph.models import DecisionNode, LineageGraph
 
 
-console = Console()
+console = Console(force_terminal=True)
 
 
 def format_node_detail(node: DecisionNode, graph: LineageGraph) -> str:
