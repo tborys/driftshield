@@ -37,8 +37,12 @@ class LocalChatTranscriptParser:
 
     def parse(self, content: str) -> list[CanonicalEvent]:
         stripped = content.lstrip()
-        if stripped.startswith("{") or stripped.startswith("["):
+        if stripped.startswith("["):
             return self._parse_json(json.loads(content))
+        if stripped.startswith("{"):
+            if "\n" not in stripped:
+                return self._parse_json(json.loads(content))
+            return self._parse_jsonl(content)
         return self._parse_jsonl(content)
 
     def _parse_jsonl(self, content: str) -> list[CanonicalEvent]:
