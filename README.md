@@ -1,8 +1,10 @@
 # DriftShield
 
-Forensic analysis for AI agent sessions. Investigate what went wrong, where decisions drifted, and why.
+Forensic analysis for failed AI agent runs. Investigate what went wrong, where reasoning first drifted, and why.
 
-DriftShield ingests transcripts from AI coding agents, builds a decision graph from the session, runs risk heuristics against every node, and surfaces the failures in a web dashboard and CLI. It turns opaque agent runs into auditable investigations.
+DriftShield ingests transcripts from AI coding agents, reconstructs a failed session as a decision graph, runs risk heuristics against every node, and surfaces the failures in a web dashboard and CLI. It turns opaque agent runs into auditable investigations.
+
+Founded and maintained by Tomasz Borys.
 
 ## Demo
 
@@ -179,7 +181,7 @@ The production compose file runs the app on port 8080 with PostgreSQL 16. Both `
 
 ## Contributing
 
-Contributions are welcome. Please follow these steps:
+Contributions are welcome. DriftShield is founded and maintained by Tomasz Borys, and pull requests are reviewed with that founder-led OSS scope in mind. Please follow these steps:
 
 1. **Fork** the repository to your own GitHub account
 2. **Clone** your fork locally
@@ -191,7 +193,7 @@ Contributions are welcome. Please follow these steps:
    ```
 6. **Open a pull request** from your fork's branch to `tborys/driftshield:main`
 
-All pull requests are reviewed and merged by the maintainer. Direct pushes to `main` are not accepted.
+All pull requests are reviewed and merged by Tomasz Borys, DriftShield's founder and current maintainer. Direct pushes to `main` are not accepted.
 
 ### Code style
 
