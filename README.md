@@ -7,8 +7,6 @@ breaks, teams often fall back on logs, traces, and guesswork. DriftShield recons
 as a decision graph, highlights where reasoning first drifted, and turns the failure into a
 report a human can inspect.
 
-Founded and maintained by Tomasz Borys.
-
 As teams move from single prompts to multi-step and agentic workflows, failures become harder to
 explain. A workflow can follow the right steps but still produce the wrong outcome, acknowledge a
 constraint and then ignore it, or behave inconsistently across runs. Similar failures can recur,
