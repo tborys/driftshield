@@ -1,10 +1,34 @@
 # DriftShield
 
-Forensic analysis for failed AI agent runs. Investigate what went wrong, where reasoning first drifted, and why.
+Find where an AI agent first went wrong.
 
-DriftShield ingests transcripts from AI coding agents, reconstructs a failed session as a decision graph, runs risk heuristics against every node, and surfaces the failures in a web dashboard and CLI. It turns opaque agent runs into auditable investigations.
+DriftShield is an open source failed-run investigation tool for AI workflows. When a run
+breaks, teams often fall back on logs, traces, and guesswork. DriftShield reconstructs the run
+as a decision graph, highlights where reasoning first drifted, and turns the failure into a
+report a human can inspect.
 
 Founded and maintained by Tomasz Borys.
+
+As teams move from single prompts to multi-step and agentic workflows, failures become harder to
+explain. A workflow can follow the right steps but still produce the wrong outcome, acknowledge a
+constraint and then ignore it, or behave inconsistently across runs. Similar failures can recur,
+but teams still end up treating each broken run like a one-off debugging exercise.
+
+The OSS core focuses on one failed run at a time. It helps teams explain what happened, inspect
+where the run broke, and produce an investigation-grade artifact for debugging, review, and
+follow-up.
+
+## Why DriftShield
+
+- Move from raw logs and traces to an inspectable failure investigation
+- See where a workflow broke and how the run drifted off course
+- Give engineers and product teams a shared artifact for debugging and review
+
+## Built For
+
+- AI engineers building multi-step or agentic workflows
+- Product teams shipping AI-powered features
+- Teams where reliability and correctness matter
 
 ## Demo
 
