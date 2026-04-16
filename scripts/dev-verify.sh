@@ -24,6 +24,15 @@ log "Frontend checks (production build)"
 cd "$FRONTEND_DIR"
 npm run build
 
+log "Quickstart sample report smoke test"
+cd "$BACKEND_DIR"
+REPORT_OUTPUT="$(mktemp)"
+driftshield report tests/fixtures/transcripts/sample_claude_code_session.jsonl \
+  --type summary \
+  --output "$REPORT_OUTPUT"
+grep -q "Forensic Analysis Report" "$REPORT_OUTPUT"
+rm -f "$REPORT_OUTPUT"
+
 log "Ingest smoke tests"
 cd "$BACKEND_DIR"
 PYTHONPATH=src python3 -m pytest tests/api/test_ingest.py -q

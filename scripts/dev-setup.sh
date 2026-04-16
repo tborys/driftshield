@@ -33,7 +33,11 @@ log "Preparing environment files"
 
 if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
   log "Starting local Postgres"
-  docker compose -f "$BACKEND_DIR/docker-compose.dev.yml" up -d db
+  if ! docker compose -f "$BACKEND_DIR/docker-compose.dev.yml" up -d db; then
+    log "Docker Postgres bootstrap failed - continuing without local Postgres"
+    echo "Run this later once Docker can pull images successfully:"
+    echo "  docker compose -f driftshield/docker-compose.dev.yml up -d db"
+  fi
 else
   log "Docker unavailable - skipping Postgres start"
   echo "Run this later when Docker is available:"
@@ -70,4 +74,9 @@ cd "$FRONTEND_DIR"
 npm ci --include=dev
 
 log "Setup complete"
+echo "First useful result:"
+echo "  cd driftshield && source .venv/bin/activate && driftshield report tests/fixtures/transcripts/sample_claude_code_session.jsonl --type summary"
 echo "Run verification: ./scripts/dev-verify.sh"
+echo "Run the dashboard after Postgres is available:"
+echo "  cd driftshield && source .venv/bin/activate && driftshield-api"
+echo "  cd driftshield/frontend && npm run dev"
