@@ -30,7 +30,7 @@ Expected outcomes:
 If Docker is unavailable, setup continues and prints the command for starting
 Postgres later. The no-Docker path is still useful for local sample analysis and
 report generation, but API ingest and the dashboard require the local Postgres
-service.
+service plus the backend environment exported from `driftshield/.env`.
 
 ## First Useful Result
 

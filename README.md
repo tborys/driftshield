@@ -92,8 +92,14 @@ Start the backend:
 ```bash
 cd driftshield
 source .venv/bin/activate
+set -a
+source .env
+set +a
 driftshield-api
 ```
+
+The backend reads `API_KEY` and `DATABASE_URL` from process env, so source `driftshield/.env`
+before starting it.
 
 Start the frontend (in a separate terminal):
 
@@ -109,16 +115,20 @@ Open http://localhost:5173 to view ingested sessions.
 ```bash
 cd driftshield
 source .venv/bin/activate
+set -a
+source .env
+set +a
 DRIFTSHIELD_API_URL=http://localhost:8080 \
-DRIFTSHIELD_API_KEY=dev-api-key \
 driftshield ingest --path tests/fixtures/transcripts/sample_claude_code_session.jsonl
 ```
 
 Or ingest the latest Claude Code session for the current project:
 
 ```bash
+set -a
+source .env
+set +a
 source .venv/bin/activate
-DRIFTSHIELD_API_KEY=dev-api-key \
 driftshield ingest --latest
 ```
 

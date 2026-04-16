@@ -9,6 +9,14 @@ log() {
   printf '\n[dev-verify] %s\n' "$1"
 }
 
+cli_cmd() {
+  if command -v driftshield >/dev/null 2>&1; then
+    driftshield "$@"
+  else
+    PYTHONPATH=src python3 -m driftshield.cli.main "$@"
+  fi
+}
+
 if [ -f "$BACKEND_DIR/.venv/bin/activate" ]; then
   # shellcheck disable=SC1091
   source "$BACKEND_DIR/.venv/bin/activate"
@@ -27,7 +35,7 @@ npm run build
 log "Quickstart sample report smoke test"
 cd "$BACKEND_DIR"
 REPORT_OUTPUT="$(mktemp)"
-driftshield report tests/fixtures/transcripts/sample_claude_code_session.jsonl \
+cli_cmd report tests/fixtures/transcripts/sample_claude_code_session.jsonl \
   --type summary \
   --output "$REPORT_OUTPUT"
 grep -q "Forensic Analysis Report" "$REPORT_OUTPUT"
