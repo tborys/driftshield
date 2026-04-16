@@ -50,9 +50,9 @@ DriftShield uses a parser protocol. New sources can be added by implementing a s
 
 - Python 3.12+
 - Node.js 20+
-- Docker (optional, for local Postgres)
+- Docker (optional, but needed for the local API/dashboard Postgres path)
 
-### Setup
+### 1. Setup from a clean clone
 
 ```bash
 git clone https://github.com/tborys/driftshield.git
@@ -60,39 +60,46 @@ cd driftshield
 ./scripts/dev-setup.sh
 ```
 
-This creates local env files, installs backend and frontend dependencies, and starts Postgres if Docker is available.
+This creates local env files, installs backend and frontend dependencies, and starts local
+Postgres if Docker is available. No private credentials or proprietary setup steps are
+required for the OSS path.
 
-### Verify
-
-```bash
-./scripts/dev-verify.sh
-```
-
-### Ingest a transcript
+### 2. Get a first useful result
 
 ```bash
 cd driftshield
-DRIFTSHIELD_API_URL=http://localhost:8000 \
-DRIFTSHIELD_API_KEY=dev-api-key \
-PYTHONPATH=src python3 -m driftshield.cli.main ingest \
-  --path tests/fixtures/transcripts/sample_claude_code_session.jsonl
+source .venv/bin/activate
+driftshield report tests/fixtures/transcripts/sample_claude_code_session.jsonl --type summary
 ```
 
-Or ingest the latest Claude Code session for the current project:
+This generates a forensic report from the bundled sample transcript, which is the shortest
+supported path from a clean clone to a meaningful DriftShield investigation artifact.
+
+### 3. Verify the repo
 
 ```bash
-DRIFTSHIELD_API_KEY=dev-api-key \
-PYTHONPATH=src python3 -m driftshield.cli.main ingest --latest
+cd ..
+./scripts/dev-verify.sh
 ```
 
-### Open the dashboard
+### 4. Run the full local stack
+
+The API ingest flow and web dashboard expect a local Postgres instance. The supported dev path
+is `docker-compose.dev.yml`; the production `docker-compose.yml` is not the primary quickstart.
 
 Start the backend:
 
 ```bash
 cd driftshield
-PYTHONPATH=src uvicorn driftshield.api.server:app --port 8000 --reload
+source .venv/bin/activate
+set -a
+source .env
+set +a
+driftshield-api
 ```
+
+The backend reads `API_KEY` and `DATABASE_URL` from process env, so source `driftshield/.env`
+before starting it.
 
 Start the frontend (in a separate terminal):
 
@@ -102,6 +109,28 @@ npm run dev
 ```
 
 Open http://localhost:5173 to view ingested sessions.
+
+### 5. Ingest a transcript into the local API
+
+```bash
+cd driftshield
+source .venv/bin/activate
+set -a
+source .env
+set +a
+DRIFTSHIELD_API_URL=http://localhost:8080 \
+driftshield ingest --path tests/fixtures/transcripts/sample_claude_code_session.jsonl
+```
+
+Or ingest the latest Claude Code session for the current project:
+
+```bash
+set -a
+source .env
+set +a
+source .venv/bin/activate
+driftshield ingest --latest
+```
 
 ## How It Works
 
@@ -129,29 +158,29 @@ Risk detectors are additive. Each implements a `RiskHeuristic` interface and can
 
 ## CLI Reference
 
-All commands run from the `driftshield/` directory with `PYTHONPATH=src`.
+All commands run from the `driftshield/` directory after `source .venv/bin/activate`.
 
 ```bash
 # Ingest a transcript file
-python3 -m driftshield.cli.main ingest --path <file.jsonl>
+driftshield ingest --path <file.jsonl>
 
 # Ingest the latest Claude Code session
-python3 -m driftshield.cli.main ingest --latest
+driftshield ingest --latest
 
 # List ingested sessions
-python3 -m driftshield.cli.main list
+driftshield list
 
 # Analyse a session for risk signals
-python3 -m driftshield.cli.main analyze <session-id>
+driftshield analyze <session-id-or-path>
 
 # Inspect a specific node in the decision graph
-python3 -m driftshield.cli.main inspect <file.jsonl> --node 0
+driftshield inspect <file.jsonl> --node 0
 
 # Generate a report
-python3 -m driftshield.cli.main report <session-id>
+driftshield report <file.jsonl>
 
 # Discover available transcript sources
-python3 -m driftshield.cli.main connectors list
+driftshield connectors list
 ```
 
 ## Tech Stack
