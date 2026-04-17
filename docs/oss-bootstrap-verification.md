@@ -25,9 +25,24 @@ Expected outcomes:
 - backend virtualenv exists at `driftshield/.venv`
 - backend dependencies installed
 - frontend dependencies installed
+- bundled sample transcript can be analyzed locally with the installed `driftshield` CLI
 
 If Docker is unavailable, setup continues and prints the command for starting
-Postgres later.
+Postgres later. The no-Docker path is still useful for local sample analysis and
+report generation, but API ingest and the dashboard require the local Postgres
+service plus the backend environment exported from `driftshield/.env`.
+
+## First Useful Result
+
+From `driftshield/` after setup:
+
+```bash
+source .venv/bin/activate
+driftshield report tests/fixtures/transcripts/sample_claude_code_session.jsonl --type summary
+```
+
+This is the shortest supported path from clean clone to an investigation-grade
+result in the OSS repo.
 
 ## Verify
 
@@ -40,6 +55,7 @@ From repository root:
 This command validates:
 - backend regression tests
 - frontend production build
+- bundled sample report generation
 - ingest API smoke tests
 
 ## OSS boundary checks

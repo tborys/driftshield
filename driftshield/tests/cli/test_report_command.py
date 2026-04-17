@@ -8,6 +8,7 @@ from driftshield.cli.main import app
 
 
 runner = CliRunner()
+FIXTURES_DIR = Path(__file__).parent.parent / "fixtures" / "transcripts"
 
 
 @pytest.fixture
@@ -50,3 +51,23 @@ def test_report_command_summary_type(sample_transcript):
     assert result.exit_code == 0
     assert "Forensic Analysis Report" in result.stdout
     assert "Risk State Transition Mapping" not in result.stdout
+
+
+def test_report_command_supports_bundled_quickstart_fixture(tmp_path):
+    output = tmp_path / "quickstart-report.md"
+
+    result = runner.invoke(
+        app,
+        [
+            "report",
+            str(FIXTURES_DIR / "sample_claude_code_session.jsonl"),
+            "--type",
+            "summary",
+            "--output",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert output.exists()
+    assert "Forensic Analysis Report" in output.read_text()
