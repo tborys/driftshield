@@ -48,3 +48,7 @@ def main(
 ) -> None:
     """DriftShield - AI Decision Forensics CLI."""
     pass
+
+
+if __name__ == "__main__":
+    app()
