@@ -205,7 +205,7 @@ Key variables (see `driftshield/.env.example`):
 
 ## Automated PR Review
 
-Claude reviews every PR via `.github/workflows/claude-review.yml`. The review runs on `opened`, `synchronize` and `reopened` events. You can also tag `@claude` in a PR comment to trigger a review.
+Codex reviews every non-bot PR via `.github/workflows/codex-review.yml`. The review runs on `opened`, `synchronize` and `reopened` events. You can also tag `@codex-actions` in a PR comment to trigger the repo-owned review workflow.
 
 ### Review Priorities (ordered)
 

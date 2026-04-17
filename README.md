@@ -1,8 +1,32 @@
 # DriftShield
 
-Forensic analysis for AI agent sessions. Investigate what went wrong, where decisions drifted, and why.
+Find where an AI agent first went wrong.
 
-DriftShield ingests transcripts from AI coding agents, builds a decision graph from the session, runs risk heuristics against every node, and surfaces the failures in a web dashboard and CLI. It turns opaque agent runs into auditable investigations.
+DriftShield is an open source failed-run investigation tool for AI workflows. When a run
+breaks, teams often fall back on logs, traces, and guesswork. DriftShield reconstructs the run
+as a decision graph, highlights where reasoning first drifted, and turns the failure into a
+report a human can inspect.
+
+As teams move from single prompts to multi-step and agentic workflows, failures become harder to
+explain. A workflow can follow the right steps but still produce the wrong outcome, acknowledge a
+constraint and then ignore it, or behave inconsistently across runs. Similar failures can recur,
+but teams still end up treating each broken run like a one-off debugging exercise.
+
+The OSS core focuses on one failed run at a time. It helps teams explain what happened, inspect
+where the run broke, and produce an investigation-grade artifact for debugging, review, and
+follow-up.
+
+## Why DriftShield
+
+- Move from raw logs and traces to an inspectable failure investigation
+- See where a workflow broke and how the run drifted off course
+- Give engineers and product teams a shared artifact for debugging and review
+
+## Built For
+
+- AI engineers building multi-step or agentic workflows
+- Product teams shipping AI-powered features
+- Teams where reliability and correctness matter
 
 ## Demo
 
@@ -26,9 +50,9 @@ DriftShield uses a parser protocol. New sources can be added by implementing a s
 
 - Python 3.12+
 - Node.js 20+
-- Docker (optional, for local Postgres)
+- Docker (optional, but needed for the local API/dashboard Postgres path)
 
-### Setup
+### 1. Setup from a clean clone
 
 ```bash
 git clone https://github.com/tborys/driftshield.git
@@ -36,39 +60,46 @@ cd driftshield
 ./scripts/dev-setup.sh
 ```
 
-This creates local env files, installs backend and frontend dependencies, and starts Postgres if Docker is available.
+This creates local env files, installs backend and frontend dependencies, and starts local
+Postgres if Docker is available. No private credentials or proprietary setup steps are
+required for the OSS path.
 
-### Verify
-
-```bash
-./scripts/dev-verify.sh
-```
-
-### Ingest a transcript
+### 2. Get a first useful result
 
 ```bash
 cd driftshield
-DRIFTSHIELD_API_URL=http://localhost:8000 \
-DRIFTSHIELD_API_KEY=dev-api-key \
-PYTHONPATH=src python3 -m driftshield.cli.main ingest \
-  --path tests/fixtures/transcripts/sample_claude_code_session.jsonl
+source .venv/bin/activate
+driftshield report tests/fixtures/transcripts/sample_claude_code_session.jsonl --type summary
 ```
 
-Or ingest the latest Claude Code session for the current project:
+This generates a forensic report from the bundled sample transcript, which is the shortest
+supported path from a clean clone to a meaningful DriftShield investigation artifact.
+
+### 3. Verify the repo
 
 ```bash
-DRIFTSHIELD_API_KEY=dev-api-key \
-PYTHONPATH=src python3 -m driftshield.cli.main ingest --latest
+cd ..
+./scripts/dev-verify.sh
 ```
 
-### Open the dashboard
+### 4. Run the full local stack
+
+The API ingest flow and web dashboard expect a local Postgres instance. The supported dev path
+is `docker-compose.dev.yml`; the production `docker-compose.yml` is not the primary quickstart.
 
 Start the backend:
 
 ```bash
 cd driftshield
-PYTHONPATH=src uvicorn driftshield.api.server:app --port 8000 --reload
+source .venv/bin/activate
+set -a
+source .env
+set +a
+driftshield-api
 ```
+
+The backend reads `API_KEY` and `DATABASE_URL` from process env, so source `driftshield/.env`
+before starting it.
 
 Start the frontend (in a separate terminal):
 
@@ -78,6 +109,28 @@ npm run dev
 ```
 
 Open http://localhost:5173 to view ingested sessions.
+
+### 5. Ingest a transcript into the local API
+
+```bash
+cd driftshield
+source .venv/bin/activate
+set -a
+source .env
+set +a
+DRIFTSHIELD_API_URL=http://localhost:8080 \
+driftshield ingest --path tests/fixtures/transcripts/sample_claude_code_session.jsonl
+```
+
+Or ingest the latest Claude Code session for the current project:
+
+```bash
+set -a
+source .env
+set +a
+source .venv/bin/activate
+driftshield ingest --latest
+```
 
 ## How It Works
 
@@ -105,29 +158,29 @@ Risk detectors are additive. Each implements a `RiskHeuristic` interface and can
 
 ## CLI Reference
 
-All commands run from the `driftshield/` directory with `PYTHONPATH=src`.
+All commands run from the `driftshield/` directory after `source .venv/bin/activate`.
 
 ```bash
 # Ingest a transcript file
-python3 -m driftshield.cli.main ingest --path <file.jsonl>
+driftshield ingest --path <file.jsonl>
 
 # Ingest the latest Claude Code session
-python3 -m driftshield.cli.main ingest --latest
+driftshield ingest --latest
 
 # List ingested sessions
-python3 -m driftshield.cli.main list
+driftshield list
 
 # Analyse a session for risk signals
-python3 -m driftshield.cli.main analyze <session-id>
+driftshield analyze <session-id-or-path>
 
 # Inspect a specific node in the decision graph
-python3 -m driftshield.cli.main inspect <file.jsonl> --node 0
+driftshield inspect <file.jsonl> --node 0
 
 # Generate a report
-python3 -m driftshield.cli.main report <session-id>
+driftshield report <file.jsonl>
 
 # Discover available transcript sources
-python3 -m driftshield.cli.main connectors list
+driftshield connectors list
 ```
 
 ## Tech Stack
@@ -179,7 +232,7 @@ The production compose file runs the app on port 8080 with PostgreSQL 16. Both `
 
 ## Contributing
 
-Contributions are welcome. Please follow these steps:
+Contributions are welcome. DriftShield is founded and maintained by Tomasz Borys, and pull requests are reviewed with that founder-led OSS scope in mind. Please follow these steps:
 
 1. **Fork** the repository to your own GitHub account
 2. **Clone** your fork locally
@@ -191,7 +244,7 @@ Contributions are welcome. Please follow these steps:
    ```
 6. **Open a pull request** from your fork's branch to `tborys/driftshield:main`
 
-All pull requests are reviewed and merged by the maintainer. Direct pushes to `main` are not accepted.
+All pull requests are reviewed and merged by Tomasz Borys, DriftShield's founder and current maintainer. Direct pushes to `main` are not accepted.
 
 ### Code style
 
