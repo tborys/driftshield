@@ -2,11 +2,6 @@ from pathlib import Path
 
 import typer
 
-from driftshield.fixtures.transcript_generator import (
-    ScenarioTranscriptGenerator,
-    default_scenario_registry,
-)
-
 
 def generate_fixtures(
     output_dir: Path = typer.Option(
@@ -19,6 +14,11 @@ def generate_fixtures(
     ),
 ) -> None:
     """Generate deterministic JSONL transcript fixtures for demos/testing."""
+    from driftshield.fixtures.transcript_generator import (
+        ScenarioTranscriptGenerator,
+        default_scenario_registry,
+    )
+
     generator = ScenarioTranscriptGenerator(default_scenario_registry())
     written = generator.generate(output_dir=output_dir, include_clean=include_clean)
 
