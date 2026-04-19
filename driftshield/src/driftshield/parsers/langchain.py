@@ -168,7 +168,7 @@ class LangChainParser:
                 stack.append(child_id)
         return descendants
 
-    def _run_sort_key(self, run: dict) -> tuple[int, tuple[int, ...], float, str]:
+    def _run_sort_key(self, run: dict) -> tuple[int, tuple[tuple[int, int | str], ...], float, str]:
         execution_order = run.get("dotted_order") or run.get("execution_order")
         order_parts = self._execution_order_parts(execution_order)
         if order_parts is not None:
@@ -177,20 +177,18 @@ class LangChainParser:
         timestamp = self._parse_timestamp(run.get("start_time"))
         return (1, (), timestamp.timestamp(), str(run.get("id") or ""))
 
-    def _execution_order_parts(self, value: object) -> tuple[int, ...] | None:
+    def _execution_order_parts(self, value: object) -> tuple[tuple[int, int | str], ...] | None:
         if isinstance(value, int):
-            return (value,)
+            return ((0, value),)
         if isinstance(value, float):
-            return (int(value),)
+            return ((0, int(value)),)
         if isinstance(value, str):
-            parts: list[int] = []
-            for piece in value.replace(":", ".").split("."):
-                if not piece:
-                    continue
-                if not piece.isdigit():
-                    return None
-                parts.append(int(piece))
-            return tuple(parts) if parts else None
+            pieces = [piece for piece in value.split(".") if piece]
+            if not pieces:
+                return None
+            if all(piece.isdigit() for piece in pieces):
+                return tuple((0, int(piece)) for piece in pieces)
+            return tuple((1, piece) for piece in pieces)
         return None
 
     def _build_output_event(

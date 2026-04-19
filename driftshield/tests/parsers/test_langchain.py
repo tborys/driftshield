@@ -214,6 +214,52 @@ class TestLangChainParser:
             "assistant_narrative",
         ]
 
+    def test_orders_native_langsmith_dotted_order_safely(self):
+        parser = LangChainParser()
+        payload = [
+            {
+                "id": "00000000-0000-0000-0000-000000000001",
+                "trace_id": "trace-native-dotted",
+                "name": "root",
+                "run_type": "chain",
+                "start_time": "2026-04-19T12:00:00Z",
+                "inputs": {"messages": [{"role": "human", "content": "Run tools"}]},
+                "outputs": {"messages": [{"role": "ai", "content": "Done"}]},
+                "dotted_order": "20260419T120000000000Z00000000-0000-0000-0000-000000000001",
+            },
+            {
+                "id": "00000000-0000-0000-0000-000000000002",
+                "trace_id": "trace-native-dotted",
+                "parent_run_id": "00000000-0000-0000-0000-000000000001",
+                "name": "second_tool",
+                "run_type": "tool",
+                "start_time": "2026-04-19T12:00:01Z",
+                "inputs": {},
+                "outputs": {"status": "second"},
+                "dotted_order": "20260419T120000000000Z00000000-0000-0000-0000-000000000001.20260419T120002000000Z00000000-0000-0000-0000-000000000002",
+            },
+            {
+                "id": "00000000-0000-0000-0000-000000000010",
+                "trace_id": "trace-native-dotted",
+                "parent_run_id": "00000000-0000-0000-0000-000000000001",
+                "name": "first_tool",
+                "run_type": "tool",
+                "start_time": "2026-04-19T12:00:01Z",
+                "inputs": {},
+                "outputs": {"status": "first"},
+                "dotted_order": "20260419T120000000000Z00000000-0000-0000-0000-000000000001.20260419T120001000000Z00000000-0000-0000-0000-000000000010",
+            },
+        ]
+
+        events = parser.parse(json.dumps(payload))
+
+        assert [event.action for event in events] == [
+            "user_message",
+            "first_tool",
+            "second_tool",
+            "assistant_narrative",
+        ]
+
     def test_source_type_is_langchain(self):
         parser = LangChainParser()
         assert parser.source_type == "langchain"
