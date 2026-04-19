@@ -1,0 +1,72 @@
+name: Dependabot Automerge
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: dependabot-automerge-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  enable-automerge:
+    if: |
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.event.pull_request.base.ref == 'main' &&
+      !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check whether this Dependabot PR is eligible
+        id: eligibility
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          pr_json=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json title,files)
+          printf '%s\n' "$pr_json" > "$RUNNER_TEMP/pr.json"
+
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          allowed_files = {
+              "driftshield/frontend/package.json",
+              "driftshield/frontend/package-lock.json",
+              "driftshield/pyproject.toml",
+          }
+
+          pr = json.loads((Path(os.environ["RUNNER_TEMP"]) / "pr.json").read_text())
+          files = [entry["path"] for entry in pr["files"]]
+          files_ok = bool(files) and all(path in allowed_files for path in files)
+
+          match = re.search(r"from\s+([0-9]+(?:\.[0-9]+){0,2})\s+to\s+([0-9]+(?:\.[0-9]+){0,2})", pr["title"])
+          version_ok = False
+          if match:
+              before = tuple(int(part) for part in match.group(1).split("."))
+              after = tuple(int(part) for part in match.group(2).split("."))
+              version_ok = before and after and before[0] == after[0]
+
+          print(f"eligible={'true' if files_ok and version_ok else 'false'}")
+          PY
+
+      - name: Enable PR auto-merge
+        if: steps.eligibility.outputs.eligible == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          if ! gh pr merge "$PR_NUMBER" --repo "$REPO" --auto --merge; then
+            echo "Auto-merge is not available yet; leaving the PR open for manual merge"
+          fi
