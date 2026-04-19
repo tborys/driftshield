@@ -1,0 +1,44 @@
+[
+  {
+    "id": "run-root-1",
+    "trace_id": "trace-issue-11",
+    "name": "AgentExecutor",
+    "run_type": "chain",
+    "start_time": "2026-04-19T08:00:00Z",
+    "end_time": "2026-04-19T08:00:07Z",
+    "inputs": {
+      "messages": [
+        {
+          "role": "human",
+          "content": "Please inspect the README and summarise the risks."
+        }
+      ]
+    },
+    "outputs": {
+      "messages": [
+        {
+          "role": "ai",
+          "content": "I inspected the README and found no immediate risks."
+        }
+      ]
+    },
+    "error": null
+  },
+  {
+    "id": "run-tool-1",
+    "trace_id": "trace-issue-11",
+    "parent_run_id": "run-root-1",
+    "name": "read_file",
+    "run_type": "tool",
+    "start_time": "2026-04-19T08:00:03Z",
+    "end_time": "2026-04-19T08:00:04Z",
+    "execution_order": 2,
+    "inputs": {
+      "file_path": "README.md"
+    },
+    "outputs": {
+      "content": "# DriftShield"
+    },
+    "error": "permission warning preserved for analysis"
+  }
+]
