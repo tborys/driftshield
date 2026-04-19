@@ -6,6 +6,7 @@ from driftshield.parsers.claude_code import ClaudeCodeParser
 from driftshield.parsers.claude_desktop import ClaudeDesktopParser
 from driftshield.parsers.codex_cli import CodexCliParser
 from driftshield.parsers.codex_desktop import CodexDesktopParser
+from driftshield.parsers.langchain import LangChainParser
 from driftshield.parsers.openclaw import OpenClawParser
 from driftshield.parsers.protocol import TranscriptParser
 
@@ -19,6 +20,7 @@ PARSERS: dict[str, type[TranscriptParser]] = {
     "claude_desktop": ClaudeDesktopParser,
     "codex_cli": CodexCliParser,
     "codex_desktop": CodexDesktopParser,
+    "langchain": LangChainParser,
     "openclaw": OpenClawParser,
 }
 
