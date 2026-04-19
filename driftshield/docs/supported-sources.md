@@ -6,6 +6,7 @@
 | Claude Desktop | Yes | Yes | Best-effort | DriftShield now looks for local artefacts under `~/.claude-desktop/sessions/`. Format support is currently bounded to the representative message/tool-call JSON shape covered by fixtures. |
 | Codex CLI | Yes | Yes | Best-effort | DriftShield now looks for local artefacts under `~/.codex/sessions/`. JSONL sessions with message and tool-call records are supported in this slice. |
 | Codex Desktop | Yes | Yes | Best-effort | DriftShield now looks for local artefacts under `~/.codex-desktop/sessions/`. JSON sessions with message arrays are supported in this slice. |
+| LangChain / LangSmith export JSON | No | Yes | No | Manual ingest via `--parser langchain`. Supported scope is bounded to exported run JSON with `inputs.messages`, `outputs.messages`, and tool child runs. |
 | OpenClaw agents | Yes | Yes | Yes | Existing OpenClaw session connectors remain unchanged. |
 
 ## Provenance

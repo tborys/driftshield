@@ -40,7 +40,7 @@ def ingest(
         "auto",
         "--parser",
         "-p",
-        help="Parser to use (auto, claude_code).",
+        help="Parser to use (auto, claude_code, claude_desktop, codex_cli, codex_desktop, langchain, openclaw).",
     ),
 ) -> None:
     """Upload a transcript to the DriftShield ingest API."""
