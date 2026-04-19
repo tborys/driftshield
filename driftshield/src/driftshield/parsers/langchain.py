@@ -309,5 +309,5 @@ class LangChainParser:
         if value is None:
             return datetime.now(timezone.utc)
         if isinstance(value, (int, float)):
-            return datetime.fromtimestamp(value, tz=timezone.utc)
+            return datetime.fromtimestamp(value / 1000, tz=timezone.utc)
         return datetime.fromisoformat(value.replace("Z", "+00:00"))

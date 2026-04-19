@@ -260,6 +260,38 @@ class TestLangChainParser:
             "assistant_narrative",
         ]
 
+    def test_parses_epoch_millisecond_timestamps(self):
+        parser = LangChainParser()
+        payload = {
+            "id": "root-ms",
+            "trace_id": "trace-ms",
+            "name": "root",
+            "run_type": "chain",
+            "start_time": 1713513600000,
+            "end_time": 1713513603000,
+            "inputs": {"messages": [{"role": "human", "content": "Run tools"}]},
+            "outputs": {"messages": [{"role": "ai", "content": "Done"}]},
+            "child_runs": [
+                {
+                    "id": "tool-ms",
+                    "trace_id": "trace-ms",
+                    "parent_run_id": "root-ms",
+                    "name": "tool_ms",
+                    "run_type": "tool",
+                    "start_time": 1713513601000,
+                    "inputs": {},
+                    "outputs": {"status": "ok"},
+                }
+            ],
+        }
+
+        events = parser.parse(json.dumps(payload))
+
+        assert len(events) == 3
+        assert events[0].timestamp.isoformat() == "2024-04-19T08:00:00+00:00"
+        assert events[1].timestamp.isoformat() == "2024-04-19T08:00:01+00:00"
+        assert events[2].timestamp.isoformat() == "2024-04-19T08:00:03+00:00"
+
     def test_source_type_is_langchain(self):
         parser = LangChainParser()
         assert parser.source_type == "langchain"
