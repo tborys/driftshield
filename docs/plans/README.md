@@ -16,3 +16,4 @@ Current OSS-safe plans in this directory:
 - `2025-02-19-phase-13-react-ui.md`
 - `2025-02-19-phase-14-docker.md`
 - `2025-02-19-phases-10-14-design.md`
+- `2026-04-19-langchain-parser-scope.md`
