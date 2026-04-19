@@ -31,8 +31,8 @@ class LangChainParser:
 
         root_run = self._select_root_run(runs)
         session_id = str(root_run.get("trace_id") or root_run.get("id") or "unknown")
-
-        ordered_runs = sorted(runs, key=self._run_sort_key)
+        scoped_runs = self._runs_for_root(runs, root_run)
+        ordered_runs = sorted(scoped_runs, key=self._run_sort_key)
 
         events: list[CanonicalEvent] = []
         previous_event_id: UUID | None = None
@@ -127,20 +127,71 @@ class LangChainParser:
             roots = runs
         return sorted(roots, key=self._run_sort_key)[0]
 
-    def _run_sort_key(self, run: dict) -> tuple[int, float, str]:
+    def _runs_for_root(self, runs: list[dict], root_run: dict) -> list[dict]:
+        root_id = root_run.get("id")
+        root_trace_id = root_run.get("trace_id")
+        descendant_ids = self._collect_descendant_ids(runs, root_id)
+
+        scoped_runs: list[dict] = []
+        for run in runs:
+            run_id = run.get("id")
+            if run is root_run:
+                scoped_runs.append(run)
+                continue
+            if run_id is not None and str(run_id) in descendant_ids:
+                scoped_runs.append(run)
+                continue
+            if root_id is None and root_trace_id is not None and run.get("trace_id") == root_trace_id:
+                scoped_runs.append(run)
+        return scoped_runs
+
+    def _collect_descendant_ids(self, runs: list[dict], root_id: object) -> set[str]:
+        if root_id is None:
+            return set()
+
+        children_by_parent: dict[str, list[str]] = {}
+        for run in runs:
+            run_id = run.get("id")
+            parent_id = run.get("parent_run_id")
+            if run_id is None or parent_id is None:
+                continue
+            children_by_parent.setdefault(str(parent_id), []).append(str(run_id))
+
+        descendants: set[str] = set()
+        stack = [str(root_id)]
+        while stack:
+            current = stack.pop()
+            for child_id in children_by_parent.get(current, []):
+                if child_id in descendants:
+                    continue
+                descendants.add(child_id)
+                stack.append(child_id)
+        return descendants
+
+    def _run_sort_key(self, run: dict) -> tuple[int, tuple[int, ...], float, str]:
         execution_order = run.get("dotted_order") or run.get("execution_order")
-        if isinstance(execution_order, str):
-            parts = []
-            for piece in execution_order.replace(":", ".").split("."):
-                if piece.isdigit():
-                    parts.append(int(piece))
-            if parts:
-                return (0, float(parts[-1]), str(run.get("id") or ""))
-        if isinstance(execution_order, (int, float)):
-            return (0, float(execution_order), str(run.get("id") or ""))
+        order_parts = self._execution_order_parts(execution_order)
+        if order_parts is not None:
+            return (0, order_parts, 0.0, str(run.get("id") or ""))
 
         timestamp = self._parse_timestamp(run.get("start_time"))
-        return (1, timestamp.timestamp(), str(run.get("id") or ""))
+        return (1, (), timestamp.timestamp(), str(run.get("id") or ""))
+
+    def _execution_order_parts(self, value: object) -> tuple[int, ...] | None:
+        if isinstance(value, int):
+            return (value,)
+        if isinstance(value, float):
+            return (int(value),)
+        if isinstance(value, str):
+            parts: list[int] = []
+            for piece in value.replace(":", ".").split("."):
+                if not piece:
+                    continue
+                if not piece.isdigit():
+                    return None
+                parts.append(int(piece))
+            return tuple(parts) if parts else None
+        return None
 
     def _build_output_event(
         self,

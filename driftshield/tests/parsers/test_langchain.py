@@ -116,6 +116,104 @@ class TestLangChainParser:
             "assistant_narrative",
         ]
 
+    def test_filters_out_other_roots_and_traces_from_same_export(self):
+        parser = LangChainParser()
+        payload = [
+            {
+                "id": "root-a",
+                "trace_id": "trace-a",
+                "name": "AgentExecutor",
+                "run_type": "chain",
+                "start_time": "2026-04-19T11:00:00Z",
+                "inputs": {"messages": [{"role": "human", "content": "Inspect README."}]},
+                "outputs": {"messages": [{"role": "ai", "content": "README inspected."}]},
+            },
+            {
+                "id": "tool-a",
+                "trace_id": "trace-a",
+                "parent_run_id": "root-a",
+                "name": "read_file",
+                "run_type": "tool",
+                "start_time": "2026-04-19T11:00:01Z",
+                "inputs": {"file_path": "README.md"},
+                "outputs": {"status": "ok"},
+            },
+            {
+                "id": "root-b",
+                "trace_id": "trace-b",
+                "name": "OtherRoot",
+                "run_type": "chain",
+                "start_time": "2026-04-19T11:00:02Z",
+                "inputs": {"messages": [{"role": "human", "content": "Ignore this trace."}]},
+                "outputs": {"messages": [{"role": "ai", "content": "Ignored."}]},
+            },
+            {
+                "id": "tool-b",
+                "trace_id": "trace-b",
+                "parent_run_id": "root-b",
+                "name": "foreign_tool",
+                "run_type": "tool",
+                "start_time": "2026-04-19T11:00:03Z",
+                "inputs": {"file_path": "OTHER.md"},
+                "outputs": {"status": "foreign"},
+            },
+        ]
+
+        events = parser.parse(json.dumps(payload))
+
+        assert [event.action for event in events] == [
+            "user_message",
+            "read_file",
+            "assistant_narrative",
+        ]
+        assert all(event.session_id == "trace-a" for event in events)
+        assert all(event.metadata.get("trace_id") != "trace-b" for event in events if event.event_type == EventType.TOOL_CALL)
+
+    def test_orders_hierarchical_dotted_order_safely(self):
+        parser = LangChainParser()
+        payload = [
+            {
+                "id": "root",
+                "trace_id": "trace-dotted-order",
+                "name": "AgentExecutor",
+                "run_type": "chain",
+                "start_time": "2026-04-19T12:00:00Z",
+                "inputs": {"messages": [{"role": "human", "content": "Run nested tools."}]},
+                "outputs": {"messages": [{"role": "ai", "content": "Nested tools done."}]},
+            },
+            {
+                "id": "tool-2-1",
+                "trace_id": "trace-dotted-order",
+                "parent_run_id": "root",
+                "name": "later_branch_tool",
+                "run_type": "tool",
+                "start_time": "2026-04-19T12:00:03Z",
+                "dotted_order": "2.1",
+                "inputs": {},
+                "outputs": {"status": "later"},
+            },
+            {
+                "id": "tool-1-10",
+                "trace_id": "trace-dotted-order",
+                "parent_run_id": "root",
+                "name": "earlier_branch_tool",
+                "run_type": "tool",
+                "start_time": "2026-04-19T12:00:04Z",
+                "dotted_order": "1.10",
+                "inputs": {},
+                "outputs": {"status": "earlier"},
+            },
+        ]
+
+        events = parser.parse(json.dumps(payload))
+
+        assert [event.action for event in events] == [
+            "user_message",
+            "earlier_branch_tool",
+            "later_branch_tool",
+            "assistant_narrative",
+        ]
+
     def test_source_type_is_langchain(self):
         parser = LangChainParser()
         assert parser.source_type == "langchain"
