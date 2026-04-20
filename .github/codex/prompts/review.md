@@ -1,11 +1,12 @@
 Review this DriftShield pull request without making code changes.
 
-Start with `CLAUDE.md` for repo-specific conventions and review priorities.
+Start with `AGENTS.md` and `CLAUDE.md` for repo-specific conventions and review priorities.
+Use `$driftshield-pr-review` from `.agents/skills/driftshield-pr-review` as the repo-specific review workflow.
 Then read `.github/codex/context/pr-review-context.md`, inspect the actual diff against the base branch named there, and read the touched files in full before concluding.
 
 Focus on:
 1. Correctness and regressions: logic bugs, missing edge cases, broken imports, stale references, API or CLI breakage
-2. OSS boundary and release safety: proprietary code leakage, sensitive docs or assets, accidental reintroduction of private features, hardcoded secrets
+2. OSS boundary and release safety: proprietary code leakage, sensitive docs or assets, accidental reintroduction of private features, references to private sibling repos or planning docs, hardcoded secrets
 3. Backend and data integrity: schema drift, migration gaps, persistence mismatches, API/schema mismatches, backend/frontend parity
 4. Frontend and browser behaviour: broken routes, dead navigation, missing loading or error states, dashboard usability regressions
 5. Tests and verification: missing or stale tests, weak coverage for changed behaviour, lack of browser verification when UI changed

@@ -207,10 +207,17 @@ Key variables (see `driftshield/.env.example`):
 
 Codex reviews every non-bot PR via `.github/workflows/codex-review.yml`. The review runs on `opened`, `synchronize` and `reopened` events. You can also tag `@codex-actions` in a PR comment to trigger the repo-owned review workflow.
 
+### Public OSS Boundary
+
+- The public `driftshield` repo must not reference private sibling repos in tracked public files.
+- Do not add links to private sibling repos, internal cross-repo planning docs, or local sibling checkout paths in public docs, prompts, fixtures, or templates.
+- Run `./scripts/check-public-scope.sh` for changes that touch docs, prompts, fixtures, templates, or workflow files.
+- For PR reviews, use the repo-local review skill at `.agents/skills/driftshield-pr-review` and treat boundary leaks as high-priority findings.
+
 ### Review Priorities (ordered)
 
 1. **Correctness and regressions**: broken logic, stale references, missing error handling, API or CLI breakage
-2. **OSS boundary and release safety**: proprietary feature leakage, sensitive docs or assets in tracked files, hardcoded secrets
+2. **OSS boundary and release safety**: proprietary feature leakage, sensitive docs or assets in tracked files, references to private sibling repos or planning docs, hardcoded secrets
 3. **Backend and data integrity**: schema drift, migration gaps, persistence mismatches, backend/frontend contract mismatches
 4. **Frontend and browser behaviour**: broken routes, dead navigation, missing loading or error states, dashboard usability regressions
 5. **Type safety and maintainability**: `any` usage, missing types, weak interfaces, untested assumptions
@@ -231,6 +238,7 @@ Codex reviews every non-bot PR via `.github/workflows/codex-review.yml`. The rev
 - Read the linked issue first and judge the PR against that scope before suggesting follow-up work.
 - Findings come first. Prioritise bugs, regressions, boundary leaks, and missing verification over style-only feedback.
 - If frontend behaviour changed, expect browser verification in the PR or call out the missing check explicitly.
+- If a tracked public file references a private DriftShield repo or internal planning path, call it out explicitly as an OSS boundary leak.
 - If the PR is clean, say so explicitly and note any residual risks or manual QA still required.
 
 ## Common Pitfalls
