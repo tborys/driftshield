@@ -4,6 +4,7 @@ import json
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from importlib import resources
+from importlib.abc import Traversable
 from pathlib import Path
 from typing import Any
 
@@ -50,26 +51,27 @@ def load_builtin_community_pack() -> CommunityPackManifest:
     return load_community_pack(package_file)
 
 
-def load_community_pack(path: str | Path) -> CommunityPackManifest:
+def load_community_pack(path: str | Path | Traversable) -> CommunityPackManifest:
     """Load and validate a Phase 2a community pack manifest from JSON."""
 
-    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    payload = json.loads(_read_manifest_text(path))
     return parse_community_pack(payload)
 
 
-def parse_community_pack(payload: Mapping[str, Any]) -> CommunityPackManifest:
+def parse_community_pack(payload: Any) -> CommunityPackManifest:
     """Validate a raw Phase 2a community pack manifest and project it to the OSS seam."""
 
+    manifest_payload = _require_mapping(payload, field_name="manifest")
     schema_version = _require_non_empty_string(
-        payload.get("schema_version"), field_name="schema_version"
+        manifest_payload.get("schema_version"), field_name="schema_version"
     )
     _validate_schema_version(schema_version)
 
     metadata_payload = _require_mapping(
-        payload.get("pack_metadata"), field_name="pack_metadata"
+        manifest_payload.get("pack_metadata"), field_name="pack_metadata"
     )
     signatures_payload = _require_sequence(
-        payload.get("signatures"), field_name="signatures"
+        manifest_payload.get("signatures"), field_name="signatures"
     )
 
     metadata = SignaturePackMetadata(
@@ -93,8 +95,14 @@ def parse_community_pack(payload: Mapping[str, Any]) -> CommunityPackManifest:
         )
     )
 
-    signatures = tuple(_parse_signature(item) for item in signatures_payload)
-    _validate_family_coverage(family_coverage=family_coverage, signatures=signatures)
+    parsed_signatures = tuple(_parse_signature(item) for item in signatures_payload)
+    family_ids = tuple(family_id for family_id, _ in parsed_signatures)
+    signatures = tuple(definition for _, definition in parsed_signatures)
+    _validate_family_coverage(
+        family_coverage=family_coverage,
+        signature_family_ids=family_ids,
+        signatures=signatures,
+    )
 
     return CommunityPackManifest(
         schema_version=schema_version,
@@ -105,16 +113,16 @@ def parse_community_pack(payload: Mapping[str, Any]) -> CommunityPackManifest:
     )
 
 
-def _parse_signature(payload: Any) -> SignatureDefinition:
+def _parse_signature(payload: Any) -> tuple[str, SignatureDefinition]:
     signature_payload = _require_mapping(payload, field_name="signatures[]")
-    _require_non_empty_string(
+    family_id = _require_non_empty_string(
         signature_payload.get("family_id"), field_name="signatures[].family_id"
     )
     _require_mapping(
         signature_payload.get("signature_layer"), field_name="signatures[].signature_layer"
     )
 
-    return SignatureDefinition(
+    return family_id, SignatureDefinition(
         signature_id=_require_non_empty_string(
             signature_payload.get("signature_id"), field_name="signatures[].signature_id"
         ),
@@ -159,7 +167,10 @@ def _validate_schema_version(schema_version: str) -> None:
 
 
 def _validate_family_coverage(
-    *, family_coverage: Sequence[str], signatures: Sequence[SignatureDefinition]
+    *,
+    family_coverage: Sequence[str],
+    signature_family_ids: Sequence[str],
+    signatures: Sequence[SignatureDefinition],
 ) -> None:
     if len(set(family_coverage)) != len(family_coverage):
         raise ValueError("pack_metadata.family_coverage must not contain duplicates")
@@ -170,6 +181,17 @@ def _validate_family_coverage(
     signature_count = len(signatures)
     if signature_count and not family_coverage:
         raise ValueError("pack_metadata.family_coverage is required when signatures are present")
+
+    if signature_count and set(family_coverage) != set(signature_family_ids):
+        raise ValueError(
+            "pack_metadata.family_coverage must match the family_id values declared by signatures"
+        )
+
+
+def _read_manifest_text(path: str | Path | Traversable) -> str:
+    if hasattr(path, "read_text"):
+        return path.read_text(encoding="utf-8")
+    return Path(path).read_text(encoding="utf-8")
 
 
 def _require_mapping(value: Any, *, field_name: str) -> Mapping[str, Any]:

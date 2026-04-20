@@ -11,7 +11,7 @@ from driftshield.signatures import (
     SignatureSeverity,
     load_builtin_community_pack,
 )
-from driftshield.signatures.community import parse_community_pack
+from driftshield.signatures.community import load_community_pack, parse_community_pack
 
 
 def test_builtin_community_pack_validates_and_projects_to_public_provider() -> None:
@@ -32,6 +32,43 @@ def test_builtin_community_pack_validates_and_projects_to_public_provider() -> N
     assert len(signatures) == 3
     assert signatures[0].signature_id == "SIG-COMM-001"
     assert signatures[1].severity == SignatureSeverity.HIGH
+
+
+def test_load_community_pack_accepts_traversable_resources() -> None:
+    class InlineTraversable:
+        def read_text(self, encoding: str = "utf-8") -> str:
+            assert encoding == "utf-8"
+            return json.dumps(
+                {
+                    "schema_version": "1.0.0",
+                    "pack_metadata": {
+                        "name": "community-general",
+                        "version": "1.0.0",
+                        "description": "General-purpose DriftShield community signatures.",
+                        "pack_kind": "community",
+                        "family_coverage": ["coverage_gap"],
+                    },
+                    "signatures": [
+                        {
+                            "signature_id": "SIG-COMM-001",
+                            "family_id": "coverage_gap",
+                            "title": "Missing Retrieved Entities",
+                            "signature_layer": {
+                                "surface": "output",
+                                "symptom": "missing key entities in response",
+                                "suspected_root_cause": "retrieval did not return full context",
+                                "pattern_hint": "coverage_gap",
+                            },
+                            "failure_shape": "retrieve->synthesise->respond",
+                        }
+                    ],
+                }
+            )
+
+    manifest = load_community_pack(InlineTraversable())
+
+    assert manifest.schema_version == "1.0.0"
+    assert manifest.family_coverage == ("coverage_gap",)
 
 
 def test_builtin_pack_json_looks_like_phase_2a_contract() -> None:
@@ -58,6 +95,10 @@ def test_builtin_pack_json_looks_like_phase_2a_contract() -> None:
 @pytest.mark.parametrize(
     "payload, expected_message",
     [
+        (
+            [],
+            "manifest must be an object",
+        ),
         (
             {
                 "schema_version": "2.0.0",
@@ -112,6 +153,33 @@ def test_builtin_pack_json_looks_like_phase_2a_contract() -> None:
                 ],
             },
             "family_coverage is required when signatures are present",
+        ),
+        (
+            {
+                "schema_version": "1.0.0",
+                "pack_metadata": {
+                    "name": "community-general",
+                    "version": "1.0.0",
+                    "description": "General-purpose DriftShield community signatures.",
+                    "pack_kind": "community",
+                    "family_coverage": ["verification_failure"],
+                },
+                "signatures": [
+                    {
+                        "signature_id": "SIG-COMM-001",
+                        "family_id": "coverage_gap",
+                        "title": "Missing Retrieved Entities",
+                        "signature_layer": {
+                            "surface": "output",
+                            "symptom": "missing key entities in response",
+                            "suspected_root_cause": "retrieval did not return full context",
+                            "pattern_hint": "coverage_gap",
+                        },
+                        "failure_shape": "retrieve->synthesise->respond",
+                    }
+                ],
+            },
+            "family_coverage must match the family_id values declared by signatures",
         ),
     ],
 )
