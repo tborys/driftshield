@@ -1,0 +1,99 @@
+{
+  "schema_version": "1.0.0",
+  "pack_metadata": {
+    "name": "community-general",
+    "version": "1.0.0",
+    "description": "General-purpose DriftShield community signatures.",
+    "pack_kind": "community",
+    "family_coverage": [
+      "coverage_gap",
+      "verification_failure",
+      "assumption_mutation"
+    ],
+    "homepage_url": "https://github.com/tborys/driftshield",
+    "documentation_url": "https://github.com/tborys/driftshield/tree/main/docs"
+  },
+  "signatures": [
+    {
+      "signature_id": "SIG-COMM-001",
+      "family_id": "coverage_gap",
+      "title": "Missing Retrieved Entities",
+      "signature_layer": {
+        "surface": "output",
+        "symptom": "missing key entities in response",
+        "suspected_root_cause": "retrieval did not return full context",
+        "pattern_hint": "coverage_gap"
+      },
+      "failure_shape": "retrieve->synthesise->respond",
+      "severity": "medium",
+      "lexical_markers": [
+        "summarise",
+        "key points",
+        "final answer"
+      ],
+      "temporal_constraints": [
+        "retrieval coverage drops before response synthesis"
+      ],
+      "tags": [
+        "community",
+        "retrieval",
+        "coverage"
+      ],
+      "summary": "missing key entities in response"
+    },
+    {
+      "signature_id": "SIG-COMM-002",
+      "family_id": "verification_failure",
+      "title": "Completion Claim Without Verification",
+      "signature_layer": {
+        "surface": "planning",
+        "symptom": "task is marked done before checks run",
+        "suspected_root_cause": "verification step was skipped under time pressure",
+        "pattern_hint": "verification_failure"
+      },
+      "failure_shape": "plan->implement->claim_done",
+      "severity": "high",
+      "lexical_markers": [
+        "done",
+        "looks good",
+        "should be fine"
+      ],
+      "temporal_constraints": [
+        "completion is asserted before validation evidence appears"
+      ],
+      "tags": [
+        "community",
+        "verification",
+        "planning"
+      ],
+      "summary": "task is marked done before checks run"
+    },
+    {
+      "signature_id": "SIG-COMM-003",
+      "family_id": "assumption_mutation",
+      "title": "Silent Assumption Reversal",
+      "signature_layer": {
+        "surface": "planning",
+        "symptom": "agent switches key assumption without fresh evidence",
+        "suspected_root_cause": "working hypothesis drifted during planning",
+        "pattern_hint": "assumption_mutation"
+      },
+      "failure_shape": "assume->act->reverse",
+      "severity": "medium",
+      "lexical_markers": [
+        "I assumed",
+        "actually",
+        "let me reconsider"
+      ],
+      "temporal_constraints": [
+        "new conclusion appears without intervening evidence"
+      ],
+      "tags": [
+        "community",
+        "assumption",
+        "planning"
+      ],
+      "summary": "agent switches key assumption without fresh evidence"
+    }
+  ]
+}

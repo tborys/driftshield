@@ -108,9 +108,19 @@ def _as_tuple(values: Sequence[str]) -> tuple[str, ...]:
     return tuple(values)
 
 
+from driftshield.signatures.community import (
+    CommunityPack,
+    CommunityPackManifest,
+    load_builtin_community_pack,
+)
+
+
 __all__ = [
+    "CommunityPack",
+    "CommunityPackManifest",
     "SignatureDefinition",
     "SignaturePackMetadata",
     "SignatureProvider",
     "SignatureSeverity",
+    "load_builtin_community_pack",
 ]
