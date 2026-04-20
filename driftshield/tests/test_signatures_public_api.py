@@ -153,10 +153,13 @@ def test_public_signatures_surface_imports_without_private_modules() -> None:
     payload = json.loads(result.stdout)
 
     assert payload["exports"] == [
+        "CommunityPack",
+        "CommunityPackManifest",
         "SignatureDefinition",
         "SignaturePackMetadata",
         "SignatureProvider",
         "SignatureSeverity",
+        "load_builtin_community_pack",
     ]
     assert payload["private_signature_module_loaded"] is False
     assert payload["recurrence_module_loaded"] is False
