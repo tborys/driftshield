@@ -40,6 +40,11 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/driftshield"]
 
+[tool.hatch.build]
+include = [
+    "src/driftshield/signatures/packs/*.json",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
