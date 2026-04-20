@@ -92,3 +92,24 @@ def test_disable_stops_further_emission(tmp_path, monkeypatch):
 
     events = TelemetryService().read_events()
     assert [event["event_type"] for event in events] == ["registration"]
+
+
+def test_emit_analysis_rejects_invalid_outcome_status(tmp_path, monkeypatch):
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    runner.invoke(app, ["telemetry", "enable"])
+
+    invalid = runner.invoke(
+        app,
+        [
+            "telemetry",
+            "emit-analysis",
+            "--outcome-status",
+            "matchd",
+        ],
+    )
+
+    assert invalid.exit_code == 1
+    assert "outcome_status must be one of" in invalid.stdout
+
+    events = TelemetryService().read_events()
+    assert [event["event_type"] for event in events] == ["registration"]

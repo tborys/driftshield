@@ -11,6 +11,9 @@ import uuid
 from typing import Any
 
 
+_VALID_OUTCOME_STATUSES = {"matched", "unclassified", "not_classifiable"}
+
+
 @dataclass(slots=True)
 class TelemetryConfig:
     enabled: bool = False
@@ -117,6 +120,7 @@ class TelemetryService:
         mixed_family: bool = False,
         not_classifiable_reason: str | None = None,
     ) -> bool:
+        validated_outcome_status = validate_outcome_status(outcome_status)
         config = self.load_config()
         if not config.enabled or not config.install_id:
             return False
@@ -126,7 +130,7 @@ class TelemetryService:
                 occurred_at=_utc_now().isoformat(),
                 install_id=config.install_id,
                 payload={
-                    "outcome_status": outcome_status,
+                    "outcome_status": validated_outcome_status,
                     "classifiable": outcome_status in {"matched", "unclassified"},
                     "match_count": match_count,
                     "primary_family_id": primary_family_id,
@@ -163,6 +167,14 @@ def _telemetry_home() -> Path:
     if configured:
         return Path(configured).expanduser() / "telemetry"
     return Path.home() / ".driftshield" / "telemetry"
+
+
+def validate_outcome_status(value: str) -> str:
+    normalized = value.strip()
+    if normalized not in _VALID_OUTCOME_STATUSES:
+        valid = ", ".join(sorted(_VALID_OUTCOME_STATUSES))
+        raise ValueError(f"outcome_status must be one of: {valid}")
+    return normalized
 
 
 def _optional_string(value: object) -> str | None:

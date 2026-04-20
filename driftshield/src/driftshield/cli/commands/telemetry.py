@@ -7,7 +7,7 @@ import json
 import typer
 from rich.console import Console
 
-from driftshield.telemetry import TelemetryService
+from driftshield.telemetry import TelemetryService, validate_outcome_status
 
 console = Console(force_terminal=True)
 app = typer.Typer(help="Manage opt-in Phase 2a telemetry.")
@@ -70,8 +70,14 @@ def telemetry_emit_analysis(
     not_classifiable_reason: str | None = typer.Option(None, "--not-classifiable-reason"),
 ) -> None:
     """Emit one sample analysis-result telemetry event for smoke testing."""
+    try:
+        validated_outcome_status = validate_outcome_status(outcome_status)
+    except ValueError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1) from exc
+
     emitted = TelemetryService().record_analysis_event(
-        outcome_status=outcome_status,
+        outcome_status=validated_outcome_status,
         match_count=match_count,
         primary_family_id=primary_family_id,
         mixed_family=mixed_family,
