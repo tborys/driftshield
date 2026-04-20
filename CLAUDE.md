@@ -205,7 +205,7 @@ Key variables (see `driftshield/.env.example`):
 
 ## Automated PR Review
 
-Codex reviews every non-bot PR via `.github/workflows/codex-review.yml`. The review runs on `opened`, `synchronize` and `reopened` events. You can also tag `@codex-actions` in a PR comment to trigger the repo-owned review workflow.
+Codex review for this repo is handled through the Codex connector rather than a repo-owned GitHub Actions workflow.
 
 ### Public OSS Boundary
 

@@ -39,18 +39,21 @@ FORBIDDEN_HASHES = {
 }
 
 TOKEN_RE = re.compile(r"[A-Za-z0-9._:/-]+")
-ALLOWED_EXACT = {
+PUBLIC_REPO_BASES = (
     "tborys/driftshield",
-    "tborys/driftshield:main",
     "github.com/tborys/driftshield",
-    "github.com/tborys/driftshield.git",
     "https://github.com/tborys/driftshield",
-    "https://github.com/tborys/driftshield.git",
-}
+    "http://github.com/tborys/driftshield",
+    "git@github.com:tborys/driftshield",
+    "ssh://git@github.com/tborys/driftshield",
+)
 SAME_OWNER_PREFIXES = (
     "tborys/",
     "github.com/tborys/",
     "https://github.com/tborys/",
+    "http://github.com/tborys/",
+    "git@github.com:tborys/",
+    "ssh://git@github.com/tborys/",
 )
 EXCLUDED_FILES = {
     "scripts/check-public-scope.sh",
@@ -59,6 +62,17 @@ EXCLUDED_FILES = {
 
 def sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def is_repo_reference(token: str, base: str) -> bool:
+    if token == base or token.startswith(base + ".git"):
+        return True
+
+    return any(token.startswith(base + separator) for separator in ("/", ":", "?", "#"))
+
+
+def is_public_repo_reference(token: str) -> bool:
+    return any(is_repo_reference(token, base) for base in PUBLIC_REPO_BASES)
 
 
 tracked_files = subprocess.run(
@@ -75,6 +89,9 @@ for rel_path in tracked_files:
         continue
 
     path = ROOT / rel_path
+    if not path.exists():
+        continue
+
     try:
         text = path.read_text(encoding="utf-8")
     except UnicodeDecodeError:
@@ -84,7 +101,7 @@ for rel_path in tracked_files:
         line_findings: set[str] = set()
 
         for token in TOKEN_RE.findall(line):
-            if token in ALLOWED_EXACT:
+            if is_public_repo_reference(token):
                 continue
 
             if sha256(token) in FORBIDDEN_HASHES:
