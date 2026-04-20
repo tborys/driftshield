@@ -1,0 +1,4 @@
+interface:
+  display_name: "DriftShield OSS PR Review"
+  short_description: "Review OSS PRs for regressions and schema drift"
+  default_prompt: "Use $driftshield-pr-review to review this tborys/driftshield PR for regressions, schema drift, OSS boundary leaks, and missing verification."

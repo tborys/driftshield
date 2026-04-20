@@ -13,8 +13,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  public-scope:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Check public OSS boundary
+        run: ./scripts/check-public-scope.sh
+
   backend-tests:
     runs-on: ubuntu-latest
+    needs: public-scope
     defaults:
       run:
         working-directory: driftshield
@@ -39,6 +49,7 @@ jobs:
 
   frontend-build:
     runs-on: ubuntu-latest
+    needs: public-scope
     defaults:
       run:
         working-directory: driftshield/frontend
@@ -61,7 +72,7 @@ jobs:
 
   frontend-e2e:
     runs-on: ubuntu-latest
-    needs: frontend-build
+    needs: [public-scope, frontend-build]
     defaults:
       run:
         working-directory: driftshield/frontend

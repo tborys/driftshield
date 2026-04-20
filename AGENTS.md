@@ -28,3 +28,10 @@
 
 - When preparing a prompt for another agent, make it autonomous by default.
 - Tell the agent to inspect the issue and codebase first, produce a concrete spec and plan, then implement, verify and summarise the result without waiting for a human in the loop.
+
+## Review guidelines
+
+- For pull request reviews, use the repo-local review skill at `.agents/skills/driftshield-pr-review`.
+- Treat references to private sibling repos, private sibling paths, or internal cross-repo planning docs in tracked public files as high-priority boundary leaks.
+- Keep the public OSS repo self-contained. Do not add documentation, prompts, fixtures, or workflow text that depends on the private DriftShield repos to make sense.
+- When checking a PR, confirm `./scripts/check-public-scope.sh` would pass if the change touches docs, prompts, templates, fixtures, or workflow files.
