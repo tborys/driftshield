@@ -24,6 +24,10 @@ else
   echo "[dev-verify] No backend venv found; using system python3 environment"
 fi
 
+log "Public OSS boundary check"
+cd "$ROOT_DIR"
+./scripts/check-public-scope.sh
+
 log "Backend regression tests"
 cd "$BACKEND_DIR"
 PYTHONPATH=src python3 -m pytest -q
