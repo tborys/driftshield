@@ -43,7 +43,7 @@ Fields:
 
 ### Analysis result
 
-Used as the Phase 2a smoke path for metric-shaped event fields before broader product instrumentation lands.
+Used as the Phase 2a smoke path for metric-shaped event fields before broader product instrumentation lands. When telemetry opt-in is enabled, the OSS ingest path now emits this event automatically for newly analysed runs.
 
 Fields:
 
@@ -59,6 +59,12 @@ Fields:
 - `payload.event_inventory_version = phase-2a-v1`
 
 These fields intentionally mirror the required Phase 2a run-level inventory for outcome status, classifiability, match count, family rollup, and not-classifiable reasons without adding broader product analytics.
+
+Current OSS emission path:
+
+- the `driftshield telemetry emit-analysis` command remains available for smoke testing
+- the `/api/ingest` flow now emits one `analysis_result` event for newly analysed runs when telemetry is enabled
+- deduplicated re-ingest responses do not emit a second `analysis_result` event
 
 ## CLI smoke path
 

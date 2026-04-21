@@ -13,6 +13,7 @@ from sqlalchemy.pool import StaticPool
 from driftshield.api.app import create_app
 from driftshield.db.models import Base, DecisionNodeModel, SessionModel
 from driftshield.db.persistence import IngestOutcome, PersistenceService
+from driftshield.telemetry import TelemetryService
 
 
 @pytest.fixture
@@ -252,3 +253,82 @@ def test_ingest_rejects_invalid_content_length_header(client, auth_headers, samp
 
     assert response.status_code == 400
     assert response.json()["detail"] == "Invalid Content-Length header"
+
+
+def test_ingest_emits_unclassified_phase_2a_metrics_when_telemetry_is_enabled(client, auth_headers, sample_transcript, monkeypatch, tmp_path):
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    TelemetryService().enable()
+
+    response = _post_ingest(client, auth_headers, sample_transcript)
+
+    assert response.status_code == 201
+    events = TelemetryService().read_events()
+    analysis_event = events[-1]
+    assert analysis_event["event_type"] == "analysis_result"
+    assert analysis_event["payload"] == {
+        "classifiable": True,
+        "event_inventory_version": "phase-2a-v1",
+        "match_count": 0,
+        "mixed_family": False,
+        "not_classifiable_reason": None,
+        "outcome_status": "unclassified",
+        "primary_family_id": None,
+    }
+
+
+def test_ingest_emits_matched_phase_2a_metrics_when_analysis_flags_risk(client, auth_headers, sample_transcript, monkeypatch, tmp_path):
+    from driftshield.core.analysis.session import AnalysisResult
+    from driftshield.core.graph.models import LineageGraph
+    from driftshield.core.models import ExplanationPayload, RiskClassification
+
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    TelemetryService().enable()
+
+    original_events = []
+
+    def fake_analyze_session(events, session_id=None):
+        original_events.extend(events)
+        events[0].risk_classification = RiskClassification(
+            coverage_gap=True,
+            explanations={"coverage_gap": ExplanationPayload(reason="missing context")},
+        )
+        return AnalysisResult(
+            events=events,
+            graph=LineageGraph(session_id=session_id or events[0].session_id),
+            inflection_node=None,
+            total_events=len(events),
+            flagged_events=1,
+            inflection_explanation=None,
+        )
+
+    monkeypatch.setattr("driftshield.db.ingest_service.analyze_session", fake_analyze_session)
+
+    response = _post_ingest(client, auth_headers, sample_transcript)
+
+    assert response.status_code == 201
+    analysis_event = TelemetryService().read_events()[-1]
+    assert analysis_event["event_type"] == "analysis_result"
+    assert analysis_event["payload"] == {
+        "classifiable": True,
+        "event_inventory_version": "phase-2a-v1",
+        "match_count": 1,
+        "mixed_family": False,
+        "not_classifiable_reason": None,
+        "outcome_status": "matched",
+        "primary_family_id": "coverage_gap",
+    }
+
+
+def test_deduped_ingest_does_not_emit_duplicate_metrics(client, auth_headers, sample_transcript, monkeypatch, tmp_path):
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    TelemetryService().enable()
+
+    first = _post_ingest(client, auth_headers, sample_transcript)
+    second = _post_ingest(client, auth_headers, sample_transcript)
+
+    assert first.status_code == 201
+    assert second.status_code == 200
+    analysis_events = [
+        event for event in TelemetryService().read_events() if event["event_type"] == "analysis_result"
+    ]
+    assert len(analysis_events) == 1
