@@ -8,6 +8,7 @@ from driftshield.cli.parsers import ParserNotFoundError, detect_parser, get_pars
 from driftshield.parsers.claude_desktop import ClaudeDesktopParser
 from driftshield.parsers.codex_cli import CodexCliParser
 from driftshield.parsers.codex_desktop import CodexDesktopParser
+from driftshield.parsers.crewai import CrewAIParser
 from driftshield.parsers.langchain import LangChainParser
 
 
@@ -35,6 +36,10 @@ class TestGetParser:
     def test_get_codex_desktop_parser(self):
         parser = get_parser("codex_desktop")
         assert isinstance(parser, CodexDesktopParser)
+
+    def test_get_crewai_parser(self):
+        parser = get_parser("crewai")
+        assert isinstance(parser, CrewAIParser)
 
     def test_get_langchain_parser(self):
         parser = get_parser("langchain")
