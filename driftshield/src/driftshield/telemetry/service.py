@@ -131,7 +131,7 @@ class TelemetryService:
                 install_id=config.install_id,
                 payload={
                     "outcome_status": validated_outcome_status,
-                    "classifiable": outcome_status in {"matched", "unclassified"},
+                    "classifiable": validated_outcome_status in {"matched", "unclassified"},
                     "match_count": match_count,
                     "primary_family_id": primary_family_id,
                     "mixed_family": mixed_family,

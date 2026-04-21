@@ -113,3 +113,25 @@ def test_emit_analysis_rejects_invalid_outcome_status(tmp_path, monkeypatch):
 
     events = TelemetryService().read_events()
     assert [event["event_type"] for event in events] == ["registration"]
+
+
+def test_emit_analysis_normalizes_outcome_status_before_classifiable_check(tmp_path, monkeypatch):
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    runner.invoke(app, ["telemetry", "enable"])
+
+    emitted = runner.invoke(
+        app,
+        [
+            "telemetry",
+            "emit-analysis",
+            "--outcome-status",
+            " matched ",
+            "--match-count",
+            "1",
+        ],
+    )
+
+    assert emitted.exit_code == 0
+    analysis_event = TelemetryService().read_events()[-1]
+    assert analysis_event["payload"]["outcome_status"] == "matched"
+    assert analysis_event["payload"]["classifiable"] is True
