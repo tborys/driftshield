@@ -66,16 +66,6 @@ class CrewAIParser:
                     )
                     events.append(tool_event)
                     previous_event_id = tool_event.id
-            else:
-                task_event = self._build_task_event(
-                    session_id=session_id,
-                    task=task,
-                    tool_call=None,
-                    tool_call_index=None,
-                    parent_event_id=previous_event_id,
-                )
-                events.append(task_event)
-                previous_event_id = task_event.id
 
             final_output = str(task.get("output") or "").strip()
             if final_output:

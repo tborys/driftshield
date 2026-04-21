@@ -118,6 +118,40 @@ class TestCrewAIParser:
         assert events[2].outputs["result"] == {"content": "[project]"}
         assert events[2].metadata["tool_call_index"] == 1
 
+    def test_skips_tool_call_event_when_task_has_no_tool_calls(self):
+        parser = CrewAIParser()
+        payload = {
+            "run_id": "crewai-no-tool",
+            "input": "Summarise the incident.",
+            "started_at": "2026-04-21T02:35:00Z",
+            "tasks": [
+                {
+                    "id": "task-no-tool",
+                    "name": "summarise_incident",
+                    "description": "Summarise the incident without tools",
+                    "status": "completed",
+                    "started_at": "2026-04-21T02:35:01Z",
+                    "completed_at": "2026-04-21T02:35:04Z",
+                    "agent": {"role": "analyst", "goal": "Summarise incident"},
+                    "tool_calls": [],
+                    "output": "Incident summarised from existing context.",
+                }
+            ],
+        }
+
+        events = parser.parse(json.dumps(payload))
+
+        assert [event.event_type for event in events] == [
+            EventType.OUTPUT,
+            EventType.OUTPUT,
+        ]
+        assert [event.action for event in events] == [
+            "user_message",
+            "assistant_narrative",
+        ]
+        assert events[1].parent_event_id == events[0].id
+        assert events[1].outputs["text"] == "Incident summarised from existing context."
+
     def test_source_type_is_crewai(self):
         parser = CrewAIParser()
         assert parser.source_type == "crewai"
