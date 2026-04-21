@@ -17,10 +17,29 @@ export interface SessionSummary {
   provenance: SessionProvenance | null
 }
 
+export interface SignatureMatchSummary {
+  status: string | null
+  primary_family_id: string | null
+  matched_family_ids: string[]
+  match_count: number | null
+  summary: string | null
+  raw: Record<string, unknown> | null
+}
+
+export interface RecurrenceStatus {
+  status: string | null
+  cluster_id: string | null
+  recurrence_count: number | null
+  summary: string | null
+  raw: Record<string, unknown> | null
+}
+
 export interface SessionDetail extends SessionSummary {
   total_events: number
   flagged_events: number
   risk_summary: Record<string, number>
+  signature_match?: SignatureMatchSummary | null
+  recurrence_status?: RecurrenceStatus | null
 }
 
 export interface PaginatedResponse<T> {
