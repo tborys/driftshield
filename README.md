@@ -44,6 +44,34 @@ follow-up.
 
 DriftShield uses a parser protocol. New sources can be added by implementing a single interface.
 
+## Community signature packs
+
+Phase 2a uses a deliberately simple pull flow for community-safe signature packs. Packs are versioned JSON manifests that follow the Phase 2a contract and can be fetched directly from a Git ref or tag.
+
+Example:
+
+```bash
+source .venv/bin/activate
+driftshield signatures pull community-general --ref <git-tag-or-commit>
+```
+
+By default this pulls from `tborys/driftshield` and stores the validated manifest under `~/.local/share/driftshield/signatures/<pack-name>/<pack-version>/`.
+
+If you need to test or mirror a pack source, override the source URL directly:
+
+```bash
+driftshield signatures pull community-general \
+  --ref local-smoke \
+  --url http://127.0.0.1:8000/community-general.json
+```
+
+Compatibility rules for the first rollout:
+
+- `schema_version` is the compatibility gate and is validated before installation
+- `pack_metadata.version` is the pack release version and determines the install path
+- only `pack_kind: community` is accepted by the OSS pull path
+- the pull flow is intentionally replaceable later without committing DriftShield to a marketplace design
+
 ## Quick Start
 
 ### Prerequisites

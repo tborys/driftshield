@@ -23,6 +23,7 @@ def test_cli_help_omits_private_commands():
     assert "evaluate-signatures" not in result.output
     assert "analyze" in result.output
     assert "report" in result.output
+    assert "signatures" in result.output
 
 
 def test_installed_console_script_starts_without_test_module_imports(tmp_path):
