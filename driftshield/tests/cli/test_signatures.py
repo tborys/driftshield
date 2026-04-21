@@ -145,22 +145,23 @@ def test_default_pack_install_path_rejects_unsafe_manifest_path_components() -> 
 
 
 def test_pull_signature_pack_rejects_invalid_repository_value() -> None:
-    result = runner.invoke(
-        app,
-        [
-            "signatures",
-            "pull",
-            "community-general",
-            "--ref",
-            "v1.2.3",
-            "--repository",
-            "tborys",
-        ],
-    )
+    for invalid_repository in ("tborys", "owner/repo/extra"):
+        result = runner.invoke(
+            app,
+            [
+                "signatures",
+                "pull",
+                "community-general",
+                "--ref",
+                "v1.2.3",
+                "--repository",
+                invalid_repository,
+            ],
+        )
 
-    assert result.exit_code == 1
-    assert "Could not pull pack" in result.output
-    assert "owner/repo" in result.output
+        assert result.exit_code == 1
+        assert "Could not pull pack" in result.output
+        assert "owner/repo" in result.output
 
 
 def test_pull_signature_pack_rejects_non_community_pack(monkeypatch) -> None:

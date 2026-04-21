@@ -20,10 +20,10 @@ app = typer.Typer(help="Manage community signature pack distribution.")
 
 
 def _validate_repository(repository: str) -> str:
-    parts = repository.split("/", maxsplit=1)
-    if len(parts) != 2 or not parts[0].strip() or not parts[1].strip():
-        raise ValueError("--repository must use the format owner/repo")
-    return f"{parts[0].strip()}/{parts[1].strip()}"
+    parts = [part.strip() for part in repository.split("/")]
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        raise ValueError("--repository must use the exact format owner/repo")
+    return f"{parts[0]}/{parts[1]}"
 
 
 @app.command("pull")
