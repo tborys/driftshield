@@ -21,7 +21,7 @@ class TranscriptIngestService:
         file_path: Path,
         parser_name: str,
         existing_session_id: uuid.UUID | None = None,
-    ) -> IngestOutcome:
+    ) -> tuple[IngestOutcome, object]:
         raw_bytes = file_path.read_bytes()
         return self.ingest_bytes(
             raw_bytes=raw_bytes,
@@ -37,7 +37,7 @@ class TranscriptIngestService:
         parser_name: str,
         source_path: str | None,
         existing_session_id: uuid.UUID | None = None,
-    ) -> IngestOutcome:
+    ) -> tuple[IngestOutcome, object]:
         normalised = parser_name.replace("-", "_")
         if normalised not in PARSERS:
             raise ValueError(f"Unsupported format: {parser_name}")
@@ -67,13 +67,34 @@ class TranscriptIngestService:
         )
         persistence = PersistenceService(self._db)
         if existing_session_id is None:
-            return persistence.ingest(domain_session, result, provenance)
-        return persistence.ingest(
-            domain_session,
-            result,
-            provenance,
-            existing_session_id=existing_session_id,
+            outcome = persistence.ingest(domain_session, result, provenance)
+        else:
+            outcome = persistence.ingest(
+                domain_session,
+                result,
+                provenance,
+                existing_session_id=existing_session_id,
+            )
+        return outcome, result
+
+
+def metrics_payload_from_analysis_result(result) -> dict[str, object]:
+    risk_summary = result.risk_summary
+    matched_families = [family_id for family_id, count in risk_summary.items() if count > 0]
+    primary_family_id = None
+    if matched_families:
+        primary_family_id = max(
+            matched_families,
+            key=lambda family_id: (risk_summary[family_id], family_id),
         )
+
+    return {
+        "outcome_status": "matched" if result.flagged_events > 0 else "unclassified",
+        "match_count": result.flagged_events,
+        "primary_family_id": primary_family_id,
+        "mixed_family": len(matched_families) > 1,
+        "not_classifiable_reason": None,
+    }
 
 
 def _stabilize_event_ids(events: list[CanonicalEvent], session_id: uuid.UUID) -> None:

@@ -141,7 +141,7 @@ class ConnectorWatchService:
 
             raw_bytes = session_info.path.read_bytes()
             transcript_hash = hashlib.sha256(raw_bytes).hexdigest()
-            outcome = ingest_service.ingest_bytes(
+            outcome, _analysis_result = ingest_service.ingest_bytes(
                 raw_bytes=raw_bytes,
                 parser_name=connector.parser_name,
                 source_path=str(session_info.path),
