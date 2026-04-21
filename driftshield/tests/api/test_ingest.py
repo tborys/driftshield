@@ -145,6 +145,8 @@ def test_reingest_is_explicit_dedupe_no_op(client, auth_headers, sample_transcri
 
 def test_ingest_recovers_from_duplicate_commit_race(client, auth_headers, sample_transcript, monkeypatch):
     from driftshield.api.dependencies import get_db
+    from driftshield.core.analysis.session import AnalysisResult
+    from driftshield.core.graph.models import LineageGraph
 
     class FakeDB:
         def __init__(self):
@@ -161,14 +163,25 @@ def test_ingest_recovers_from_duplicate_commit_race(client, auth_headers, sample
 
     session_id = uuid.uuid4()
 
-    def fake_ingest(self, session, result, provenance):
-        return IngestOutcome(
-            session_id=session_id,
+    def fake_ingest_bytes(self, *, raw_bytes, parser_name, source_path, existing_session_id=None):
+        analysis_result = AnalysisResult(
+            events=[],
+            graph=LineageGraph(session_id=str(session_id)),
+            inflection_node=None,
             total_events=1,
             flagged_events=0,
-            has_inflection=False,
-            status="created",
-            deduplicated=False,
+            inflection_explanation=None,
+        )
+        return (
+            IngestOutcome(
+                session_id=session_id,
+                total_events=1,
+                flagged_events=0,
+                has_inflection=False,
+                status="created",
+                deduplicated=False,
+            ),
+            analysis_result,
         )
 
     def fake_get_ingest_outcome(self, provenance):
@@ -182,8 +195,15 @@ def test_ingest_recovers_from_duplicate_commit_race(client, auth_headers, sample
             deduplicated=True,
         )
 
-    monkeypatch.setattr(PersistenceService, "ingest", fake_ingest)
+    emit_calls = []
+
+    def fake_record_analysis_event(self, **kwargs):
+        emit_calls.append(kwargs)
+        return True
+
+    monkeypatch.setattr("driftshield.api.routes.ingest.TranscriptIngestService.ingest_bytes", fake_ingest_bytes)
     monkeypatch.setattr(PersistenceService, "get_ingest_outcome", fake_get_ingest_outcome)
+    monkeypatch.setattr("driftshield.api.routes.ingest.TelemetryService.record_analysis_event", fake_record_analysis_event)
 
     response = _post_ingest(client, auth_headers, sample_transcript)
 
@@ -198,6 +218,7 @@ def test_ingest_recovers_from_duplicate_commit_race(client, auth_headers, sample
         "status": "deduped",
         "deduplicated": True,
     }
+    assert emit_calls == []
 
 
 def test_ingest_without_auth(client, sample_transcript):

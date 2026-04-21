@@ -9,7 +9,6 @@ from driftshield.cli.parsers import PARSERS, get_parser
 from driftshield.core.analysis.session import analyze_session
 from driftshield.core.models import CanonicalEvent, Session as DomainSession, SessionStatus
 from driftshield.db.persistence import IngestOutcome, IngestProvenance, PersistenceService
-from driftshield.telemetry import TelemetryService
 
 
 class TranscriptIngestService:
@@ -22,7 +21,7 @@ class TranscriptIngestService:
         file_path: Path,
         parser_name: str,
         existing_session_id: uuid.UUID | None = None,
-    ) -> IngestOutcome:
+    ) -> tuple[IngestOutcome, object]:
         raw_bytes = file_path.read_bytes()
         return self.ingest_bytes(
             raw_bytes=raw_bytes,
@@ -38,7 +37,7 @@ class TranscriptIngestService:
         parser_name: str,
         source_path: str | None,
         existing_session_id: uuid.UUID | None = None,
-    ) -> IngestOutcome:
+    ) -> tuple[IngestOutcome, object]:
         normalised = parser_name.replace("-", "_")
         if normalised not in PARSERS:
             raise ValueError(f"Unsupported format: {parser_name}")
@@ -76,21 +75,10 @@ class TranscriptIngestService:
                 provenance,
                 existing_session_id=existing_session_id,
             )
-
-        if not outcome.deduplicated:
-            metrics = _metrics_payload_from_analysis_result(result)
-            TelemetryService().record_analysis_event(
-                outcome_status=metrics["outcome_status"],
-                match_count=metrics["match_count"],
-                primary_family_id=metrics["primary_family_id"],
-                mixed_family=metrics["mixed_family"],
-                not_classifiable_reason=metrics["not_classifiable_reason"],
-            )
-
-        return outcome
+        return outcome, result
 
 
-def _metrics_payload_from_analysis_result(result) -> dict[str, object]:
+def metrics_payload_from_analysis_result(result) -> dict[str, object]:
     risk_summary = result.risk_summary
     matched_families = [family_id for family_id, count in risk_summary.items() if count > 0]
     primary_family_id = None
