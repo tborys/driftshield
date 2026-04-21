@@ -47,13 +47,16 @@ def ingest_transcript(
         db.commit()
         if not outcome.deduplicated and analysis_result is not None:
             metrics = metrics_payload_from_analysis_result(analysis_result)
-            TelemetryService().record_analysis_event(
-                outcome_status=metrics["outcome_status"],
-                match_count=metrics["match_count"],
-                primary_family_id=metrics["primary_family_id"],
-                mixed_family=metrics["mixed_family"],
-                not_classifiable_reason=metrics["not_classifiable_reason"],
-            )
+            try:
+                TelemetryService().record_analysis_event(
+                    outcome_status=metrics["outcome_status"],
+                    match_count=metrics["match_count"],
+                    primary_family_id=metrics["primary_family_id"],
+                    mixed_family=metrics["mixed_family"],
+                    not_classifiable_reason=metrics["not_classifiable_reason"],
+                )
+            except Exception:
+                pass
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except IntegrityError:

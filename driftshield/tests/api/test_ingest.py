@@ -353,3 +353,18 @@ def test_deduped_ingest_does_not_emit_duplicate_metrics(client, auth_headers, sa
         event for event in TelemetryService().read_events() if event["event_type"] == "analysis_result"
     ]
     assert len(analysis_events) == 1
+
+
+def test_ingest_succeeds_even_when_post_commit_telemetry_emit_fails(client, auth_headers, sample_transcript, monkeypatch):
+    def fail_record_analysis_event(self, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(
+        "driftshield.api.routes.ingest.TelemetryService.record_analysis_event",
+        fail_record_analysis_event,
+    )
+
+    response = _post_ingest(client, auth_headers, sample_transcript)
+
+    assert response.status_code == 201
+    assert response.json()["status"] == "created"
