@@ -1,5 +1,7 @@
 """Tests for analyze command."""
 
+import json
+import re
 from pathlib import Path
 
 import pytest
@@ -11,6 +13,7 @@ from driftshield.cli.main import app
 runner = CliRunner()
 
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures" / "transcripts"
+ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 
 class TestAnalyzeCommand:
@@ -81,6 +84,21 @@ class TestAnalyzeCommand:
 
         assert result.exit_code != 0
         assert "claude_code" in result.output  # Lists available
+
+
+    def test_analyze_with_explicit_crewai_parser_outputs_json_summary(self):
+        """CrewAI fixture can be analysed end to end through the CLI."""
+        result = runner.invoke(
+            app,
+            ["analyze", str(FIXTURES_DIR / "sample_crewai_session.json"), "--parser", "crewai", "--json"],
+        )
+
+        assert result.exit_code == 0
+        payload = json.loads(ANSI_RE.sub("", result.output))
+        assert payload["session_id"] == "crewai-run-001"
+        assert payload["total_events"] == 3
+        assert "flagged_events" in payload
+        assert "risks" in payload
 
 
 class TestAnalyzeProject:
