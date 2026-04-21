@@ -10,8 +10,9 @@ from driftshield.api.auth import require_api_key
 from driftshield.api.dependencies import get_db
 from driftshield.api.schemas import IngestResponse
 from driftshield.cli.parsers import PARSERS
-from driftshield.db.ingest_service import TranscriptIngestService
+from driftshield.db.ingest_service import TranscriptIngestService, metrics_payload_from_analysis_result
 from driftshield.db.persistence import IngestProvenance, PersistenceService
+from driftshield.telemetry import TelemetryService
 
 router = APIRouter()
 
@@ -38,12 +39,24 @@ def ingest_transcript(
         raise HTTPException(status_code=413, detail=f"Request body exceeds {max_request_bytes} bytes")
     ingest_service = TranscriptIngestService(db)
     try:
-        outcome = ingest_service.ingest_bytes(
+        outcome, analysis_result = ingest_service.ingest_bytes(
             raw_bytes=raw_bytes,
             parser_name=normalised,
             source_path=file.filename,
         )
         db.commit()
+        if not outcome.deduplicated and analysis_result is not None:
+            metrics = metrics_payload_from_analysis_result(analysis_result)
+            try:
+                TelemetryService().record_analysis_event(
+                    outcome_status=metrics["outcome_status"],
+                    match_count=metrics["match_count"],
+                    primary_family_id=metrics["primary_family_id"],
+                    mixed_family=metrics["mixed_family"],
+                    not_classifiable_reason=metrics["not_classifiable_reason"],
+                )
+            except Exception:
+                pass
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except IntegrityError:
