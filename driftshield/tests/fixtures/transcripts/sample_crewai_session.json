@@ -1,0 +1,34 @@
+{
+  "run_id": "crewai-run-001",
+  "crew_name": "Repo Investigation Crew",
+  "input": "Inspect the README and identify obvious risks.",
+  "started_at": "2026-04-21T02:20:00Z",
+  "tasks": [
+    {
+      "id": "task-1",
+      "name": "inspect_readme",
+      "description": "Read the README and identify obvious risks.",
+      "expected_output": "A short list of concrete risks.",
+      "status": "completed",
+      "started_at": "2026-04-21T02:20:01Z",
+      "completed_at": "2026-04-21T02:20:04Z",
+      "agent": {
+        "role": "researcher",
+        "goal": "Inspect repository documents"
+      },
+      "tool_calls": [
+        {
+          "tool_name": "read_file",
+          "input": {
+            "file_path": "README.md"
+          },
+          "output": {
+            "content": "# DriftShield\nA decision forensics platform."
+          },
+          "error": null
+        }
+      ],
+      "output": "The README is present and the main risk is missing setup detail."
+    }
+  ]
+}
