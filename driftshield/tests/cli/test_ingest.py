@@ -162,6 +162,24 @@ def test_ingest_surfaces_deduplicated_response(monkeypatch):
     assert "duplicate" in result.output.lower() or "already" in result.output.lower()
 
 
+def test_ingest_with_explicit_crewai_parser(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def fake_post_ingest(*, target_url: str, api_key: str, file_path: Path, parser: str):
+        captured["parser"] = parser
+        return DummyResponse()._payload
+
+    monkeypatch.setenv("DRIFTSHIELD_API_URL", "http://localhost:8000")
+    monkeypatch.setenv("DRIFTSHIELD_API_KEY", "test-key")
+    monkeypatch.setattr("driftshield.cli.commands.ingest.post_ingest", fake_post_ingest)
+
+    transcript = FIXTURES_DIR / "sample_crewai_session.json"
+    result = runner.invoke(app, ["ingest", "--path", str(transcript), "--parser", "crewai"])
+
+    assert result.exit_code == 0
+    assert captured["parser"] == "crewai"
+
+
 def test_build_multipart_body_uses_basename_for_uploaded_filename():
     transcript = FIXTURES_DIR / "sample_claude_code_session.jsonl"
 
