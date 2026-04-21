@@ -69,6 +69,55 @@ class TestCrewAIParser:
         assert events[1].outputs["result"] == {"status": "ok"}
         assert events[2].outputs["text"] == "Parser notes found."
 
+    def test_emits_one_event_per_tool_call_within_task(self):
+        parser = CrewAIParser()
+        payload = {
+            "run_id": "crewai-multi-tool",
+            "input": "Inspect docs and config.",
+            "started_at": "2026-04-21T02:30:00Z",
+            "tasks": [
+                {
+                    "id": "task-multi",
+                    "name": "inspect_repo",
+                    "description": "Inspect docs and config",
+                    "status": "completed",
+                    "started_at": "2026-04-21T02:30:01Z",
+                    "completed_at": "2026-04-21T02:30:04Z",
+                    "agent": {"role": "researcher", "goal": "Inspect files"},
+                    "tool_calls": [
+                        {
+                            "tool_name": "read_file",
+                            "input": {"file_path": "README.md"},
+                            "output": {"content": "# README"},
+                            "error": None,
+                        },
+                        {
+                            "tool_name": "read_file",
+                            "input": {"file_path": "pyproject.toml"},
+                            "output": {"content": "[project]"},
+                            "error": None,
+                        },
+                    ],
+                    "output": "Repo inspection completed.",
+                }
+            ],
+        }
+
+        events = parser.parse(json.dumps(payload))
+
+        assert [event.action for event in events] == [
+            "user_message",
+            "read_file",
+            "read_file",
+            "assistant_narrative",
+        ]
+        assert events[1].inputs["tool_input"] == {"file_path": "README.md"}
+        assert events[1].outputs["result"] == {"content": "# README"}
+        assert events[1].metadata["tool_call_index"] == 0
+        assert events[2].inputs["tool_input"] == {"file_path": "pyproject.toml"}
+        assert events[2].outputs["result"] == {"content": "[project]"}
+        assert events[2].metadata["tool_call_index"] == 1
+
     def test_source_type_is_crewai(self):
         parser = CrewAIParser()
         assert parser.source_type == "crewai"

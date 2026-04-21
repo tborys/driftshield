@@ -54,13 +54,28 @@ class CrewAIParser:
         for task in payload.get("tasks") or []:
             if not isinstance(task, dict):
                 continue
-            tool_event = self._build_task_event(
-                session_id=session_id,
-                task=task,
-                parent_event_id=previous_event_id,
-            )
-            events.append(tool_event)
-            previous_event_id = tool_event.id
+            tool_calls = [tool for tool in task.get("tool_calls") or [] if isinstance(tool, dict)]
+            if tool_calls:
+                for index, tool_call in enumerate(tool_calls):
+                    tool_event = self._build_task_event(
+                        session_id=session_id,
+                        task=task,
+                        tool_call=tool_call,
+                        tool_call_index=index,
+                        parent_event_id=previous_event_id,
+                    )
+                    events.append(tool_event)
+                    previous_event_id = tool_event.id
+            else:
+                task_event = self._build_task_event(
+                    session_id=session_id,
+                    task=task,
+                    tool_call=None,
+                    tool_call_index=None,
+                    parent_event_id=previous_event_id,
+                )
+                events.append(task_event)
+                previous_event_id = task_event.id
 
             final_output = str(task.get("output") or "").strip()
             if final_output:
@@ -91,22 +106,22 @@ class CrewAIParser:
         *,
         session_id: str,
         task: dict,
+        tool_call: dict | None,
+        tool_call_index: int | None,
         parent_event_id: UUID | None,
     ) -> CanonicalEvent:
         agent = task.get("agent") or {}
-        tool_calls = [tool for tool in task.get("tool_calls") or [] if isinstance(tool, dict)]
-        primary_tool = tool_calls[0] if tool_calls else None
         action = str(
-            (primary_tool or {}).get("tool_name")
+            (tool_call or {}).get("tool_name")
             or task.get("name")
             or task.get("description")
             or "task"
         )
         outputs: dict[str, object] = {}
-        if primary_tool is not None:
-            outputs["result"] = primary_tool.get("output")
-            if primary_tool.get("error"):
-                outputs["error"] = primary_tool.get("error")
+        if tool_call is not None:
+            outputs["result"] = tool_call.get("output")
+            if tool_call.get("error"):
+                outputs["error"] = tool_call.get("error")
 
         return CanonicalEvent(
             id=uuid4(),
@@ -119,7 +134,7 @@ class CrewAIParser:
             inputs={
                 "description": task.get("description"),
                 "expected_output": task.get("expected_output"),
-                "tool_input": (primary_tool or {}).get("input"),
+                "tool_input": (tool_call or {}).get("input"),
             },
             outputs=outputs,
             metadata={
@@ -127,7 +142,8 @@ class CrewAIParser:
                 "task_id": task.get("id"),
                 "task_status": task.get("status"),
                 "agent_goal": agent.get("goal"),
-                "tool_name": (primary_tool or {}).get("tool_name"),
+                "tool_name": (tool_call or {}).get("tool_name"),
+                "tool_call_index": tool_call_index,
                 "semantic_action_category": "other",
                 "raw_action": action,
             },
