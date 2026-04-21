@@ -7,6 +7,100 @@ import { useSessionReports } from '../api/reports'
 import { InvestigationView } from '../components/investigation/InvestigationView'
 import { ReportTrigger } from '../components/reports/ReportTrigger'
 import { ReportPreview } from '../components/reports/ReportPreview'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
+
+function labelFromValue(value: string | null | undefined) {
+  if (!value) {
+    return null
+  }
+
+  return value.replace(/[_-]/g, ' ')
+}
+
+function SignatureAndRecurrenceCard({
+  loading,
+  session,
+}: {
+  loading: boolean
+  session: ReturnType<typeof useSession>['data']
+}) {
+  const signatureMatch = session?.signature_match ?? null
+  const recurrenceStatus = session?.recurrence_status ?? null
+  const matchedFamilies = signatureMatch?.matched_family_ids ?? []
+  const matchStatus = signatureMatch?.status ?? null
+  const recurrenceLabel = labelFromValue(recurrenceStatus?.status)
+  const signatureLabel = labelFromValue(matchStatus)
+  const hasSignatureData = signatureMatch !== null
+  const hasRecurrenceData = recurrenceStatus !== null
+  const showUnavailable = !loading && !hasSignatureData && !hasRecurrenceData
+  const showUnmatched = !loading && hasSignatureData && matchStatus === 'unmatched'
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">Signature and recurrence</CardTitle>
+        <CardDescription>
+          Phase 2a classification output from the backend, with explicit unavailable states.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3 text-sm">
+        {loading ? (
+          <div className="text-muted-foreground">Loading classification summary...</div>
+        ) : showUnavailable ? (
+          <div className="rounded-md border bg-muted/30 p-3 text-muted-foreground">
+            This session does not expose signature or recurrence data yet.
+          </div>
+        ) : (
+          <>
+            <div className="flex flex-wrap gap-2">
+              <Badge variant={matchStatus === 'matched' ? 'destructive' : 'outline'}>
+                Signature: {signatureLabel ?? 'unavailable'}
+              </Badge>
+              <Badge variant={recurrenceStatus?.status === 'recurring' ? 'destructive' : 'outline'}>
+                Recurrence: {recurrenceLabel ?? 'unavailable'}
+              </Badge>
+              {signatureMatch?.match_count !== null && signatureMatch?.match_count !== undefined && (
+                <Badge variant="outline">{signatureMatch.match_count} match{signatureMatch.match_count === 1 ? '' : 'es'}</Badge>
+              )}
+              {recurrenceStatus?.recurrence_count !== null && recurrenceStatus?.recurrence_count !== undefined && (
+                <Badge variant="outline">{recurrenceStatus.recurrence_count} related run{recurrenceStatus.recurrence_count === 1 ? '' : 's'}</Badge>
+              )}
+            </div>
+
+            {signatureMatch?.summary && <p>{signatureMatch.summary}</p>}
+            {!signatureMatch?.summary && showUnmatched && (
+              <p className="text-muted-foreground">No signature matches were returned for this session.</p>
+            )}
+            {recurrenceStatus?.summary && <p>{recurrenceStatus.summary}</p>}
+
+            {matchedFamilies.length > 0 && (
+              <div className="space-y-2">
+                <div className="text-xs font-medium text-muted-foreground">Matched families</div>
+                <div className="flex flex-wrap gap-2">
+                  {matchedFamilies.map((familyId) => (
+                    <Badge key={familyId} variant="secondary">{labelFromValue(familyId) ?? familyId}</Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {signatureMatch?.primary_family_id && (
+              <div className="text-muted-foreground">
+                Primary family: <span className="font-medium text-foreground">{labelFromValue(signatureMatch.primary_family_id)}</span>
+              </div>
+            )}
+
+            {recurrenceStatus?.cluster_id && (
+              <div className="text-muted-foreground">
+                Cluster: <span className="font-mono text-foreground">{recurrenceStatus.cluster_id}</span>
+              </div>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
 
 export function InvestigationPage() {
   const { id } = useParams<{ id: string }>()
@@ -69,15 +163,16 @@ export function InvestigationPage() {
         <ReportTrigger sessionId={id!} onReportGenerated={setPreviewReportId} />
       </div>
 
-      <div className="px-6 py-3 border-b">
-        <div className="flex items-center justify-between mb-2">
-          <div className="text-sm font-medium">Session reports</div>
-          {reports && reports.length > 0 && (
-            <Button variant="ghost" size="sm" onClick={() => setPreviewReportId(reports[0].id)}>
-              Open latest
-            </Button>
-          )}
-        </div>
+      <div className="px-6 py-3 border-b grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start">
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-sm font-medium">Session reports</div>
+            {reports && reports.length > 0 && (
+              <Button variant="ghost" size="sm" onClick={() => setPreviewReportId(reports[0].id)}>
+                Open latest
+              </Button>
+            )}
+          </div>
 
         {reportsLoading && (
           <div className="text-sm text-muted-foreground">Loading report history...</div>
@@ -107,6 +202,9 @@ export function InvestigationPage() {
             </div>
           </div>
         )}
+        </div>
+
+        <SignatureAndRecurrenceCard loading={sessionLoading} session={session} />
       </div>
 
       <InvestigationView graph={graph} />

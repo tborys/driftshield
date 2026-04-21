@@ -12,11 +12,13 @@ from driftshield.api.schemas import (
     GraphNodeResponse,
     GraphResponse,
     PaginatedResponse,
+    RecurrenceStatusResponse,
     SessionDetail,
     SessionExplanationItemResponse,
     SessionExplanationsResponse,
     SessionProvenanceResponse,
     SessionSummary,
+    SignatureMatchSummaryResponse,
     ValidationCreateRequest,
     ValidationResponse,
 )
@@ -128,6 +130,57 @@ def _session_explanations(nodes: list[DecisionNodeModel]) -> SessionExplanations
     )
 
 
+def _optional_int(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    return None
+
+
+def _extract_signature_match(session: SessionModel) -> SignatureMatchSummaryResponse | None:
+    metadata = session.metadata_json or {}
+    payload = metadata.get("signature_match") or metadata.get("signature_summary")
+    if not isinstance(payload, dict):
+        return None
+
+    matched_family_ids = payload.get("matched_family_ids")
+    if not isinstance(matched_family_ids, list):
+        matched_family_ids = []
+
+    status = payload.get("status")
+    if not isinstance(status, str):
+        status = payload.get("outcome_status") if isinstance(payload.get("outcome_status"), str) else None
+
+    return SignatureMatchSummaryResponse(
+        status=status,
+        primary_family_id=(
+            payload.get("primary_family_id")
+            if isinstance(payload.get("primary_family_id"), str)
+            else None
+        ),
+        matched_family_ids=[item for item in matched_family_ids if isinstance(item, str)],
+        match_count=_optional_int(payload.get("match_count")),
+        summary=payload.get("summary") if isinstance(payload.get("summary"), str) else None,
+        raw=payload,
+    )
+
+
+def _extract_recurrence_status(session: SessionModel) -> RecurrenceStatusResponse | None:
+    metadata = session.metadata_json or {}
+    payload = metadata.get("recurrence_status")
+    if not isinstance(payload, dict):
+        return None
+
+    return RecurrenceStatusResponse(
+        status=payload.get("status") if isinstance(payload.get("status"), str) else None,
+        cluster_id=payload.get("cluster_id") if isinstance(payload.get("cluster_id"), str) else None,
+        recurrence_count=_optional_int(payload.get("recurrence_count")),
+        summary=payload.get("summary") if isinstance(payload.get("summary"), str) else None,
+        raw=payload,
+    )
+
+
 @router.get("/api/sessions")
 def list_sessions(
     page: int = Query(default=1, ge=1),
@@ -212,6 +265,8 @@ def get_session(
         flagged_events=risk_count,
         risk_summary=_risk_summary(nodes),
         explanations=_session_explanations(nodes),
+        signature_match=_extract_signature_match(session),
+        recurrence_status=_extract_recurrence_status(session),
     )
 
 
