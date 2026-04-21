@@ -22,8 +22,10 @@ app = typer.Typer(help="Manage community signature pack distribution.")
 @app.command("pull")
 def pull_signature_pack(
     pack_name: str = typer.Argument(..., help="Community pack name without the .json suffix."),
-    ref: str = typer.Option(
-        ..., "--ref", help="Git ref or tag to pull from when using the default GitHub source."
+    ref: str | None = typer.Option(
+        None,
+        "--ref",
+        help="Git ref or tag to pull from when using the default GitHub source.",
     ),
     repository: str = typer.Option(
         DEFAULT_COMMUNITY_REPOSITORY,
@@ -43,9 +45,13 @@ def pull_signature_pack(
     json_output: bool = typer.Option(False, "--json", help="Output JSON."),
 ) -> None:
     """Fetch, validate, and install a versioned community signature pack manifest."""
+    if source_url is None and ref is None:
+        console.print("[red]Error:[/red] --ref is required unless --url is provided.")
+        raise typer.Exit(1)
+
     resolved_source_url = source_url or build_github_raw_pack_url(
         repository=repository,
-        ref=ref,
+        ref=ref or "",
         pack_name=pack_name,
     )
 

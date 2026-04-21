@@ -6,7 +6,10 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from driftshield.cli.main import app
-from driftshield.signatures.distribution import build_github_raw_pack_url
+from driftshield.signatures.distribution import (
+    build_github_raw_pack_url,
+    default_pack_install_path,
+)
 
 
 runner = CliRunner()
@@ -95,6 +98,50 @@ def test_pull_signature_pack_writes_versioned_manifest(monkeypatch, tmp_path: Pa
     assert installed_payload["pack_metadata"]["version"] == "1.2.3"
     assert "community-general@" in result.output
     assert "schema" in result.output
+
+
+def test_pull_signature_pack_allows_url_without_ref(monkeypatch, tmp_path: Path) -> None:
+    payload = _community_pack_payload(version="1.2.3")
+
+    def fake_urlopen(source_url: str) -> DummyResponse:
+        assert source_url == "https://example.test/community-general.json"
+        return DummyResponse(payload)
+
+    monkeypatch.setattr("driftshield.signatures.distribution.urlopen", fake_urlopen)
+
+    output = tmp_path / "packs" / "community-general.json"
+    result = runner.invoke(
+        app,
+        [
+            "signatures",
+            "pull",
+            "community-general",
+            "--url",
+            "https://example.test/community-general.json",
+            "--output",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert output.exists()
+
+
+def test_default_pack_install_path_rejects_unsafe_manifest_path_components() -> None:
+    for unsafe_value in ("../escape", "nested/path", "..", "/absolute"):
+        try:
+            default_pack_install_path(pack_name=unsafe_value, version="1.2.3")
+        except ValueError as exc:
+            assert "single safe path component" in str(exc)
+        else:
+            raise AssertionError("unsafe pack_name should be rejected")
+
+    try:
+        default_pack_install_path(pack_name="community-general", version="../1.2.3")
+    except ValueError as exc:
+        assert "single safe path component" in str(exc)
+    else:
+        raise AssertionError("unsafe version should be rejected")
 
 
 def test_pull_signature_pack_rejects_non_community_pack(monkeypatch) -> None:

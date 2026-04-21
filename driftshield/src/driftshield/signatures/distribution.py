@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePath
 from urllib.parse import quote, urlparse
 from urllib.request import urlopen
 
@@ -59,21 +59,39 @@ def install_community_pack(
 
 
 def default_pack_install_path(*, pack_name: str, version: str) -> Path:
+    safe_pack_name = _require_safe_path_component(pack_name, field_name="pack_metadata.name")
+    safe_version = _require_safe_path_component(version, field_name="pack_metadata.version")
     return (
         Path.home()
         / ".local"
         / "share"
         / "driftshield"
         / "signatures"
-        / pack_name
-        / version
-        / f"{pack_name}.json"
+        / safe_pack_name
+        / safe_version
+        / f"{safe_pack_name}.json"
     )
 
 
 def _download_manifest_payload(source_url: str) -> dict[str, object]:
     with urlopen(source_url) as response:
         return json.loads(response.read().decode("utf-8"))
+
+
+def _require_safe_path_component(value: str, *, field_name: str) -> str:
+    candidate = value.strip()
+    if not candidate:
+        raise ValueError(f"{field_name} is required")
+
+    pure_path = PurePath(candidate)
+    if (
+        pure_path.name != candidate
+        or len(pure_path.parts) != 1
+        or candidate in {".", ".."}
+        or candidate.startswith(("/", "\\"))
+    ):
+        raise ValueError(f"{field_name} must be a single safe path component")
+    return candidate
 
 
 def describe_pack_source(source_url: str) -> str:
