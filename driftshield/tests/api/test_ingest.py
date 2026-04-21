@@ -2,6 +2,7 @@ import io
 import json
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -219,6 +220,23 @@ def test_ingest_recovers_from_duplicate_commit_race(client, auth_headers, sample
         "deduplicated": True,
     }
     assert emit_calls == []
+
+
+def test_ingest_crewai_transcript_with_explicit_parser(client, auth_headers):
+    fixture = (
+        Path(__file__).resolve().parents[1] / "fixtures" / "transcripts" / "sample_crewai_session.json"
+    )
+    response = client.post(
+        "/api/ingest",
+        headers=auth_headers,
+        files={"file": ("sample_crewai_session.json", io.BytesIO(fixture.read_bytes()), "application/json")},
+        data={"format": "crewai"},
+    )
+
+    assert response.status_code == 201
+    data = response.json()
+    assert data["total_events"] == 3
+    assert data["status"] == "created"
 
 
 def test_ingest_without_auth(client, sample_transcript):
