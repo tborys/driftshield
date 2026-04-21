@@ -19,6 +19,13 @@ console = Console(force_terminal=True)
 app = typer.Typer(help="Manage community signature pack distribution.")
 
 
+def _validate_repository(repository: str) -> str:
+    parts = repository.split("/", maxsplit=1)
+    if len(parts) != 2 or not parts[0].strip() or not parts[1].strip():
+        raise ValueError("--repository must use the format owner/repo")
+    return f"{parts[0].strip()}/{parts[1].strip()}"
+
+
 @app.command("pull")
 def pull_signature_pack(
     pack_name: str = typer.Argument(..., help="Community pack name without the .json suffix."),
@@ -49,13 +56,12 @@ def pull_signature_pack(
         console.print("[red]Error:[/red] --ref is required unless --url is provided.")
         raise typer.Exit(1)
 
-    resolved_source_url = source_url or build_github_raw_pack_url(
-        repository=repository,
-        ref=ref or "",
-        pack_name=pack_name,
-    )
-
     try:
+        resolved_source_url = source_url or build_github_raw_pack_url(
+            repository=_validate_repository(repository),
+            ref=ref or "",
+            pack_name=pack_name,
+        )
         pulled = install_community_pack(
             source_url=resolved_source_url,
             destination=output,

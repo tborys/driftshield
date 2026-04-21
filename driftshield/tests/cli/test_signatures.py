@@ -144,6 +144,25 @@ def test_default_pack_install_path_rejects_unsafe_manifest_path_components() -> 
         raise AssertionError("unsafe version should be rejected")
 
 
+def test_pull_signature_pack_rejects_invalid_repository_value() -> None:
+    result = runner.invoke(
+        app,
+        [
+            "signatures",
+            "pull",
+            "community-general",
+            "--ref",
+            "v1.2.3",
+            "--repository",
+            "tborys",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "Could not pull pack" in result.output
+    assert "owner/repo" in result.output
+
+
 def test_pull_signature_pack_rejects_non_community_pack(monkeypatch) -> None:
     def fake_urlopen(source_url: str) -> DummyResponse:
         return DummyResponse(_community_pack_payload(pack_kind="private"))
