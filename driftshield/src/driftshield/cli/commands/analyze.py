@@ -30,7 +30,7 @@ def analyze(
         "auto",
         "--parser",
         "-p",
-        help="Parser to use (auto, claude_code).",
+        help="Parser to use (auto, claude_code, claude_desktop, codex_cli, codex_desktop, crewai, langchain, openclaw).",
     ),
     verbose: bool = typer.Option(
         False,
