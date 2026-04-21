@@ -11,6 +11,7 @@ from driftshield.cli.commands.ingest import ingest
 from driftshield.cli.commands.inspect import inspect
 from driftshield.cli.commands.list import list_sessions
 from driftshield.cli.commands.report import report_command
+from driftshield.cli.commands.telemetry import app as telemetry_app
 
 app = typer.Typer(
     name="driftshield",
@@ -27,6 +28,7 @@ app.command(name="export-validations")(export_validations)
 app.command(name="generate-fixtures")(generate_fixtures)
 app.command()(ingest)
 app.add_typer(connectors_app, name="connectors")
+app.add_typer(telemetry_app, name="telemetry")
 
 
 def version_callback(value: bool) -> None:
