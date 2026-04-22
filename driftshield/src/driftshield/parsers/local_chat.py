@@ -8,6 +8,7 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 from driftshield.core.models import CanonicalEvent, EventType
+from driftshield.core.normalization import normalize_events
 
 
 class LocalChatTranscriptParser:
@@ -32,18 +33,29 @@ class LocalChatTranscriptParser:
         path = Path(file_path)
         content = path.read_text()
         if path.suffix == ".jsonl":
-            return self._parse_jsonl(content)
-        return self._parse_json(json.loads(content))
+            return normalize_events(
+                self._parse_jsonl(content),
+                source_type=self.source_type,
+                source_path=str(path),
+            )
+        return normalize_events(
+            self._parse_json(json.loads(content)),
+            source_type=self.source_type,
+            source_path=str(path),
+        )
 
     def parse(self, content: str) -> list[CanonicalEvent]:
         stripped = content.lstrip()
         if stripped.startswith("["):
-            return self._parse_json(json.loads(content))
+            return normalize_events(self._parse_json(json.loads(content)), source_type=self.source_type)
         if stripped.startswith("{"):
             if "\n" not in stripped:
-                return self._parse_json(json.loads(content))
-            return self._parse_jsonl(content)
-        return self._parse_jsonl(content)
+                return normalize_events(
+                    self._parse_json(json.loads(content)),
+                    source_type=self.source_type,
+                )
+            return normalize_events(self._parse_jsonl(content), source_type=self.source_type)
+        return normalize_events(self._parse_jsonl(content), source_type=self.source_type)
 
     def _parse_jsonl(self, content: str) -> list[CanonicalEvent]:
         messages: list[dict] = []

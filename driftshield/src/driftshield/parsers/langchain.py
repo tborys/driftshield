@@ -8,6 +8,7 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 from driftshield.core.models import CanonicalEvent, EventType
+from driftshield.core.normalization import normalize_events
 
 
 class LangChainParser:
@@ -21,7 +22,11 @@ class LangChainParser:
         return "langchain"
 
     def parse_file(self, file_path: str) -> list[CanonicalEvent]:
-        return self.parse(Path(file_path).read_text())
+        return normalize_events(
+            self.parse(Path(file_path).read_text()),
+            source_type=self.source_type,
+            source_path=file_path,
+        )
 
     def parse(self, content: str) -> list[CanonicalEvent]:
         payload = json.loads(content)
@@ -84,7 +89,7 @@ class LangChainParser:
             events.append(event)
             previous_event_id = event.id
 
-        return events
+        return normalize_events(events, source_type=self.source_type)
 
     def _normalise_runs(self, payload: dict | list) -> list[dict]:
         if isinstance(payload, list):

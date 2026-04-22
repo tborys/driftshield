@@ -8,6 +8,7 @@ from pathlib import Path
 from driftshield.cli.parsers import PARSERS, get_parser
 from driftshield.core.analysis.session import analyze_session
 from driftshield.core.models import CanonicalEvent, Session as DomainSession, SessionStatus
+from driftshield.core.normalization import normalize_events
 from driftshield.db.persistence import IngestOutcome, IngestProvenance, PersistenceService
 
 
@@ -47,6 +48,7 @@ class TranscriptIngestService:
         events = parser.parse(content)
         if not events:
             raise ValueError("No events parsed from transcript")
+        normalize_events(events, source_type=parser.source_type, source_path=source_path)
 
         target_session_id = existing_session_id or uuid.uuid4()
         _stabilize_event_ids(events, target_session_id)

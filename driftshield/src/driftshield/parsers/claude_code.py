@@ -7,6 +7,7 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 from driftshield.core.models import CanonicalEvent, EventType
+from driftshield.core.normalization import normalize_events
 
 
 class ClaudeCodeParser:
@@ -45,7 +46,11 @@ class ClaudeCodeParser:
     def parse_file(self, file_path: str) -> list[CanonicalEvent]:
         """Parse transcript from file path."""
         content = Path(file_path).read_text()
-        return self.parse(content)
+        return normalize_events(
+            self.parse(content),
+            source_type=self.source_type,
+            source_path=file_path,
+        )
 
     def parse(self, content: str) -> list[CanonicalEvent]:
         """Parse raw JSONL content into canonical events."""
@@ -151,7 +156,7 @@ class ClaudeCodeParser:
                             events.append(text_event)
                             prev_event_id = text_event.id
 
-        return events
+        return normalize_events(events, source_type=self.source_type)
 
     def _create_tool_call_event(
         self,

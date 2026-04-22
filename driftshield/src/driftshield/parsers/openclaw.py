@@ -8,6 +8,7 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 from driftshield.core.models import CanonicalEvent, EventType
+from driftshield.core.normalization import normalize_events
 
 
 class OpenClawParser:
@@ -35,7 +36,11 @@ class OpenClawParser:
         return "openclaw"
 
     def parse_file(self, file_path: str) -> list[CanonicalEvent]:
-        return self.parse(Path(file_path).read_text())
+        return normalize_events(
+            self.parse(Path(file_path).read_text()),
+            source_type=self.source_type,
+            source_path=file_path,
+        )
 
     def parse(self, content: str) -> list[CanonicalEvent]:
         events: list[CanonicalEvent] = []
@@ -141,7 +146,7 @@ class OpenClawParser:
             if entry_id and previous_event_id is not None:
                 id_map[str(entry_id)] = previous_event_id
 
-        return events
+        return normalize_events(events, source_type=self.source_type)
 
     def _create_tool_call_event(
         self,
