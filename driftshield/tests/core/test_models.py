@@ -164,6 +164,27 @@ class TestCanonicalEvent:
         }
         assert payload["ambiguities"] == []
 
+    def test_event_preserves_list_based_constraints(self):
+        event = CanonicalEvent(
+            id=uuid4(),
+            session_id="session-123",
+            timestamp=datetime.now(timezone.utc),
+            event_type=EventType.TOOL_CALL,
+            agent_id="agent-1",
+            action="plan",
+            inputs={
+                "requirements": [
+                    "Ask for confirmation before deleting files.",
+                    "Stay within the repository root.",
+                ]
+            },
+        )
+
+        normalize_events([event], source_type="claude_code")
+
+        assert {"kind": "requirements", "value": "Ask for confirmation before deleting files.", "source": "inputs"} in event.constraints
+        assert {"kind": "requirements", "value": "Stay within the repository root.", "source": "inputs"} in event.constraints
+
 
 class TestSessionStatus:
     def test_status_values(self):

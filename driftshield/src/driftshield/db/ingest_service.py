@@ -48,10 +48,10 @@ class TranscriptIngestService:
         events = parser.parse(content)
         if not events:
             raise ValueError("No events parsed from transcript")
-        normalize_events(events, source_type=parser.source_type, source_path=source_path)
 
         target_session_id = existing_session_id or uuid.uuid4()
         _stabilize_event_ids(events, target_session_id)
+        normalize_events(events, source_type=parser.source_type, source_path=source_path)
         result = analyze_session(events, session_id=str(target_session_id))
         domain_session = DomainSession(
             id=target_session_id,

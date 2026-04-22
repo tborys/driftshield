@@ -99,10 +99,9 @@ def _actor_role(event: CanonicalEvent) -> str:
 
 
 def _parent_refs(event: CanonicalEvent) -> list[Any]:
-    refs = list(event.parent_event_refs or [])
-    if event.parent_event_id is not None and event.parent_event_id not in refs:
-        refs.insert(0, event.parent_event_id)
-    return refs
+    if event.parent_event_id is not None:
+        return [event.parent_event_id]
+    return list(event.parent_event_refs or [])
 
 
 def _source_refs(
@@ -270,8 +269,15 @@ def _extract_keyed_refs(
     refs: list[dict[str, str]] = []
     if isinstance(payload, dict):
         for key, value in payload.items():
-            if key in keys and isinstance(value, (str, int, float)):
-                refs.append({key_name: key, "value": str(value), "source": payload_name})
+            if key in keys:
+                refs.extend(
+                    _extract_matched_key_values(
+                        value,
+                        matched_key=key,
+                        payload_name=payload_name,
+                        key_name=key_name,
+                    )
+                )
             elif isinstance(value, dict):
                 refs.extend(_extract_keyed_refs(value, f"{payload_name}.{key}", keys, key_name=key_name))
             elif isinstance(value, list):
@@ -287,6 +293,42 @@ def _extract_keyed_refs(
     elif isinstance(payload, list):
         for index, item in enumerate(payload):
             refs.extend(_extract_keyed_refs(item, f"{payload_name}[{index}]", keys, key_name=key_name))
+    return refs
+
+
+def _extract_matched_key_values(
+    value: object,
+    *,
+    matched_key: str,
+    payload_name: str,
+    key_name: str,
+) -> list[dict[str, str]]:
+    if isinstance(value, (str, int, float)):
+        return [{key_name: matched_key, "value": str(value), "source": payload_name}]
+
+    refs: list[dict[str, str]] = []
+    if isinstance(value, list):
+        for item in value:
+            refs.extend(
+                _extract_matched_key_values(
+                    item,
+                    matched_key=matched_key,
+                    payload_name=payload_name,
+                    key_name=key_name,
+                )
+            )
+        return refs
+
+    if isinstance(value, dict):
+        for nested_value in value.values():
+            refs.extend(
+                _extract_matched_key_values(
+                    nested_value,
+                    matched_key=matched_key,
+                    payload_name=payload_name,
+                    key_name=key_name,
+                )
+            )
     return refs
 
 
