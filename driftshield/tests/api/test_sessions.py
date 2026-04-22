@@ -54,6 +54,21 @@ def seeded_session(db_session):
         source_path="uploads/daily/test-agent.jsonl",
         parser_version="claude_code@1",
         ingested_at=datetime.now(timezone.utc),
+        metadata_json={
+            "signature_match": {
+                "status": "matched",
+                "primary_family_id": "coverage_gap",
+                "matched_family_ids": ["coverage_gap", "verification_failure"],
+                "match_count": 2,
+                "summary": "Matched two known failure families.",
+            },
+            "recurrence_status": {
+                "status": "recurring",
+                "cluster_id": "cluster-42",
+                "recurrence_count": 3,
+                "summary": "Seen in three related runs.",
+            },
+        },
     )
     node = DecisionNodeModel(
         id=uuid.uuid4(),
@@ -142,7 +157,70 @@ def test_get_session_detail(client, auth_headers, seeded_session):
             "evidence_refs": ["risk:coverage_gap"],
         },
     }
-    assert "recurrence_level" not in data
+    assert data["signature_match"] == {
+        "status": "matched",
+        "primary_family_id": "coverage_gap",
+        "matched_family_ids": ["coverage_gap", "verification_failure"],
+        "match_count": 2,
+        "summary": "Matched two known failure families.",
+        "raw": {
+            "status": "matched",
+            "primary_family_id": "coverage_gap",
+            "matched_family_ids": ["coverage_gap", "verification_failure"],
+            "match_count": 2,
+            "summary": "Matched two known failure families.",
+        },
+    }
+    assert data["recurrence_status"] == {
+        "status": "recurring",
+        "cluster_id": "cluster-42",
+        "recurrence_count": 3,
+        "summary": "Seen in three related runs.",
+        "raw": {
+            "status": "recurring",
+            "cluster_id": "cluster-42",
+            "recurrence_count": 3,
+            "summary": "Seen in three related runs.",
+        },
+    }
+
+
+def test_get_session_detail_falls_back_to_legacy_outcome_status(client, auth_headers, db_session):
+    session_id = uuid.uuid4()
+    db_session.add(
+        SessionModel(
+            id=session_id,
+            agent_id="legacy-agent",
+            started_at=datetime.now(timezone.utc),
+            status="completed",
+            metadata_json={
+                "signature_summary": {
+                    "outcome_status": "matched",
+                    "primary_family_id": "coverage_gap",
+                    "matched_family_ids": ["coverage_gap"],
+                    "match_count": 1,
+                }
+            },
+        )
+    )
+    db_session.add(
+        DecisionNodeModel(
+            id=uuid.uuid4(),
+            session_id=session_id,
+            sequence_num=1,
+            event_type="TOOL_CALL",
+            action="legacy-review",
+            coverage_gap=True,
+        )
+    )
+    db_session.commit()
+
+    response = client.get(f"/api/sessions/{session_id}", headers=auth_headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["signature_match"]["status"] == "matched"
+    assert payload["signature_match"]["primary_family_id"] == "coverage_gap"
 
 
 def test_get_session_detail_orders_explanations_by_sequence(client, auth_headers, db_session):

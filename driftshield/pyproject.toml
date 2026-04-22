@@ -39,10 +39,14 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/driftshield"]
-
-[tool.hatch.build]
 include = [
     "src/driftshield/signatures/packs/*.json",
+]
+
+[tool.hatch.build.targets.sdist]
+only-include = [
+    "src/driftshield",
+    "tests",
 ]
 
 [tool.pytest.ini_options]

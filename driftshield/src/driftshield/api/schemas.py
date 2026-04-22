@@ -41,11 +41,30 @@ class SessionSummary(BaseModel):
     provenance: SessionProvenanceResponse | None = None
 
 
+class SignatureMatchSummaryResponse(BaseModel):
+    status: str | None = None
+    primary_family_id: str | None = None
+    matched_family_ids: list[str] = Field(default_factory=list)
+    match_count: int | None = None
+    summary: str | None = None
+    raw: dict[str, Any] | None = None
+
+
+class RecurrenceStatusResponse(BaseModel):
+    status: str | None = None
+    cluster_id: str | None = None
+    recurrence_count: int | None = None
+    summary: str | None = None
+    raw: dict[str, Any] | None = None
+
+
 class SessionDetail(SessionSummary):
     total_events: int = 0
     flagged_events: int = 0
     risk_summary: dict[str, int] = Field(default_factory=dict)
     explanations: SessionExplanationsResponse | None = None
+    signature_match: SignatureMatchSummaryResponse | None = None
+    recurrence_status: RecurrenceStatusResponse | None = None
 
 
 class GraphNodeResponse(BaseModel):
