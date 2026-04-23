@@ -10,6 +10,7 @@ from driftshield.core.models import (
     Session,
     SessionStatus,
 )
+from driftshield.core.normalization import normalize_events
 
 
 class TestEventType:
@@ -124,6 +125,87 @@ class TestCanonicalEvent:
             risk_classification=RiskClassification(coverage_gap=True),
         )
         assert event_with_risk.has_risk_flags() is True
+
+    def test_event_exports_phase_2b_normalized_shape(self):
+        event = CanonicalEvent(
+            id=uuid4(),
+            session_id="session-123",
+            timestamp=datetime.now(timezone.utc),
+            event_type=EventType.TOOL_CALL,
+            agent_id="agent-1",
+            action="read_file",
+            inputs={"file_path": "README.md"},
+            outputs={"result": {"content": "# DriftShield"}},
+            metadata={"tool_use_id": "tool-1"},
+        )
+
+        normalize_events([event], source_type="claude_code")
+        payload = event.to_normalized_dict()
+
+        assert payload["event_kind"] == "tool_call"
+        assert payload["ordinal"] == 0
+        assert payload["actor"] == {"id": "agent-1", "role": "assistant"}
+        assert payload["summary"] == "read_file completed on README.md"
+        assert payload["parent_event_refs"] == []
+        assert payload["source_refs"] == [
+            {"kind": "parser", "value": "claude_code"},
+            {"kind": "tool_use_id", "value": "tool-1"},
+        ]
+        assert payload["artifact_refs"] == [
+            {"kind": "file_path", "value": "README.md", "source": "inputs"},
+        ]
+        assert payload["tool_activity"] == {
+            "name": "read_file",
+            "category": None,
+            "raw_name": "read_file",
+            "status": "completed",
+            "input_keys": ["file_path"],
+            "has_outputs": True,
+        }
+        assert payload["ambiguities"] == []
+
+    def test_event_preserves_list_based_constraints(self):
+        event = CanonicalEvent(
+            id=uuid4(),
+            session_id="session-123",
+            timestamp=datetime.now(timezone.utc),
+            event_type=EventType.TOOL_CALL,
+            agent_id="agent-1",
+            action="plan",
+            inputs={
+                "requirements": [
+                    "Ask for confirmation before deleting files.",
+                    "Stay within the repository root.",
+                ]
+            },
+        )
+
+        normalize_events([event], source_type="claude_code")
+
+        assert {"kind": "requirements", "value": "Ask for confirmation before deleting files.", "source": "inputs"} in event.constraints
+        assert {"kind": "requirements", "value": "Stay within the repository root.", "source": "inputs"} in event.constraints
+
+    def test_event_handles_non_mapping_tool_inputs_in_normalization(self):
+        event = CanonicalEvent(
+            id=uuid4(),
+            session_id="session-123",
+            timestamp=datetime.now(timezone.utc),
+            event_type=EventType.TOOL_CALL,
+            agent_id="agent-1",
+            action="shell",
+            inputs=["npm", "test"],
+        )
+
+        normalize_events([event], source_type="claude_code")
+
+        assert event.tool_activity == {
+            "name": "shell",
+            "category": None,
+            "raw_name": "shell",
+            "status": "pending",
+            "input_keys": [],
+            "has_outputs": False,
+        }
 
 
 class TestSessionStatus:

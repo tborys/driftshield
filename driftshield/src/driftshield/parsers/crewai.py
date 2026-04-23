@@ -8,6 +8,7 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 from driftshield.core.models import CanonicalEvent, EventType
+from driftshield.core.normalization import normalize_events
 
 
 class CrewAIParser:
@@ -18,7 +19,11 @@ class CrewAIParser:
         return "crewai"
 
     def parse_file(self, file_path: str) -> list[CanonicalEvent]:
-        return self.parse(Path(file_path).read_text())
+        return normalize_events(
+            self.parse(Path(file_path).read_text()),
+            source_type=self.source_type,
+            source_path=file_path,
+        )
 
     def parse(self, content: str) -> list[CanonicalEvent]:
         payload = json.loads(content)
@@ -89,7 +94,7 @@ class CrewAIParser:
                 events.append(output_event)
                 previous_event_id = output_event.id
 
-        return events
+        return normalize_events(events, source_type=self.source_type)
 
     def _build_task_event(
         self,
