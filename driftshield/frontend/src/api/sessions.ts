@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiFetch } from './client'
 import type { SessionSummary, SessionDetail, PaginatedResponse, SessionListFilters } from '../types/session'
-import type { GraphResponse } from '../types/graph'
+import { normalizeGraphResponse } from '../types/graph'
 import type { ValidationCreatePayload, ValidationRecord } from '../types/validation'
 
 function buildSessionQuery(page: number, perPage: number, filters: SessionListFilters) {
@@ -46,7 +46,7 @@ export function useSession(id: string) {
 export function useSessionGraph(id: string) {
   return useQuery({
     queryKey: ['session-graph', id],
-    queryFn: () => apiFetch<GraphResponse>(`/api/sessions/${id}/graph`),
+    queryFn: async () => normalizeGraphResponse(await apiFetch<unknown>(`/api/sessions/${id}/graph`)),
     enabled: !!id,
   })
 }

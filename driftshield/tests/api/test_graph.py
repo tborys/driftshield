@@ -8,7 +8,11 @@ from sqlalchemy.orm import Session as DBSession
 from sqlalchemy.pool import StaticPool
 
 from driftshield.api.app import create_app
+from driftshield.core.analysis.session import analyze_session
+from driftshield.core.models import Session as DomainSession, SessionStatus
 from driftshield.db.models import Base, SessionModel, DecisionNodeModel
+from driftshield.db.persistence import PersistenceService
+from tests.fixtures.lineage import branching_lineage_events
 
 
 @pytest.fixture
@@ -82,3 +86,37 @@ def test_get_graph(client, auth_headers, seeded_graph):
 def test_get_graph_not_found(client, auth_headers):
     response = client.get(f"/api/sessions/{uuid.uuid4()}/graph", headers=auth_headers)
     assert response.status_code == 404
+
+
+def test_get_graph_returns_branching_lineage_metadata(client, auth_headers, db_session):
+    session_id = uuid.uuid4()
+    events = branching_lineage_events(str(session_id))
+    result = analyze_session(events)
+
+    PersistenceService(db_session).save(
+        DomainSession(
+            id=session_id,
+            agent_id="test-agent",
+            started_at=datetime.now(timezone.utc),
+            status=SessionStatus.COMPLETED,
+        ),
+        result,
+    )
+    db_session.commit()
+
+    response = client.get(f"/api/sessions/{session_id}/graph", headers=auth_headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload["edges"]) == 4
+
+    merge_node = next(node for node in payload["nodes"] if node["action"] == "synthesize_findings")
+    assert merge_node["parent_node_id"] == str(events[1].id)
+    assert merge_node["parent_node_ids"] == [str(events[1].id), str(events[2].id)]
+    assert merge_node["evidence_refs"]
+
+    merge_edges = [edge for edge in payload["edges"] if edge["target"] == str(events[-1].id)]
+    assert len(merge_edges) == 2
+    assert [edge["source"] for edge in merge_edges] == [str(events[1].id), str(events[2].id)]
+    assert all(edge["relationship"] == "explicit_parent" for edge in merge_edges)
+    assert all(edge["confidence"] == 1.0 for edge in merge_edges)

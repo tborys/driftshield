@@ -113,6 +113,10 @@ export function InvestigationView({ graph }: InvestigationViewProps) {
     () => [...graph.nodes].sort((a, b) => a.sequence_num - b.sequence_num),
     [graph.nodes],
   )
+  const inferredEdges = useMemo(
+    () => graph.edges.filter((edge) => edge.inferred),
+    [graph.edges],
+  )
 
   const primaryNarrative = findPrimaryNarrative(selectedNode)
 
@@ -131,6 +135,7 @@ export function InvestigationView({ graph }: InvestigationViewProps) {
               <div className="flex flex-wrap gap-2">
                 <Badge variant="outline">{graph.nodes.length} nodes</Badge>
                 <Badge variant="outline">{graph.edges.length} edges</Badge>
+                <Badge variant="outline">{inferredEdges.length} inferred edges</Badge>
                 <Badge variant={flaggedNodes.length > 0 ? 'destructive' : 'secondary'}>
                   {flaggedNodes.length} flagged
                 </Badge>
@@ -218,8 +223,21 @@ export function InvestigationView({ graph }: InvestigationViewProps) {
                     </div>
                     <div className="mt-2 text-sm font-medium">{node.action || 'Unknown action'}</div>
                     <div className="mt-1 text-xs text-muted-foreground">
-                      {node.parent_node_id ? `Parent ${node.parent_node_id.slice(0, 8)}…` : 'Root node'}
+                      {node.parent_node_ids.length === 0
+                        ? 'Root node'
+                        : node.parent_node_ids.length === 1
+                          ? `Parent ${(node.parent_node_id ?? node.parent_node_ids[0])?.slice(0, 8)}…`
+                          : `${node.parent_node_ids.length} parents linked`}
                     </div>
+                    {node.lineage_ambiguities.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {node.lineage_ambiguities.map((ambiguity) => (
+                          <Badge key={ambiguity} variant="outline" className="text-[11px]">
+                            {ambiguity.replace(/_/g, ' ')}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
                   </button>
                   {index < timelineNodes.length - 1 && <Separator className="my-3" />}
                 </div>
