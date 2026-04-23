@@ -185,6 +185,28 @@ class TestCanonicalEvent:
         assert {"kind": "requirements", "value": "Ask for confirmation before deleting files.", "source": "inputs"} in event.constraints
         assert {"kind": "requirements", "value": "Stay within the repository root.", "source": "inputs"} in event.constraints
 
+    def test_event_handles_non_mapping_tool_inputs_in_normalization(self):
+        event = CanonicalEvent(
+            id=uuid4(),
+            session_id="session-123",
+            timestamp=datetime.now(timezone.utc),
+            event_type=EventType.TOOL_CALL,
+            agent_id="agent-1",
+            action="shell",
+            inputs=["npm", "test"],
+        )
+
+        normalize_events([event], source_type="claude_code")
+
+        assert event.tool_activity == {
+            "name": "shell",
+            "category": None,
+            "raw_name": "shell",
+            "status": "pending",
+            "input_keys": [],
+            "has_outputs": False,
+        }
+
 
 class TestSessionStatus:
     def test_status_values(self):

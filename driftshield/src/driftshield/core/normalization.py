@@ -214,7 +214,7 @@ def _tool_activity(event: CanonicalEvent) -> dict[str, Any] | None:
         "category": event.metadata.get("semantic_action_category"),
         "raw_name": event.metadata.get("raw_action") or event.action,
         "status": status,
-        "input_keys": sorted(str(key) for key in event.inputs.keys()),
+        "input_keys": _mapping_keys(event.inputs),
         "has_outputs": bool(event.outputs),
     }
 
@@ -367,3 +367,9 @@ def _first_non_empty(*values: object) -> str | None:
         if isinstance(value, str) and value.strip():
             return value.strip()
     return None
+
+
+def _mapping_keys(value: object) -> list[str]:
+    if not isinstance(value, dict):
+        return []
+    return sorted(str(key) for key in value.keys())
