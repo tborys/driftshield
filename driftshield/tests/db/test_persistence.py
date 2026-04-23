@@ -21,6 +21,7 @@ from driftshield.db.models import (
     SessionModel,
 )
 from driftshield.db.persistence import IngestProvenance, PersistenceService
+from tests.fixtures.lineage import branching_lineage_events
 
 
 @pytest.fixture
@@ -144,6 +145,44 @@ def test_load_graph(db_session, sample_analysis_result):
     graph = service.load_graph(domain_session.id)
     assert graph is not None
     assert len(graph.nodes) == 2
+
+
+def test_load_graph_round_trips_branching_lineage_metadata(db_session):
+    session_id = uuid.uuid4()
+    events = branching_lineage_events(str(session_id))
+    result = analyze_session(events)
+    domain_session = DomainSession(
+        id=session_id,
+        agent_id="test-agent",
+        started_at=datetime.now(timezone.utc),
+        status=SessionStatus.COMPLETED,
+    )
+
+    service = PersistenceService(db_session)
+    service.save(domain_session, result)
+    db_session.commit()
+
+    stored_merge = (
+        db_session.query(DecisionNodeModel)
+        .filter(DecisionNodeModel.session_id == session_id)
+        .order_by(DecisionNodeModel.sequence_num.desc())
+        .first()
+    )
+    assert stored_merge is not None
+    assert stored_merge.metadata_json["lineage"]["parent_ids"] == [
+        str(events[1].id),
+        str(events[2].id),
+    ]
+
+    graph = service.load_graph(session_id)
+    assert graph is not None
+    merge_node = graph.get_node(events[-1].id)
+    assert merge_node is not None
+    assert merge_node.parent_ids == [events[1].id, events[2].id]
+    assert [edge.source_id for edge in graph.incoming_edges(events[-1].id)] == [
+        events[1].id,
+        events[2].id,
+    ]
 
 
 def test_load_nonexistent_session(db_session):

@@ -69,22 +69,33 @@ class SessionDetail(SessionSummary):
 
 class GraphNodeResponse(BaseModel):
     id: uuid.UUID
+    node_kind: str | None = None
     event_type: str
     action: str | None = None
+    summary: str | None = None
+    confidence: float | None = None
     sequence_num: int
     risk_flags: list[str] = Field(default_factory=list)
     risk_explanations: dict[str, ExplanationPayloadResponse] = Field(default_factory=dict)
+    evidence_refs: list[str] = Field(default_factory=list)
     is_inflection: bool = False
     inflection_explanation: ExplanationPayloadResponse | None = None
     inputs: dict[str, Any] | None = None
     outputs: dict[str, Any] | None = None
     metadata: dict[str, Any] | None = None
     parent_node_id: uuid.UUID | None = None
+    parent_node_ids: list[uuid.UUID] = Field(default_factory=list)
+    lineage_ambiguities: list[str] = Field(default_factory=list)
 
 
 class GraphEdgeResponse(BaseModel):
     source: uuid.UUID
     target: uuid.UUID
+    relationship: str = "explicit_parent"
+    confidence: float = 1.0
+    inferred: bool = False
+    reason: str | None = None
+    evidence_refs: list[str] = Field(default_factory=list)
 
 
 class GraphResponse(BaseModel):

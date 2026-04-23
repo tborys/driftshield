@@ -280,37 +280,58 @@ def get_session_graph(
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    nodes = (
+    node_models = (
         db.query(DecisionNodeModel)
         .filter(DecisionNodeModel.session_id == session_id)
         .order_by(DecisionNodeModel.sequence_num)
         .all()
     )
-    if not nodes:
+    if not node_models:
         raise HTTPException(status_code=404, detail="No graph data for session")
 
+    graph = PersistenceService(db).load_graph(session_id)
+    if graph is None:
+        raise HTTPException(status_code=404, detail="No graph data for session")
+
+    node_models_by_id = {node.id: node for node in node_models}
     graph_nodes = []
-    edges = []
-    for node in nodes:
+    for graph_node in graph.nodes:
+        node = node_models_by_id[graph_node.id]
         graph_nodes.append(
             GraphNodeResponse(
-                id=node.id,
+                id=graph_node.id,
+                node_kind=graph_node.node_kind,
                 event_type=node.event_type,
                 action=node.action,
-                sequence_num=node.sequence_num,
+                summary=graph_node.summary,
+                confidence=graph_node.confidence,
+                sequence_num=graph_node.sequence_num,
                 risk_flags=_risk_flags_for_node(node),
                 risk_explanations=_risk_explanations_for_node(node),
+                evidence_refs=list(graph_node.evidence_refs),
                 is_inflection=node.is_inflection_node,
                 inflection_explanation=_explanation_payload(node.inflection_explanation),
                 inputs=node.inputs,
                 outputs=node.outputs,
                 metadata=node.metadata_json,
-                parent_node_id=node.parent_node_id,
+                parent_node_id=graph_node.primary_parent_id,
+                parent_node_ids=list(graph_node.parent_ids),
+                lineage_ambiguities=list(graph_node.lineage_ambiguities),
             )
         )
 
-        if node.parent_node_id is not None:
-            edges.append(GraphEdgeResponse(source=node.parent_node_id, target=node.id))
+    edges = [
+        GraphEdgeResponse(
+            source=edge.source_id,
+            target=edge.target_id,
+            relationship=edge.relationship,
+            confidence=edge.confidence,
+            inferred=edge.inferred,
+            reason=edge.reason,
+            evidence_refs=list(edge.evidence_refs),
+        )
+        for edge in graph.edges
+    ]
 
     return GraphResponse(
         session_id=session_id,

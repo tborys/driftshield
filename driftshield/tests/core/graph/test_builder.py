@@ -3,8 +3,10 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
+from driftshield.core.normalization import normalize_events
 from driftshield.core.models import CanonicalEvent, EventType
 from driftshield.core.graph.builder import build_graph
+from tests.fixtures.lineage import branching_lineage_events, linear_lineage_events
 
 
 def make_event(**kwargs) -> CanonicalEvent:
@@ -106,3 +108,47 @@ class TestBuildGraph:
         children = graph.get_children(root.id)
         assert len(children) == 2
         assert {c.action for c in children} == {"child1", "child2"}
+
+    def test_build_graph_creates_branching_dag_from_multi_parent_refs(self):
+        """Normalized parent refs can form an explicit DAG instead of a single chain."""
+        events = normalize_events(branching_lineage_events())
+
+        graph = build_graph(events, session_id=events[0].session_id)
+
+        merge_event = events[-1]
+        merge_node = graph.get_node(merge_event.id)
+        assert merge_node is not None
+        assert merge_node.parent_ids == [events[1].id, events[2].id]
+
+        incoming = graph.incoming_edges(merge_node.id)
+        assert [edge.source_id for edge in incoming] == [events[1].id, events[2].id]
+        assert all(edge.confidence == 1.0 for edge in incoming)
+        assert all(edge.relationship == "explicit_parent" for edge in incoming)
+        assert [parent.id for parent in graph.get_parents(merge_node.id)] == [
+            events[1].id,
+            events[2].id,
+        ]
+        assert graph.get_parent(merge_node.id).id == events[1].id
+        assert merge_node.evidence_refs
+
+    def test_build_graph_marks_inferred_edges_when_parent_refs_are_missing(self):
+        """Missing parents stay explicit through inferred low-confidence edges."""
+        events = linear_lineage_events()
+        events[1].parent_event_id = None
+        events[1].parent_event_refs = []
+        events[2].parent_event_id = None
+        events[2].parent_event_refs = []
+
+        normalize_events(events)
+        graph = build_graph(events, session_id=events[0].session_id)
+
+        inferred_edges = [edge for edge in graph.edges if edge.inferred]
+        assert len(inferred_edges) == 2
+        assert all(edge.relationship == "inferred_sequence" for edge in inferred_edges)
+        assert all(edge.confidence < 1.0 for edge in inferred_edges)
+        assert all(edge.reason == "missing_parent_ref" for edge in inferred_edges)
+        assert [node.action for node in graph.path_to_root(events[-1].id)] == [
+            "draft_summary",
+            "inspect_failure",
+            "load_session",
+        ]

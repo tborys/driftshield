@@ -176,6 +176,19 @@ class PersistenceService:
                 result.inflection_node is not None
                 and node.id == result.inflection_node.id
             )
+            metadata_json = dict(node.event.metadata or {})
+            metadata_json["lineage"] = {
+                "summary": node.summary,
+                "confidence": node.confidence,
+                "evidence_refs": list(node.evidence_refs),
+                "parent_ids": [str(parent_id) for parent_id in node.parent_ids],
+                "primary_parent_id": str(node.primary_parent_id) if node.primary_parent_id else None,
+                "lineage_ambiguities": list(node.lineage_ambiguities),
+                "incoming_edges": [
+                    edge.to_dict()
+                    for edge in result.graph.incoming_edges(node.id)
+                ],
+            }
             node_model = DecisionNodeModel(
                 id=node.id,
                 session_id=session.id,
@@ -186,7 +199,7 @@ class PersistenceService:
                 action=node.action,
                 inputs=node.inputs,
                 outputs=node.outputs,
-                metadata_json=node.event.metadata,
+                metadata_json=metadata_json,
                 assumption_mutation=risk.assumption_mutation,
                 policy_divergence=risk.policy_divergence,
                 constraint_violation=risk.constraint_violation,
@@ -339,6 +352,21 @@ def _node_model_to_event(node: DecisionNodeModel, session_id: uuid.UUID) -> Cano
     metadata = dict(node.metadata_json or {})
     if node.inflection_explanation is not None:
         metadata["inflection_explanation"] = node.inflection_explanation
+    lineage = metadata.get("lineage") if isinstance(metadata.get("lineage"), dict) else {}
+
+    parent_refs: list[uuid.UUID] = []
+    raw_parent_ids = lineage.get("parent_ids")
+    if isinstance(raw_parent_ids, list):
+        for parent_id in raw_parent_ids:
+            if not isinstance(parent_id, str):
+                continue
+            try:
+                parent_refs.append(uuid.UUID(parent_id))
+            except ValueError:
+                continue
+
+    if node.parent_node_id is not None and node.parent_node_id not in parent_refs:
+        parent_refs.insert(0, node.parent_node_id)
 
     return CanonicalEvent(
         id=node.id,
@@ -351,6 +379,13 @@ def _node_model_to_event(node: DecisionNodeModel, session_id: uuid.UUID) -> Cano
         inputs=node.inputs,
         outputs=node.outputs,
         metadata=metadata,
+        summary=lineage.get("summary") if isinstance(lineage.get("summary"), str) else None,
+        parent_event_refs=parent_refs,
+        ambiguities=[
+            str(item)
+            for item in lineage.get("lineage_ambiguities", [])
+            if isinstance(item, str)
+        ],
         risk_classification=RiskClassification(
             assumption_mutation=node.assumption_mutation,
             policy_divergence=node.policy_divergence,

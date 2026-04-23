@@ -77,8 +77,12 @@ export function NodeInspector({ node }: NodeInspectorProps) {
     <div className="p-4 space-y-4 overflow-y-auto">
       <div>
         <h3 className="font-semibold text-lg">{node.action || 'Unknown action'}</h3>
+        {node.summary && (
+          <p className="mt-1 text-sm text-muted-foreground">{node.summary}</p>
+        )}
         <div className="flex flex-wrap items-center gap-2 mt-1">
           <Badge variant="secondary">{node.event_type}</Badge>
+          {node.node_kind && <Badge variant="outline">{node.node_kind}</Badge>}
           <span className="text-sm text-muted-foreground">#{node.sequence_num}</span>
           {node.is_inflection && (
             <Badge variant="outline" className="border-orange-500 text-orange-600">
@@ -110,6 +114,40 @@ export function NodeInspector({ node }: NodeInspectorProps) {
               </CardContent>
             </Card>
           )}
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Lineage context</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <div>
+                {node.parent_node_ids.length === 0
+                  ? 'Root node'
+                  : `${node.parent_node_ids.length} parent link${node.parent_node_ids.length > 1 ? 's' : ''}`}
+              </div>
+              {node.parent_node_ids.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {node.parent_node_ids.map((parentId) => (
+                    <Badge key={parentId} variant="outline" className="font-mono text-[11px]">
+                      {parentId}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+              {node.lineage_ambiguities.length > 0 && (
+                <div className="space-y-2">
+                  <div className="text-xs font-medium text-muted-foreground">Lineage ambiguities</div>
+                  <div className="flex flex-wrap gap-2">
+                    {node.lineage_ambiguities.map((ambiguity) => (
+                      <Badge key={ambiguity} variant="secondary">
+                        {ambiguity.replace(/_/g, ' ')}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           {explanationEntries.length > 0 ? (
             explanationEntries.map(([flag, explanation]) => (
@@ -151,6 +189,21 @@ export function NodeInspector({ node }: NodeInspectorProps) {
                 <CardTitle className="text-sm">Evidence refs</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
+                {node.evidence_refs.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                      Node evidence
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {node.evidence_refs.map((ref) => (
+                        <Badge key={`node-${ref}`} variant="secondary" className="font-mono text-[11px]">
+                          {ref}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {explanationEntries.map(([flag, explanation]) => (
                   <div key={flag} className="space-y-2">
                     <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
