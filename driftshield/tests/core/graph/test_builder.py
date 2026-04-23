@@ -68,6 +68,33 @@ class TestBuildGraph:
         assert [n.action for n in nodes] == ["first", "second", "third"]
         assert [n.sequence_num for n in nodes] == [0, 1, 2]
 
+    def test_build_prefers_normalized_ordinals_over_timestamp(self):
+        """Normalized event order wins when timestamps are less reliable."""
+        t1 = datetime(2025, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
+        t2 = datetime(2025, 1, 1, 10, 0, 1, tzinfo=timezone.utc)
+
+        later_timestamp_but_first = make_event(
+            session_id="s1",
+            action="first",
+            timestamp=t2,
+            ordinal=0,
+        )
+        earlier_timestamp_but_second = make_event(
+            session_id="s1",
+            action="second",
+            timestamp=t1,
+            ordinal=1,
+            parent_event_id=later_timestamp_but_first.id,
+        )
+
+        graph = build_graph(
+            [earlier_timestamp_but_second, later_timestamp_but_first],
+            session_id="s1",
+        )
+
+        assert [node.action for node in graph.nodes] == ["first", "second"]
+        assert [node.sequence_num for node in graph.nodes] == [0, 1]
+
     def test_build_with_branching(self):
         """Graph can have nodes with multiple children."""
         root = make_event(session_id="s1", action="root")

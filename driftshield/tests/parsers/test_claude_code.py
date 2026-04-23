@@ -2,8 +2,6 @@
 
 from pathlib import Path
 
-import pytest
-
 from driftshield.parsers.claude_code import ClaudeCodeParser
 from driftshield.core.models import EventType
 
@@ -146,3 +144,22 @@ class TestClaudeCodeParser:
 
         assert len(events) == 1
         assert events[0].outputs == {}
+
+    def test_non_object_tool_inputs_do_not_break_normalization(self):
+        parser = ClaudeCodeParser()
+        content = "\n".join([
+            '{"sessionId":"s6","type":"assistant","timestamp":"2026-03-01T10:00:00Z","message":{"model":"claude","content":[{"type":"tool_use","id":"t6","name":"bash","input":["npm","test"]}]}}'
+        ])
+
+        events = parser.parse(content)
+
+        assert len(events) == 1
+        assert events[0].inputs == ["npm", "test"]
+        assert events[0].tool_activity == {
+            "name": "bash",
+            "category": "shell",
+            "raw_name": "bash",
+            "status": "pending",
+            "input_keys": [],
+            "has_outputs": False,
+        }

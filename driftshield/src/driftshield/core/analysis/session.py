@@ -15,6 +15,7 @@ from driftshield.core.analysis.risk import RiskAnalyzer
 from driftshield.core.graph.builder import build_graph
 from driftshield.core.graph.models import DecisionNode, LineageGraph
 from driftshield.core.models import CanonicalEvent, ExplanationPayload
+from driftshield.core.normalization import normalize_events
 
 
 @dataclass
@@ -68,6 +69,8 @@ def analyze_session(
     if session_id is None:
         session_id = events[0].session_id
 
+    normalized_events = normalize_events(events)
+
     analyzer = RiskAnalyzer(
         heuristics=[
             CoverageGapHeuristic(),
@@ -78,7 +81,7 @@ def analyze_session(
         ],
         context_builders=[load_analysis_context],
     )
-    analyzed_events = analyzer.analyze(events)
+    analyzed_events = analyzer.analyze(normalized_events)
     graph = build_graph(analyzed_events, session_id=session_id)
 
     inflection_node = None

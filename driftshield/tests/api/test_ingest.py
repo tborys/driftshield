@@ -13,6 +13,7 @@ from sqlalchemy.pool import StaticPool
 
 from driftshield.api.app import create_app
 from driftshield.db.models import Base, DecisionNodeModel, SessionModel
+from driftshield.db.ingest_service import TranscriptIngestService
 from driftshield.db.persistence import IngestOutcome, PersistenceService
 from driftshield.telemetry import TelemetryService
 
@@ -118,6 +119,53 @@ def test_ingest_persists_provenance_fields(client, auth_headers, sample_transcri
     assert session.source_path == "uploads/daily/transcript.jsonl"
     assert session.parser_version == "claude_code@1"
     assert session.ingested_at is not None
+
+
+def test_ingest_stabilizes_normalized_parent_refs(db_session):
+    transcript = "\n".join(
+        [
+            json.dumps(
+                {
+                    "sessionId": "normalized-parent-refs",
+                    "type": "user",
+                    "message": {"role": "user", "content": "Inspect README then summarize it."},
+                    "timestamp": "2026-04-22T10:00:00+00:00",
+                }
+            ),
+            json.dumps(
+                {
+                    "sessionId": "normalized-parent-refs",
+                    "type": "assistant",
+                    "message": {
+                        "model": "claude",
+                        "content": [
+                            {
+                                "type": "tool_use",
+                                "id": "tool_1",
+                                "name": "Read",
+                                "input": {"file_path": "README.md"},
+                            }
+                        ],
+                    },
+                    "timestamp": "2026-04-22T10:00:01+00:00",
+                }
+            ),
+        ]
+    ).encode()
+
+    _, analysis_result = TranscriptIngestService(db_session).ingest_bytes(
+        raw_bytes=transcript,
+        parser_name="claude_code",
+        source_path="uploads/daily/transcript.jsonl",
+    )
+
+    assert len(analysis_result.events) == 2
+    event_ids = {event.id for event in analysis_result.events}
+    child_event = analysis_result.events[1]
+
+    assert child_event.parent_event_refs == [analysis_result.events[0].id]
+    assert set(child_event.parent_event_refs).issubset(event_ids)
+    assert {"kind": "source_path", "value": "uploads/daily/transcript.jsonl"} in child_event.source_refs
 
 
 def test_reingest_is_explicit_dedupe_no_op(client, auth_headers, sample_transcript, db_session):

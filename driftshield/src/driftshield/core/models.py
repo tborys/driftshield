@@ -3,6 +3,7 @@
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+from typing import Any
 from uuid import UUID
 
 
@@ -113,6 +114,16 @@ class CanonicalEvent:
     outputs: dict = None
     metadata: dict = None
     risk_classification: RiskClassification | None = None
+    ordinal: int | None = None
+    actor: dict[str, str] | None = None
+    summary: str | None = None
+    parent_event_refs: list[UUID] = field(default_factory=list)
+    source_refs: list[dict[str, str]] = field(default_factory=list)
+    artifact_refs: list[dict[str, str]] = field(default_factory=list)
+    constraints: list[dict[str, str]] = field(default_factory=list)
+    tool_activity: dict[str, Any] | None = None
+    failure_context: dict[str, Any] | None = None
+    ambiguities: list[str] = field(default_factory=list)
 
     def __post_init__(self):
         if self.inputs is None:
@@ -121,12 +132,52 @@ class CanonicalEvent:
             self.outputs = {}
         if self.metadata is None:
             self.metadata = {}
+        if self.actor is None:
+            self.actor = {
+                "id": self.agent_id or "unknown",
+                "role": self._default_actor_role(),
+            }
+        if self.parent_event_id is not None and not self.parent_event_refs:
+            self.parent_event_refs = [self.parent_event_id]
 
     def has_risk_flags(self) -> bool:
         """Return True if this event has any risk flags set."""
         if self.risk_classification is None:
             return False
         return self.risk_classification.has_any_flag()
+
+    @property
+    def event_id(self) -> UUID:
+        return self.id
+
+    @property
+    def event_kind(self) -> str:
+        return self.event_type.value.lower()
+
+    def to_normalized_dict(self) -> dict[str, Any]:
+        return {
+            "event_id": str(self.id),
+            "session_id": self.session_id,
+            "ordinal": self.ordinal,
+            "timestamp": self.timestamp.isoformat(),
+            "event_kind": self.event_kind,
+            "actor": dict(self.actor or {}),
+            "summary": self.summary,
+            "parent_event_refs": [str(ref) for ref in self.parent_event_refs],
+            "source_refs": [dict(ref) for ref in self.source_refs],
+            "artifact_refs": [dict(ref) for ref in self.artifact_refs],
+            "constraints": [dict(ref) for ref in self.constraints],
+            "tool_activity": dict(self.tool_activity or {}) if self.tool_activity else None,
+            "failure_context": dict(self.failure_context or {}) if self.failure_context else None,
+            "ambiguities": list(self.ambiguities),
+        }
+
+    def _default_actor_role(self) -> str:
+        if self.agent_id == "user":
+            return "user"
+        if self.agent_id == "system":
+            return "system"
+        return "assistant"
 
 
 class SessionStatus(str, Enum):

@@ -12,8 +12,14 @@ def build_graph(events: list[CanonicalEvent], session_id: str) -> LineageGraph:
     """
     graph = LineageGraph(session_id=session_id)
 
-    # Sort events by timestamp
-    sorted_events = sorted(events, key=lambda e: e.timestamp)
+    sorted_events = sorted(
+        events,
+        key=lambda e: (
+            e.ordinal is None,
+            e.ordinal if e.ordinal is not None else 0,
+            e.timestamp,
+        ),
+    )
 
     # Create nodes with sequence numbers
     for seq_num, event in enumerate(sorted_events):
