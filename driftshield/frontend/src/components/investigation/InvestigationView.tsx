@@ -226,7 +226,7 @@ export function InvestigationView({ graph }: InvestigationViewProps) {
                       {node.parent_node_ids.length === 0
                         ? 'Root node'
                         : node.parent_node_ids.length === 1
-                          ? `Parent ${node.parent_node_id?.slice(0, 8)}…`
+                          ? `Parent ${(node.parent_node_id ?? node.parent_node_ids[0])?.slice(0, 8)}…`
                           : `${node.parent_node_ids.length} parents linked`}
                     </div>
                     {node.lineage_ambiguities.length > 0 && (

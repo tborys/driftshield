@@ -372,6 +372,7 @@ def _node_model_to_event(node: DecisionNodeModel, session_id: uuid.UUID) -> Cano
         id=node.id,
         session_id=str(session_id),
         timestamp=node.timestamp,
+        ordinal=node.sequence_num,
         event_type=EventType(node.event_type),
         agent_id="",
         action=node.action,

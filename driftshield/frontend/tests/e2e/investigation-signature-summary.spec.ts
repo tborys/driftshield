@@ -281,3 +281,67 @@ test('shows node evidence refs even when no explanations were returned', async (
   await expect(page.getByText('artifact_refs[0]')).toBeVisible()
   await expect(page.getByText('No evidence refs were returned for this node.')).not.toBeVisible()
 })
+
+test('uses parent_node_ids fallback for single-parent timeline labels', async ({ page }) => {
+  await page.route(`**/api/sessions/${sessionId}`, async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: sessionId,
+        agent_id: 'claude-code',
+        external_id: null,
+        status: 'completed',
+        started_at: '2026-04-21T10:00:00Z',
+        ended_at: '2026-04-21T10:05:00Z',
+        risk_flag_count: 0,
+        has_inflection: false,
+        provenance: null,
+        total_events: 2,
+        flagged_events: 0,
+        risk_summary: {},
+      }),
+    })
+  })
+
+  await page.route(`**/api/sessions/${sessionId}/graph`, async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        session_id: sessionId,
+        provenance: null,
+        nodes: [
+          buildGraphNode({
+            id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+            action: 'root',
+            sequence_num: 0,
+          }),
+          buildGraphNode({
+            id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+            action: 'child',
+            sequence_num: 1,
+            parent_node_id: null,
+            parent_node_ids: ['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'],
+          }),
+        ],
+        edges: [
+          {
+            source: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+            target: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+            relationship: 'explicit_parent',
+            confidence: 1,
+            inferred: false,
+            reason: null,
+            evidence_refs: [],
+          },
+        ],
+      }),
+    })
+  })
+
+  await mockSessionArtifacts(page)
+
+  await page.goto(`/sessions/${sessionId}`)
+
+  await expect(page.getByText('Parent aaaaaaaa…')).toBeVisible()
+  await expect(page.getByText('Parent undefined…')).not.toBeVisible()
+})
