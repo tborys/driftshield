@@ -1,6 +1,46 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 
 const sessionId = '11111111-1111-1111-1111-111111111111'
+
+function buildGraphNode(overrides: Record<string, unknown> = {}) {
+  return {
+    id: '22222222-2222-2222-2222-222222222222',
+    node_kind: null,
+    event_type: 'TOOL_CALL',
+    action: 'review_sections',
+    summary: null,
+    confidence: null,
+    sequence_num: 1,
+    risk_flags: [],
+    risk_explanations: {},
+    evidence_refs: [],
+    is_inflection: false,
+    inflection_explanation: null,
+    inputs: null,
+    outputs: null,
+    metadata: null,
+    parent_node_id: null,
+    parent_node_ids: [],
+    lineage_ambiguities: [],
+    ...overrides,
+  }
+}
+
+async function mockSessionArtifacts(page: Page) {
+  await page.route(`**/api/sessions/${sessionId}/reports`, async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify([]),
+    })
+  })
+
+  await page.route(`**/api/sessions/${sessionId}/validations`, async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify([]),
+    })
+  })
+}
 
 test('shows matched signature and recurrence states from backend metadata', async ({ page }) => {
   await page.route(`**/api/sessions/${sessionId}`, async (route) => {
@@ -51,32 +91,17 @@ test('shows matched signature and recurrence states from backend metadata', asyn
         session_id: sessionId,
         provenance: null,
         nodes: [
-          {
-            id: '22222222-2222-2222-2222-222222222222',
-            event_type: 'TOOL_CALL',
-            action: 'review_sections',
-            sequence_num: 1,
+          buildGraphNode({
             risk_flags: ['coverage_gap'],
-            risk_explanations: {},
             is_inflection: true,
-            inflection_explanation: null,
-            inputs: null,
-            outputs: null,
-            metadata: null,
-            parent_node_id: null,
-          },
+          }),
         ],
         edges: [],
       }),
     })
   })
 
-  await page.route(`**/api/sessions/${sessionId}/reports`, async (route) => {
-    await route.fulfill({
-      contentType: 'application/json',
-      body: JSON.stringify([]),
-    })
-  })
+  await mockSessionArtifacts(page)
 
   await page.goto(`/sessions/${sessionId}`)
 
@@ -116,14 +141,75 @@ test('shows unavailable state when backend omits signature and recurrence fields
         session_id: sessionId,
         provenance: null,
         nodes: [
-          {
-            id: '22222222-2222-2222-2222-222222222222',
+          buildGraphNode({
             event_type: 'OUTPUT',
             action: 'respond',
+          }),
+        ],
+        edges: [],
+      }),
+    })
+  })
+
+  await mockSessionArtifacts(page)
+
+  await page.goto(`/sessions/${sessionId}`)
+
+  await expect(page.getByText('This session does not expose signature or recurrence data yet.')).toBeVisible()
+})
+
+test('keeps the investigation view alive when graph payload omits lineage fields', async ({ page }) => {
+  await page.route(`**/api/sessions/${sessionId}`, async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: sessionId,
+        agent_id: 'claude-code',
+        external_id: null,
+        status: 'completed',
+        started_at: '2026-04-21T10:00:00Z',
+        ended_at: '2026-04-21T10:05:00Z',
+        risk_flag_count: 2,
+        has_inflection: true,
+        provenance: null,
+        total_events: 4,
+        flagged_events: 2,
+        risk_summary: { coverage_gap: 2 },
+        explanations: { risk_explanations: {}, inflection_explanation: null },
+        signature_match: {
+          status: 'matched',
+          primary_family_id: 'coverage_gap',
+          matched_family_ids: ['coverage_gap'],
+          match_count: 1,
+          summary: 'Matched one known failure family.',
+          raw: null,
+        },
+        recurrence_status: {
+          status: 'new',
+          cluster_id: null,
+          recurrence_count: 0,
+          summary: 'No related runs yet.',
+          raw: null,
+        },
+      }),
+    })
+  })
+
+  await page.route(`**/api/sessions/${sessionId}/graph`, async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        session_id: sessionId,
+        provenance: null,
+        nodes: [
+          {
+            id: '22222222-2222-2222-2222-222222222222',
+            event_type: 'TOOL_CALL',
+            action: 'review_sections',
             sequence_num: 1,
-            risk_flags: [],
+            risk_flags: ['coverage_gap'],
             risk_explanations: {},
-            is_inflection: false,
+            is_inflection: true,
             inflection_explanation: null,
             inputs: null,
             outputs: null,
@@ -136,14 +222,11 @@ test('shows unavailable state when backend omits signature and recurrence fields
     })
   })
 
-  await page.route(`**/api/sessions/${sessionId}/reports`, async (route) => {
-    await route.fulfill({
-      contentType: 'application/json',
-      body: JSON.stringify([]),
-    })
-  })
+  await mockSessionArtifacts(page)
 
   await page.goto(`/sessions/${sessionId}`)
 
-  await expect(page.getByText('This session does not expose signature or recurrence data yet.')).toBeVisible()
+  await expect(page.getByText('Signature: matched')).toBeVisible()
+  await expect(page.getByText('Investigation graph')).toBeVisible()
+  await expect(page.getByText('Root node')).toBeVisible()
 })
