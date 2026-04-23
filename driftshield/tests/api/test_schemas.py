@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 
 from driftshield.api.schemas import (
-    SessionSummary, SessionDetail, GraphNodeResponse, GraphEdgeResponse,
+    SessionSummary, GraphNodeResponse, GraphEdgeResponse,
     GraphResponse, PaginatedResponse, IngestResponse,
 )
 
@@ -28,14 +28,28 @@ def test_graph_response_structure():
         nodes=[
             GraphNodeResponse(
                 id=node_id,
+                node_kind="tool_call",
                 event_type="TOOL_CALL",
                 action="read_file",
+                summary="Read the target file.",
                 sequence_num=1,
                 risk_flags=[],
+                evidence_refs=["event:test"],
                 is_inflection=False,
+                parent_node_ids=[],
+                lineage_ambiguities=[],
             )
         ],
-        edges=[],
+        edges=[
+            GraphEdgeResponse(
+                source=node_id,
+                target=node_id,
+                relationship="explicit_parent",
+                confidence=1.0,
+                inferred=False,
+                evidence_refs=["event:test"],
+            )
+        ],
     )
     data = g.model_dump(mode="json")
     assert len(data["nodes"]) == 1

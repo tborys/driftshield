@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo } from 'react'
 import {
   ReactFlow, Background, Controls, MiniMap,
   useNodesState, useEdgesState,
-  type Node, type Edge,
+  MarkerType, type Node, type Edge,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import Dagre from '@dagrejs/dagre'
@@ -52,6 +52,15 @@ function layoutGraph(graph: GraphResponse, selectedNodeId: string | null): { nod
     id: `e-${index}`,
     source: edge.source,
     target: edge.target,
+    type: 'smoothstep',
+    animated: edge.inferred,
+    label: edge.inferred ? 'inferred' : undefined,
+    style: edge.inferred ? { strokeDasharray: '6 4', stroke: '#f59e0b' } : undefined,
+    labelStyle: edge.inferred ? { fill: '#b45309', fontSize: 11 } : undefined,
+    markerEnd: {
+      type: MarkerType.ArrowClosed,
+      color: edge.inferred ? '#f59e0b' : '#64748b',
+    },
   }))
 
   return { nodes, edges }

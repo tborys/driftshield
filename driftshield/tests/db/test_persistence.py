@@ -21,6 +21,7 @@ from driftshield.db.models import (
     SessionModel,
 )
 from driftshield.db.persistence import IngestProvenance, PersistenceService
+from tests.fixtures.lineage import branching_lineage_events
 
 
 @pytest.fixture
@@ -144,6 +145,94 @@ def test_load_graph(db_session, sample_analysis_result):
     graph = service.load_graph(domain_session.id)
     assert graph is not None
     assert len(graph.nodes) == 2
+
+
+def test_load_graph_round_trips_branching_lineage_metadata(db_session):
+    session_id = uuid.uuid4()
+    events = branching_lineage_events(str(session_id))
+    result = analyze_session(events)
+    domain_session = DomainSession(
+        id=session_id,
+        agent_id="test-agent",
+        started_at=datetime.now(timezone.utc),
+        status=SessionStatus.COMPLETED,
+    )
+
+    service = PersistenceService(db_session)
+    service.save(domain_session, result)
+    db_session.commit()
+
+    stored_merge = (
+        db_session.query(DecisionNodeModel)
+        .filter(DecisionNodeModel.session_id == session_id)
+        .order_by(DecisionNodeModel.sequence_num.desc())
+        .first()
+    )
+    assert stored_merge is not None
+    assert stored_merge.metadata_json["lineage"]["parent_ids"] == [
+        str(events[1].id),
+        str(events[2].id),
+    ]
+
+    graph = service.load_graph(session_id)
+    assert graph is not None
+    merge_node = graph.get_node(events[-1].id)
+    assert merge_node is not None
+    assert merge_node.parent_ids == [events[1].id, events[2].id]
+    assert [edge.source_id for edge in graph.incoming_edges(events[-1].id)] == [
+        events[1].id,
+        events[2].id,
+    ]
+
+
+def test_load_graph_preserves_stored_sequence_order_when_timestamps_disagree(db_session):
+    session_id = uuid.uuid4()
+    service = PersistenceService(db_session)
+
+    session = SessionModel(
+        id=session_id,
+        agent_id="test-agent",
+        started_at=datetime.now(timezone.utc),
+        status="completed",
+    )
+    later_timestamp = datetime(2026, 4, 23, 10, 0, 5, tzinfo=timezone.utc)
+    earlier_timestamp = datetime(2026, 4, 23, 10, 0, 1, tzinfo=timezone.utc)
+
+    first_id = uuid.uuid4()
+    second_id = uuid.uuid4()
+    db_session.add(session)
+    db_session.add_all(
+        [
+            DecisionNodeModel(
+                id=first_id,
+                session_id=session_id,
+                sequence_num=0,
+                timestamp=later_timestamp,
+                event_type="TOOL_CALL",
+                action="first",
+                parent_node_id=None,
+                metadata_json={},
+            ),
+            DecisionNodeModel(
+                id=second_id,
+                session_id=session_id,
+                sequence_num=1,
+                timestamp=earlier_timestamp,
+                event_type="OUTPUT",
+                action="second",
+                parent_node_id=first_id,
+                metadata_json={},
+            ),
+        ]
+    )
+    db_session.commit()
+
+    graph = service.load_graph(session_id)
+
+    assert graph is not None
+    assert [node.id for node in graph.nodes] == [first_id, second_id]
+    assert [node.sequence_num for node in graph.nodes] == [0, 1]
+    assert graph.incoming_edges(second_id)[0].source_id == first_id
 
 
 def test_load_nonexistent_session(db_session):
