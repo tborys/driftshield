@@ -103,9 +103,8 @@ def analyze_session(
         last_node = graph.nodes[-1]
         selection = select_inflection_node(graph, last_node.id)
         candidate_break_point = selection.candidate_break_point
-        if candidate_break_point.is_identified:
-            inflection_node = selection.node
-            inflection_explanation = selection.explanation
+        inflection_node = selection.node
+        inflection_explanation = selection.explanation
 
     flagged_count = sum(1 for event in analyzed_events if event.has_risk_flags())
 

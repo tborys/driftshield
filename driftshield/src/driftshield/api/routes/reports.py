@@ -50,18 +50,10 @@ def generate_report(
     result = AnalysisResult(
         events=events,
         graph=graph,
-        inflection_node=(
-            selection.node
-            if selection is not None and selection.candidate_break_point.is_identified
-            else None
-        ),
+        inflection_node=selection.node if selection is not None else None,
         total_events=len(events),
         flagged_events=flagged,
-        inflection_explanation=(
-            selection.explanation
-            if selection is not None and selection.candidate_break_point.is_identified
-            else None
-        ),
+        inflection_explanation=selection.explanation if selection is not None else None,
         candidate_break_point=selection.candidate_break_point if selection is not None else None,
     )
 
