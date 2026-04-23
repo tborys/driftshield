@@ -73,6 +73,7 @@ def generate_report(
     )
     db.add(report)
     db.flush()
+    service.upsert_forensic_case(domain_session, result, report=report)
 
     return {"id": report.id, "report_type": report.report_type}
 

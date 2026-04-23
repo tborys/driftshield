@@ -167,6 +167,30 @@ class ReportModel(Base):
     generated_by: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
+class ForensicCaseModel(Base):
+    __tablename__ = "forensic_cases"
+    __table_args__ = (
+        Index("ix_forensic_cases_session_id", "session_id", unique=True),
+        Index("ix_forensic_cases_state", "state"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    session_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("sessions.id"), nullable=False
+    )
+    report_id: Mapped[uuid.UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("reports.id"), nullable=True, index=True
+    )
+    state: Mapped[str] = mapped_column(String, nullable=False)
+    artifact_refs: Mapped[list[dict]] = mapped_column(JSON, nullable=False, default=list)
+    review_refs: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    audit_refs: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class AnalystValidationModel(Base):
     __tablename__ = "analyst_validations"
 
