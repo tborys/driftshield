@@ -300,13 +300,23 @@ class PersistenceService:
             )
             self._db.add(model)
 
-        model.report_id = report.id if report is not None else None
-        model.state = (
-            ForensicCaseState.REPORTED.value if report is not None else ForensicCaseState.DRAFT.value
-        )
+        effective_report = report
+        next_state = ForensicCaseState.DRAFT.value
+        if effective_report is not None:
+            next_state = ForensicCaseState.REPORTED.value
+        elif model.report_id is not None:
+            effective_report = self._db.get(ReportModel, model.report_id)
+            next_state = model.state
+
+        model.report_id = effective_report.id if effective_report is not None else None
+        model.state = next_state
         model.artifact_refs = [
             ref.to_dict()
-            for ref in _build_forensic_case_artifact_refs(session, result, report=report)
+            for ref in _build_forensic_case_artifact_refs(
+                session,
+                result,
+                report=effective_report,
+            )
         ]
         model.review_refs = list(model.review_refs or [])
         model.audit_refs = list(model.audit_refs or [])

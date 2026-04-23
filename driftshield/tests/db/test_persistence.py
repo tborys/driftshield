@@ -216,6 +216,43 @@ def test_upsert_forensic_case_links_report_and_round_trips_by_case_id(
     )
 
 
+def test_upsert_preserves_existing_reported_case_when_no_new_report_is_supplied(
+    db_session,
+    sample_analysis_result,
+):
+    result, domain_session = sample_analysis_result
+    service = PersistenceService(db_session)
+    service.save(domain_session, result)
+    db_session.flush()
+
+    report = ReportModel(
+        id=uuid.uuid4(),
+        session_id=domain_session.id,
+        generated_at=datetime.now(timezone.utc),
+        report_type="full",
+        content_markdown="# Report",
+        content_json={"sections": []},
+        generated_by="system",
+    )
+    db_session.add(report)
+    db_session.flush()
+    service.upsert_forensic_case(domain_session, result, report=report)
+    db_session.flush()
+
+    service.upsert(domain_session, result)
+    db_session.commit()
+
+    loaded_case = service.load_case_for_session(domain_session.id)
+
+    assert loaded_case is not None
+    assert loaded_case.state is ForensicCaseState.REPORTED
+    assert loaded_case.report_id == report.id
+    assert any(
+        ref.role == "report_artifact" and ref.target_ref == str(report.id)
+        for ref in loaded_case.artifact_refs
+    )
+
+
 def test_load_graph_round_trips_branching_lineage_metadata(db_session):
     session_id = uuid.uuid4()
     events = branching_lineage_events(str(session_id))
