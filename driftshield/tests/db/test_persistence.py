@@ -263,6 +263,7 @@ def test_upsert_preserves_terminal_case_state_when_report_is_regenerated(
     sample_analysis_result,
     terminal_state,
 ):
+    # Regenerating a report should refresh linkage without reopening finished cases.
     result, domain_session = sample_analysis_result
     service = PersistenceService(db_session)
     service.save(domain_session, result)
