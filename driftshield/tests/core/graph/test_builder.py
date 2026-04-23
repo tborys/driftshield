@@ -152,3 +152,24 @@ class TestBuildGraph:
             "inspect_failure",
             "load_session",
         ]
+
+    def test_build_graph_drops_explicit_edges_when_parent_targets_are_missing(self):
+        """Dangling parent refs should fall back to one inferred edge without orphan sources."""
+        events = linear_lineage_events()
+        missing_parent_id = uuid4()
+        events[2].parent_event_id = missing_parent_id
+        events[2].parent_event_refs = [missing_parent_id]
+
+        graph = build_graph(events, session_id=events[0].session_id)
+
+        target_node = graph.get_node(events[2].id)
+        assert target_node is not None
+        incoming_edges = graph.incoming_edges(events[2].id)
+
+        assert len(incoming_edges) == 1
+        assert incoming_edges[0].source_id == events[1].id
+        assert incoming_edges[0].relationship == "inferred_sequence"
+        assert incoming_edges[0].inferred is True
+        assert incoming_edges[0].reason == "missing_parent_target"
+        assert target_node.parent_ids == [events[1].id]
+        assert all(graph.get_node(edge.source_id) is not None for edge in graph.edges)

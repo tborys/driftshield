@@ -72,6 +72,8 @@ export function NodeInspector({ node }: NodeInspectorProps) {
   const hasInputs = hasPayloadData(node.inputs)
   const hasOutputs = hasPayloadData(node.outputs)
   const hasMetadata = hasPayloadData(node.metadata)
+  const hasEvidenceContent =
+    node.evidence_refs.length > 0 || explanationEntries.length > 0 || node.inflection_explanation !== null
 
   return (
     <div className="p-4 space-y-4 overflow-y-auto">
@@ -174,7 +176,7 @@ export function NodeInspector({ node }: NodeInspectorProps) {
         </TabsContent>
 
         <TabsContent value="evidence" className="space-y-4 pt-2">
-          {explanationEntries.length === 0 && !node.inflection_explanation ? (
+          {!hasEvidenceContent ? (
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm">Evidence trail</CardTitle>

@@ -230,3 +230,54 @@ test('keeps the investigation view alive when graph payload omits lineage fields
   await expect(page.getByText('Investigation graph')).toBeVisible()
   await expect(page.getByText('Root node')).toBeVisible()
 })
+
+test('shows node evidence refs even when no explanations were returned', async ({ page }) => {
+  await page.route(`**/api/sessions/${sessionId}`, async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: sessionId,
+        agent_id: 'claude-code',
+        external_id: null,
+        status: 'completed',
+        started_at: '2026-04-21T10:00:00Z',
+        ended_at: '2026-04-21T10:05:00Z',
+        risk_flag_count: 0,
+        has_inflection: false,
+        provenance: null,
+        total_events: 1,
+        flagged_events: 0,
+        risk_summary: {},
+      }),
+    })
+  })
+
+  await page.route(`**/api/sessions/${sessionId}/graph`, async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        session_id: sessionId,
+        provenance: null,
+        nodes: [
+          buildGraphNode({
+            event_type: 'OUTPUT',
+            action: 'respond',
+            evidence_refs: ['event:22222222-2222-2222-2222-222222222222', 'artifact_refs[0]'],
+          }),
+        ],
+        edges: [],
+      }),
+    })
+  })
+
+  await mockSessionArtifacts(page)
+
+  await page.goto(`/sessions/${sessionId}`)
+  await page.getByRole('button', { name: /respond/i }).click()
+  await page.getByRole('tab', { name: 'Evidence' }).click()
+
+  await expect(page.getByText('Node evidence')).toBeVisible()
+  await expect(page.getByText('event:22222222-2222-2222-2222-222222222222')).toBeVisible()
+  await expect(page.getByText('artifact_refs[0]')).toBeVisible()
+  await expect(page.getByText('No evidence refs were returned for this node.')).not.toBeVisible()
+})

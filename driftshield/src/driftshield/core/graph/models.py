@@ -138,6 +138,9 @@ class LineageGraph:
             return
         parent_ids = node.parent_ids or ([node.primary_parent_id] if node.primary_parent_id else [])
         for index, parent_id in enumerate(parent_ids):
+            parent_node = self._nodes.get(parent_id)
+            if parent_node is None or parent_node.sequence_num >= node.sequence_num:
+                continue
             self.add_edge(
                 LineageEdge(
                     source_id=parent_id,
