@@ -303,7 +303,13 @@ class PersistenceService:
         effective_report = report
         next_state = ForensicCaseState.DRAFT.value
         if effective_report is not None:
-            next_state = ForensicCaseState.REPORTED.value
+            if model.state in {
+                ForensicCaseState.REVIEWED.value,
+                ForensicCaseState.CLOSED.value,
+            }:
+                next_state = model.state
+            else:
+                next_state = ForensicCaseState.REPORTED.value
         elif model.report_id is not None:
             effective_report = self._db.get(ReportModel, model.report_id)
             next_state = model.state

@@ -19,6 +19,7 @@ from driftshield.core.models import (
 from driftshield.db.models import (
     Base,
     DecisionNodeModel,
+    ForensicCaseModel,
     ReportModel,
     SessionModel,
 )
@@ -249,6 +250,68 @@ def test_upsert_preserves_existing_reported_case_when_no_new_report_is_supplied(
     assert loaded_case.report_id == report.id
     assert any(
         ref.role == "report_artifact" and ref.target_ref == str(report.id)
+        for ref in loaded_case.artifact_refs
+    )
+
+
+@pytest.mark.parametrize(
+    "terminal_state",
+    [ForensicCaseState.REVIEWED, ForensicCaseState.CLOSED],
+)
+def test_upsert_preserves_terminal_case_state_when_report_is_regenerated(
+    db_session,
+    sample_analysis_result,
+    terminal_state,
+):
+    result, domain_session = sample_analysis_result
+    service = PersistenceService(db_session)
+    service.save(domain_session, result)
+    db_session.flush()
+
+    first_report = ReportModel(
+        id=uuid.uuid4(),
+        session_id=domain_session.id,
+        generated_at=datetime.now(timezone.utc),
+        report_type="full",
+        content_markdown="# Report",
+        content_json={"sections": []},
+        generated_by="system",
+    )
+    db_session.add(first_report)
+    db_session.flush()
+    service.upsert_forensic_case(domain_session, result, report=first_report)
+    db_session.flush()
+
+    stored_case = (
+        db_session.query(ForensicCaseModel)
+        .filter(ForensicCaseModel.session_id == domain_session.id)
+        .one()
+    )
+    stored_case.state = terminal_state.value
+    db_session.flush()
+
+    regenerated_report = ReportModel(
+        id=uuid.uuid4(),
+        session_id=domain_session.id,
+        generated_at=datetime.now(timezone.utc),
+        report_type="summary",
+        content_markdown="# Regenerated Report",
+        content_json={"sections": []},
+        generated_by="system",
+    )
+    db_session.add(regenerated_report)
+    db_session.flush()
+
+    service.upsert_forensic_case(domain_session, result, report=regenerated_report)
+    db_session.commit()
+
+    loaded_case = service.load_case_for_session(domain_session.id)
+
+    assert loaded_case is not None
+    assert loaded_case.state is terminal_state
+    assert loaded_case.report_id == regenerated_report.id
+    assert any(
+        ref.role == "report_artifact" and ref.target_ref == str(regenerated_report.id)
         for ref in loaded_case.artifact_refs
     )
 
