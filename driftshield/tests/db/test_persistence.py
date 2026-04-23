@@ -11,6 +11,7 @@ from driftshield.core.models import (
     CanonicalEvent,
     EventType,
     ExplanationPayload,
+    ForensicCaseState,
     RiskClassification,
     Session as DomainSession,
     SessionStatus,
@@ -18,6 +19,7 @@ from driftshield.core.models import (
 from driftshield.db.models import (
     Base,
     DecisionNodeModel,
+    ReportModel,
     SessionModel,
 )
 from driftshield.db.persistence import IngestProvenance, PersistenceService
@@ -145,6 +147,73 @@ def test_load_graph(db_session, sample_analysis_result):
     graph = service.load_graph(domain_session.id)
     assert graph is not None
     assert len(graph.nodes) == 2
+
+
+def test_save_creates_draft_forensic_case_with_evidence_artifacts(
+    db_session,
+    sample_analysis_result,
+):
+    result, domain_session = sample_analysis_result
+    service = PersistenceService(db_session)
+    service.save(domain_session, result)
+    db_session.commit()
+
+    case = service.load_case_for_session(domain_session.id)
+
+    assert case is not None
+    assert case.state is ForensicCaseState.DRAFT
+    assert case.report_id is None
+    assert any(
+        ref.kind == "analysis_session" and ref.target_ref == str(domain_session.id)
+        for ref in case.artifact_refs
+    )
+    assert any(
+        ref.kind == "lineage_graph"
+        and ref.metadata["node_count"] == len(result.graph.nodes)
+        for ref in case.artifact_refs
+    )
+    assert any(
+        ref.role == "event_artifact"
+        and ref.target_ref == str(result.graph.nodes[0].id)
+        and ref.metadata == {"kind": "path", "value": "/test", "source": "inputs"}
+        for ref in case.artifact_refs
+    )
+
+
+def test_upsert_forensic_case_links_report_and_round_trips_by_case_id(
+    db_session,
+    sample_analysis_result,
+):
+    result, domain_session = sample_analysis_result
+    service = PersistenceService(db_session)
+    service.save(domain_session, result)
+    db_session.flush()
+
+    report = ReportModel(
+        id=uuid.uuid4(),
+        session_id=domain_session.id,
+        generated_at=datetime.now(timezone.utc),
+        report_type="full",
+        content_markdown="# Report",
+        content_json={"sections": []},
+        generated_by="system",
+    )
+    db_session.add(report)
+    db_session.flush()
+
+    saved_case = service.upsert_forensic_case(domain_session, result, report=report)
+    db_session.commit()
+
+    loaded_case = service.load_case(saved_case.id)
+
+    assert loaded_case is not None
+    assert loaded_case.id == saved_case.id
+    assert loaded_case.state is ForensicCaseState.REPORTED
+    assert loaded_case.report_id == report.id
+    assert any(
+        ref.role == "report_artifact" and ref.target_ref == str(report.id)
+        for ref in loaded_case.artifact_refs
+    )
 
 
 def test_load_graph_round_trips_branching_lineage_metadata(db_session):
@@ -421,3 +490,17 @@ def test_save_and_load_graph_round_trip_explanations(db_session):
             "inflection_reason:point-of-no-return position near the observed failure",
         ],
     }
+
+
+def test_load_graph_preserves_normalized_event_artifact_refs(db_session, sample_analysis_result):
+    result, domain_session = sample_analysis_result
+    service = PersistenceService(db_session)
+    service.save(domain_session, result)
+    db_session.commit()
+
+    graph = service.load_graph(domain_session.id)
+
+    assert graph is not None
+    assert graph.nodes[0].event.artifact_refs == [
+        {"kind": "path", "value": "/test", "source": "inputs"}
+    ]

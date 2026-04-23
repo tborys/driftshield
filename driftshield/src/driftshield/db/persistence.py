@@ -7,16 +7,21 @@ from sqlalchemy.orm import Session as DBSession
 
 from driftshield.core.analysis.session import AnalysisResult
 from driftshield.core.graph.builder import build_graph
-from driftshield.core.graph.models import LineageGraph
+from driftshield.core.graph.models import DecisionNode, LineageGraph
 from driftshield.core.models import (
     CanonicalEvent,
     EventType,
+    ForensicArtifactRef,
+    ForensicCase,
+    ForensicCaseState,
     RiskClassification,
     Session as DomainSession,
     SessionStatus,
 )
 from driftshield.db.models import (
     DecisionNodeModel,
+    ForensicCaseModel,
+    ReportModel,
     SessionModel,
 )
 
@@ -116,6 +121,7 @@ class PersistenceService:
         self._db.add(session_model)
         self._db.flush()
         self._save_result(session, result)
+        self.upsert_forensic_case(session, result)
         return session_model
 
     def upsert(
@@ -135,6 +141,7 @@ class PersistenceService:
         )
         self._replace_session_result(session.id)
         self._save_result(session, result)
+        self.upsert_forensic_case(session, result)
         return session_model
 
     def _apply_session_fields(
@@ -189,6 +196,7 @@ class PersistenceService:
                     for edge in result.graph.incoming_edges(node.id)
                 ],
             }
+            metadata_json["normalized_event"] = _normalized_event_payload(node.event)
             node_model = DecisionNodeModel(
                 id=node.id,
                 session_id=session.id,
@@ -223,7 +231,10 @@ class PersistenceService:
             id=model.id,
             agent_id=model.agent_id or "",
             started_at=model.started_at,
+            external_id=model.external_id,
+            ended_at=model.ended_at,
             status=SessionStatus(model.status),
+            metadata=dict(model.metadata_json or {}),
         )
 
     def load_graph(self, session_id: uuid.UUID) -> LineageGraph | None:
@@ -245,6 +256,63 @@ class PersistenceService:
                 graph_node.is_inflection_node = node.is_inflection_node
 
         return graph
+
+    def load_case(self, case_id: uuid.UUID) -> ForensicCase | None:
+        model = self._db.get(ForensicCaseModel, case_id)
+        if model is None:
+            return None
+        return _case_model_to_domain(model)
+
+    def load_case_for_session(self, session_id: uuid.UUID) -> ForensicCase | None:
+        model = (
+            self._db.query(ForensicCaseModel)
+            .filter(ForensicCaseModel.session_id == session_id)
+            .one_or_none()
+        )
+        if model is None:
+            return None
+        return _case_model_to_domain(model)
+
+    def upsert_forensic_case(
+        self,
+        session: DomainSession,
+        result: AnalysisResult,
+        *,
+        report: ReportModel | None = None,
+    ) -> ForensicCase:
+        now = datetime.now(timezone.utc)
+        model = (
+            self._db.query(ForensicCaseModel)
+            .filter(ForensicCaseModel.session_id == session.id)
+            .one_or_none()
+        )
+        if model is None:
+            model = ForensicCaseModel(
+                id=uuid.uuid4(),
+                session_id=session.id,
+                report_id=None,
+                state=ForensicCaseState.DRAFT.value,
+                artifact_refs=[],
+                review_refs=[],
+                audit_refs=[],
+                created_at=now,
+                updated_at=now,
+            )
+            self._db.add(model)
+
+        model.report_id = report.id if report is not None else None
+        model.state = (
+            ForensicCaseState.REPORTED.value if report is not None else ForensicCaseState.DRAFT.value
+        )
+        model.artifact_refs = [
+            ref.to_dict()
+            for ref in _build_forensic_case_artifact_refs(session, result, report=report)
+        ]
+        model.review_refs = list(model.review_refs or [])
+        model.audit_refs = list(model.audit_refs or [])
+        model.updated_at = now
+        self._db.flush()
+        return _case_model_to_domain(model)
 
     def list_sessions(
         self,
@@ -353,6 +421,11 @@ def _node_model_to_event(node: DecisionNodeModel, session_id: uuid.UUID) -> Cano
     if node.inflection_explanation is not None:
         metadata["inflection_explanation"] = node.inflection_explanation
     lineage = metadata.get("lineage") if isinstance(metadata.get("lineage"), dict) else {}
+    normalized_event = (
+        metadata.get("normalized_event")
+        if isinstance(metadata.get("normalized_event"), dict)
+        else {}
+    )
 
     parent_refs: list[uuid.UUID] = []
     raw_parent_ids = lineage.get("parent_ids")
@@ -368,11 +441,24 @@ def _node_model_to_event(node: DecisionNodeModel, session_id: uuid.UUID) -> Cano
     if node.parent_node_id is not None and node.parent_node_id not in parent_refs:
         parent_refs.insert(0, node.parent_node_id)
 
+    ambiguities = [
+        str(item)
+        for item in lineage.get("lineage_ambiguities", [])
+        if isinstance(item, str)
+    ]
+    for item in normalized_event.get("ambiguities", []):
+        if isinstance(item, str) and item not in ambiguities:
+            ambiguities.append(item)
+
     return CanonicalEvent(
         id=node.id,
         session_id=str(session_id),
         timestamp=node.timestamp,
-        ordinal=node.sequence_num,
+        ordinal=(
+            normalized_event.get("ordinal")
+            if isinstance(normalized_event.get("ordinal"), int)
+            else node.sequence_num
+        ),
         event_type=EventType(node.event_type),
         agent_id="",
         action=node.action,
@@ -380,13 +466,33 @@ def _node_model_to_event(node: DecisionNodeModel, session_id: uuid.UUID) -> Cano
         inputs=node.inputs,
         outputs=node.outputs,
         metadata=metadata,
-        summary=lineage.get("summary") if isinstance(lineage.get("summary"), str) else None,
+        actor=(
+            dict(normalized_event.get("actor"))
+            if isinstance(normalized_event.get("actor"), dict)
+            else None
+        ),
+        summary=(
+            lineage.get("summary")
+            if isinstance(lineage.get("summary"), str)
+            else normalized_event.get("summary")
+            if isinstance(normalized_event.get("summary"), str)
+            else None
+        ),
         parent_event_refs=parent_refs,
-        ambiguities=[
-            str(item)
-            for item in lineage.get("lineage_ambiguities", [])
-            if isinstance(item, str)
-        ],
+        source_refs=_normalized_event_refs(normalized_event.get("source_refs")),
+        artifact_refs=_normalized_event_refs(normalized_event.get("artifact_refs")),
+        constraints=_normalized_event_refs(normalized_event.get("constraints")),
+        tool_activity=(
+            dict(normalized_event.get("tool_activity"))
+            if isinstance(normalized_event.get("tool_activity"), dict)
+            else None
+        ),
+        failure_context=(
+            dict(normalized_event.get("failure_context"))
+            if isinstance(normalized_event.get("failure_context"), dict)
+            else None
+        ),
+        ambiguities=ambiguities,
         risk_classification=RiskClassification(
             assumption_mutation=node.assumption_mutation,
             policy_divergence=node.policy_divergence,
@@ -395,4 +501,215 @@ def _node_model_to_event(node: DecisionNodeModel, session_id: uuid.UUID) -> Cano
             coverage_gap=node.coverage_gap,
             explanations=RiskClassification.explanations_from_dict(node.risk_explanations),
         ),
+    )
+
+
+def _normalized_event_payload(event: CanonicalEvent) -> dict[str, object]:
+    return {
+        "ordinal": event.ordinal,
+        "actor": dict(event.actor or {}),
+        "summary": event.summary,
+        "source_refs": [dict(ref) for ref in event.source_refs],
+        "artifact_refs": [dict(ref) for ref in event.artifact_refs],
+        "constraints": [dict(ref) for ref in event.constraints],
+        "tool_activity": dict(event.tool_activity or {}) if event.tool_activity else None,
+        "failure_context": dict(event.failure_context or {}) if event.failure_context else None,
+        "ambiguities": list(event.ambiguities),
+    }
+
+
+def _normalized_event_refs(payload: object) -> list[dict[str, str]]:
+    refs: list[dict[str, str]] = []
+    if not isinstance(payload, list):
+        return refs
+
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        refs.append(
+            {
+                str(key): str(value)
+                for key, value in item.items()
+                if isinstance(key, str) and isinstance(value, str)
+            }
+        )
+    return refs
+
+
+def _build_forensic_case_artifact_refs(
+    session: DomainSession,
+    result: AnalysisResult,
+    *,
+    report: ReportModel | None = None,
+) -> list[ForensicArtifactRef]:
+    refs = [
+        ForensicArtifactRef(
+            ref_id=f"session:{session.id}",
+            kind="analysis_session",
+            role="session",
+            target_ref=str(session.id),
+            summary=f"{session.status.value} run for {session.agent_id}",
+            metadata={
+                "agent_id": session.agent_id,
+                "status": session.status.value,
+                "started_at": session.started_at.isoformat(),
+                "ended_at": session.ended_at.isoformat() if session.ended_at else None,
+            },
+        ),
+        ForensicArtifactRef(
+            ref_id=f"lineage:{session.id}",
+            kind="lineage_graph",
+            role="lineage",
+            target_ref=str(session.id),
+            summary=f"{len(result.graph.nodes)} nodes and {len(result.graph.edges)} edges",
+            metadata={
+                "node_count": len(result.graph.nodes),
+                "edge_count": len(result.graph.edges),
+                "flagged_events": result.flagged_events,
+                "inflection_node_id": (
+                    str(result.inflection_node.id) if result.inflection_node is not None else None
+                ),
+            },
+        ),
+    ]
+
+    included_node_refs = 0
+    for node in result.graph.nodes:
+        if _include_forensic_case_node(node):
+            included_node_refs += 1
+            refs.append(
+                ForensicArtifactRef(
+                    ref_id=f"decision_node:{node.id}",
+                    kind="decision_node",
+                    role="evidence_node",
+                    target_ref=str(node.id),
+                    summary=node.summary,
+                    evidence_refs=list(node.evidence_refs),
+                    metadata={
+                        "sequence_num": node.sequence_num,
+                        "event_type": node.event_type.value,
+                        "action": node.action,
+                        "confidence": node.confidence,
+                        "parent_node_ids": [str(parent_id) for parent_id in node.parent_ids],
+                        "lineage_ambiguities": list(node.lineage_ambiguities),
+                        "risk_flags": _active_risk_flags(node.event.risk_classification),
+                        "is_inflection": node.is_inflection_node,
+                        "failure_context": (
+                            dict(node.event.failure_context)
+                            if node.event.failure_context
+                            else None
+                        ),
+                        "source_refs": [dict(ref) for ref in node.event.source_refs],
+                    },
+                )
+            )
+
+        for index, artifact in enumerate(node.event.artifact_refs):
+            refs.append(
+                ForensicArtifactRef(
+                    ref_id=f"decision_node:{node.id}:artifact:{index}",
+                    kind="artifact",
+                    role="event_artifact",
+                    target_ref=str(node.id),
+                    summary=_artifact_summary(artifact),
+                    evidence_refs=[f"artifact_refs[{index}]"],
+                    metadata=dict(artifact),
+                )
+            )
+
+    if included_node_refs == 0 and result.graph.nodes:
+        first_node = result.graph.nodes[0]
+        refs.append(
+            ForensicArtifactRef(
+                ref_id=f"decision_node:{first_node.id}",
+                kind="decision_node",
+                role="lineage_node",
+                target_ref=str(first_node.id),
+                summary=first_node.summary,
+                evidence_refs=list(first_node.evidence_refs),
+                metadata={
+                    "sequence_num": first_node.sequence_num,
+                    "event_type": first_node.event_type.value,
+                    "action": first_node.action,
+                    "confidence": first_node.confidence,
+                    "parent_node_ids": [str(parent_id) for parent_id in first_node.parent_ids],
+                    "lineage_ambiguities": list(first_node.lineage_ambiguities),
+                    "risk_flags": _active_risk_flags(first_node.event.risk_classification),
+                    "is_inflection": first_node.is_inflection_node,
+                    "failure_context": (
+                        dict(first_node.event.failure_context)
+                        if first_node.event.failure_context
+                        else None
+                    ),
+                    "source_refs": [dict(ref) for ref in first_node.event.source_refs],
+                },
+            )
+        )
+
+    if report is not None:
+        refs.append(
+            ForensicArtifactRef(
+                ref_id=f"report:{report.id}",
+                kind="report",
+                role="report_artifact",
+                target_ref=str(report.id),
+                summary=f"{report.report_type} report",
+                metadata={
+                    "report_type": report.report_type,
+                    "generated_at": report.generated_at.isoformat(),
+                    "generated_by": report.generated_by,
+                },
+            )
+        )
+
+    return refs
+
+
+def _include_forensic_case_node(node: DecisionNode) -> bool:
+    return bool(
+        node.evidence_refs
+        or node.lineage_ambiguities
+        or node.is_inflection_node
+        or node.has_risk_flags()
+        or node.event.failure_context
+        or node.event.artifact_refs
+    )
+
+
+def _active_risk_flags(risk: RiskClassification | None) -> list[str]:
+    if risk is None:
+        return []
+    return risk.active_flags()
+
+
+def _artifact_summary(artifact: dict[str, str]) -> str | None:
+    kind = artifact.get("kind")
+    value = artifact.get("value")
+    if kind and value:
+        return f"{kind}: {value}"
+    if value:
+        return value
+    if kind:
+        return kind
+    return None
+
+
+def _case_model_to_domain(model: ForensicCaseModel) -> ForensicCase:
+    return ForensicCase(
+        id=model.id,
+        session_id=model.session_id,
+        state=ForensicCaseState(model.state),
+        report_id=model.report_id,
+        artifact_refs=[
+            artifact
+            for artifact in (
+                ForensicArtifactRef.from_dict(payload)
+                for payload in (model.artifact_refs or [])
+            )
+            if artifact is not None
+        ],
+        review_refs=[str(ref) for ref in (model.review_refs or []) if isinstance(ref, str)],
+        audit_refs=[str(ref) for ref in (model.audit_refs or []) if isinstance(ref, str)],
+        created_at=model.created_at,
+        updated_at=model.updated_at,
     )
