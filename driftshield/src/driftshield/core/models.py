@@ -203,3 +203,78 @@ class Session:
     def __post_init__(self):
         if self.metadata is None:
             self.metadata = {}
+
+
+class ForensicCaseState(str, Enum):
+    """User-visible lifecycle state for a persisted single-run forensic case."""
+
+    DRAFT = "draft"
+    REPORTED = "reported"
+    REVIEWED = "reviewed"
+    CLOSED = "closed"
+
+
+@dataclass
+class ForensicArtifactRef:
+    """Durable reference to a stored case artifact or evidence pointer."""
+
+    ref_id: str
+    kind: str
+    role: str
+    target_ref: str
+    summary: str | None = None
+    evidence_refs: list[str] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "ref_id": self.ref_id,
+            "kind": self.kind,
+            "role": self.role,
+            "target_ref": self.target_ref,
+            "summary": self.summary,
+            "evidence_refs": list(self.evidence_refs),
+            "metadata": dict(self.metadata),
+        }
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any] | None) -> "ForensicArtifactRef | None":
+        if payload is None:
+            return None
+
+        ref_id = payload.get("ref_id")
+        kind = payload.get("kind")
+        role = payload.get("role")
+        target_ref = payload.get("target_ref")
+        if not all(isinstance(value, str) and value for value in (ref_id, kind, role, target_ref)):
+            return None
+
+        metadata = payload.get("metadata")
+        return cls(
+            ref_id=ref_id,
+            kind=kind,
+            role=role,
+            target_ref=target_ref,
+            summary=payload.get("summary") if isinstance(payload.get("summary"), str) else None,
+            evidence_refs=[
+                str(ref)
+                for ref in payload.get("evidence_refs", [])
+                if isinstance(ref, str)
+            ],
+            metadata=dict(metadata) if isinstance(metadata, dict) else {},
+        )
+
+
+@dataclass
+class ForensicCase:
+    """Durable single-run forensic case used by the Phase 2b OSS-safe workflow."""
+
+    id: UUID
+    session_id: UUID
+    state: ForensicCaseState
+    report_id: UUID | None = None
+    artifact_refs: list[ForensicArtifactRef] = field(default_factory=list)
+    review_refs: list[str] = field(default_factory=list)
+    audit_refs: list[str] = field(default_factory=list)
+    created_at: datetime | None = None
+    updated_at: datetime | None = None

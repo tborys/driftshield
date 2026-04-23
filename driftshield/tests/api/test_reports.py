@@ -8,7 +8,16 @@ from sqlalchemy.orm import Session as DBSession
 from sqlalchemy.pool import StaticPool
 
 from driftshield.api.app import create_app
+from driftshield.core.analysis.session import analyze_session
+from driftshield.core.models import (
+    CanonicalEvent,
+    EventType,
+    ForensicCaseState,
+    Session as DomainSession,
+    SessionStatus,
+)
 from driftshield.db.models import Base, SessionModel, DecisionNodeModel, ReportModel
+from driftshield.db.persistence import PersistenceService
 
 
 @pytest.fixture
@@ -123,6 +132,51 @@ def test_generated_report_has_real_content(client, auth_headers, seeded_session,
     assert data["content_json"]["sections"] is not None
     assert len(data["content_json"]["sections"]) == 4
     assert "recurrence_probability" not in data["content_json"]
+
+
+def test_generate_report_updates_forensic_case_without_losing_saved_evidence_artifacts(
+    client,
+    auth_headers,
+    db_session,
+):
+    session_id = uuid.uuid4()
+    event = CanonicalEvent(
+        id=uuid.uuid4(),
+        session_id=str(session_id),
+        timestamp=datetime.now(timezone.utc),
+        event_type=EventType.TOOL_CALL,
+        agent_id="test-agent",
+        action="read_file",
+        inputs={"path": "/tmp/evidence.txt"},
+        outputs={"content": "evidence"},
+    )
+    domain_session = DomainSession(
+        id=session_id,
+        agent_id="test-agent",
+        started_at=datetime.now(timezone.utc),
+        status=SessionStatus.COMPLETED,
+    )
+    service = PersistenceService(db_session)
+    service.save(domain_session, analyze_session([event]))
+    db_session.commit()
+
+    response = client.post(
+        f"/api/sessions/{session_id}/report",
+        headers=auth_headers,
+        json={"report_type": "full"},
+    )
+
+    assert response.status_code == 201
+
+    case = service.load_case_for_session(session_id)
+    assert case is not None
+    assert case.state is ForensicCaseState.REPORTED
+    assert case.report_id == uuid.UUID(response.json()["id"])
+    assert any(
+        ref.role == "event_artifact"
+        and ref.metadata == {"kind": "path", "value": "/tmp/evidence.txt", "source": "inputs"}
+        for ref in case.artifact_refs
+    )
 
 
 def test_graveyard_summary_route_is_removed(client, auth_headers):

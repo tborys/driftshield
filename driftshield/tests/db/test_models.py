@@ -9,6 +9,7 @@ from driftshield.db.models import (
     AnalystValidationModel,
     Base,
     DecisionNodeModel,
+    ForensicCaseModel,
     ReportModel,
     SessionModel,
 )
@@ -198,6 +199,69 @@ def test_create_report(db_session):
     assert loaded.report_type == "full"
     assert "Sample report content" in loaded.content_markdown
     assert loaded.content_json == {"sections": []}
+
+
+def test_create_forensic_case(db_session):
+    session_id = uuid.uuid4()
+    report_id = uuid.uuid4()
+    now = datetime.now(timezone.utc)
+
+    db_session.add(
+        SessionModel(
+            id=session_id,
+            started_at=now,
+            status="completed",
+        )
+    )
+    db_session.add(
+        ReportModel(
+            id=report_id,
+            session_id=session_id,
+            generated_at=now,
+            report_type="summary",
+            content_markdown="# Report",
+            content_json={"sections": []},
+            generated_by="system",
+        )
+    )
+    db_session.flush()
+
+    case_id = uuid.uuid4()
+    db_session.add(
+        ForensicCaseModel(
+            id=case_id,
+            session_id=session_id,
+            report_id=report_id,
+            state="reported",
+            artifact_refs=[
+                {
+                    "ref_id": f"session:{session_id}",
+                    "kind": "analysis_session",
+                    "role": "session",
+                    "target_ref": str(session_id),
+                }
+            ],
+            review_refs=[],
+            audit_refs=[],
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    db_session.commit()
+
+    loaded = db_session.get(ForensicCaseModel, case_id)
+    assert loaded is not None
+    assert loaded.session_id == session_id
+    assert loaded.report_id == report_id
+    assert loaded.state == "reported"
+    assert loaded.artifact_refs == [
+        {
+            "ref_id": f"session:{session_id}",
+            "kind": "analysis_session",
+            "role": "session",
+            "target_ref": str(session_id),
+        }
+    ]
 
 
 def test_create_analyst_validation(db_session):

@@ -12,10 +12,16 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
 from driftshield.core.models import (
-    CanonicalEvent, EventType, ExplanationPayload, RiskClassification, Session as DomainSession, SessionStatus,
+    CanonicalEvent,
+    EventType,
+    ExplanationPayload,
+    ForensicCaseState,
+    RiskClassification,
+    Session as DomainSession,
+    SessionStatus,
 )
 from driftshield.core.analysis.session import analyze_session
-from driftshield.db.models import Base
+from driftshield.db.models import Base, ReportModel
 from driftshield.db.persistence import PersistenceService
 
 POSTGRES_URL = os.environ.get(
@@ -116,4 +122,56 @@ def test_roundtrip_save_and_load_explanations(pg_session):
         reason="Output referenced fewer items than were provided in the input.",
         confidence=0.86,
         evidence_refs=["inputs.sections", "outputs.reviewed_sections"],
+    )
+
+
+def test_roundtrip_save_and_load_forensic_case(pg_session):
+    session_id = uuid.uuid4()
+    event = CanonicalEvent(
+        id=uuid.uuid4(),
+        session_id=str(session_id),
+        timestamp=datetime.now(timezone.utc),
+        event_type=EventType.TOOL_CALL,
+        agent_id="integration-test",
+        action="read_file",
+        inputs={"path": "/tmp/integration-evidence.txt"},
+        outputs={"content": "captured"},
+    )
+    domain_session = DomainSession(
+        id=session_id,
+        agent_id="integration-test",
+        started_at=datetime.now(timezone.utc),
+        status=SessionStatus.COMPLETED,
+    )
+    result = analyze_session([event])
+    service = PersistenceService(pg_session)
+    service.save(domain_session, result)
+
+    report = ReportModel(
+        id=uuid.uuid4(),
+        session_id=session_id,
+        generated_at=datetime.now(timezone.utc),
+        report_type="full",
+        content_markdown="# Report",
+        content_json={"sections": []},
+        generated_by="integration-test",
+    )
+    pg_session.add(report)
+    pg_session.flush()
+    service.upsert_forensic_case(domain_session, result, report=report)
+    pg_session.commit()
+
+    case = service.load_case_for_session(session_id)
+
+    assert case is not None
+    assert case.state is ForensicCaseState.REPORTED
+    assert case.report_id == report.id
+    assert any(
+        ref.role == "event_artifact"
+        and ref.metadata == {
+            "kind": "path",
+            "value": "/tmp/integration-evidence.txt",
+            "source": "inputs",
+        }
+        for ref in case.artifact_refs
     )
