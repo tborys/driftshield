@@ -131,6 +131,7 @@ def test_generated_report_has_real_content(client, auth_headers, seeded_session,
     assert "Forensic Analysis Report" in data["content_markdown"]
     assert data["content_json"]["sections"] is not None
     assert len(data["content_json"]["sections"]) == 4
+    assert data["content_json"]["candidate_break_point"]["status"] == "no_clear_break_point"
     assert "recurrence_probability" not in data["content_json"]
 
 

@@ -26,16 +26,24 @@ def format_summary(result: AnalysisResult) -> str:
             if count > 0:
                 lines.append(f"  - {risk_type}: {count}")
 
-    if result.inflection_node:
-        node = result.inflection_node
+    if result.candidate_break_point:
         lines.append("")
-        lines.append("Inflection Point:")
-        lines.append(f"  Event #{node.sequence_num} : {node.action}")
-        lines.append(f"  Type      : {node.event_type.value}")
-
-        if node.event.risk_classification:
-            flags = ", ".join(node.event.risk_classification.active_flags())
-            lines.append(f"  Risk      : {flags}")
+        lines.append("Candidate Break Point:")
+        lines.append(f"  Status    : {result.candidate_break_point.status.value}")
+        lines.append(f"  Summary   : {result.candidate_break_point.summary}")
+        if result.candidate_break_point.is_identified and result.inflection_node:
+            node = result.inflection_node
+            lines.append(f"  Event     : #{node.sequence_num} {node.action}")
+            lines.append(f"  Type      : {node.event_type.value}")
+            if result.candidate_break_point.confidence is not None:
+                lines.append(f"  Confidence: {result.candidate_break_point.confidence:.2f}")
+            if node.event.risk_classification:
+                flags = ", ".join(node.event.risk_classification.active_flags())
+                lines.append(f"  Risk      : {flags}")
+        elif result.candidate_break_point.uncertainty_reasons:
+            lines.append(
+                "  Uncertain : " + "; ".join(result.candidate_break_point.uncertainty_reasons)
+            )
 
     return "\n".join(lines)
 
@@ -47,6 +55,11 @@ def format_json(result: AnalysisResult) -> str:
         "total_events": result.total_events,
         "flagged_events": result.flagged_events,
         "risks": result.risk_summary,
+        "candidate_break_point": (
+            result.candidate_break_point.to_dict()
+            if result.candidate_break_point is not None
+            else None
+        ),
     }
 
     if result.inflection_node:

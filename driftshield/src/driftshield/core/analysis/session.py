@@ -14,7 +14,7 @@ from driftshield.core.analysis.inflection import select_inflection_node
 from driftshield.core.analysis.risk import RiskAnalyzer
 from driftshield.core.graph.builder import build_graph
 from driftshield.core.graph.models import DecisionNode, LineageGraph
-from driftshield.core.models import CanonicalEvent, ExplanationPayload
+from driftshield.core.models import BreakPointStatus, CandidateBreakPoint, CanonicalEvent, ExplanationPayload
 from driftshield.core.normalization import normalize_events
 
 
@@ -28,6 +28,7 @@ class AnalysisResult:
     total_events: int
     flagged_events: int
     inflection_explanation: ExplanationPayload | None = None
+    candidate_break_point: CandidateBreakPoint | None = None
 
     @property
     def has_risks(self) -> bool:
@@ -64,6 +65,12 @@ def analyze_session(
             total_events=0,
             flagged_events=0,
             inflection_explanation=None,
+            candidate_break_point=CandidateBreakPoint(
+                status=BreakPointStatus.NO_CLEAR_BREAK_POINT,
+                summary="No clear break point detected because no observable events were available.",
+                strategy="none",
+                uncertainty_reasons=["no observable events were available"],
+            ),
         )
 
     if session_id is None:
@@ -86,11 +93,19 @@ def analyze_session(
 
     inflection_node = None
     inflection_explanation = None
+    candidate_break_point = CandidateBreakPoint(
+        status=BreakPointStatus.NO_CLEAR_BREAK_POINT,
+        summary="No clear break point detected because no observable events were available.",
+        strategy="none",
+        uncertainty_reasons=["no observable events were available"],
+    )
     if graph.nodes:
         last_node = graph.nodes[-1]
         selection = select_inflection_node(graph, last_node.id)
-        inflection_node = selection.node
-        inflection_explanation = selection.explanation
+        candidate_break_point = selection.candidate_break_point
+        if candidate_break_point.is_identified:
+            inflection_node = selection.node
+            inflection_explanation = selection.explanation
 
     flagged_count = sum(1 for event in analyzed_events if event.has_risk_flags())
 
@@ -101,4 +116,5 @@ def analyze_session(
         total_events=len(analyzed_events),
         flagged_events=flagged_count,
         inflection_explanation=inflection_explanation,
+        candidate_break_point=candidate_break_point,
     )

@@ -150,6 +150,28 @@ class TestInflectionWithScenarios:
         assert result.id == metadata["expected_inflection_node_id"]
         assert result.action == metadata["expected_inflection_node_action"]
 
+    def test_candidate_break_point_returns_no_clear_when_candidates_are_too_close(self):
+        event1 = make_event(
+            action="early_policy_drift",
+            risk_classification=RiskClassification(policy_divergence=True),
+        )
+        event2 = make_event(
+            action="later_constraint_drift",
+            parent_event_id=event1.id,
+            risk_classification=RiskClassification(constraint_violation=True),
+        )
+        event3 = make_event(action="failure", parent_event_id=event2.id)
+
+        graph = build_graph([event1, event2, event3], session_id="test")
+        selection = select_inflection_node(graph, event3.id)
+
+        assert selection.node is not None
+        assert selection.candidate_break_point.status.value == "no_clear_break_point"
+        assert selection.candidate_break_point.node_id is None
+        assert selection.candidate_break_point.confidence is not None
+        assert selection.candidate_break_point.confidence < 0.6
+        assert selection.candidate_break_point.uncertainty_reasons
+
     def test_assumption_introduction_scenario(self):
         """Finds correct inflection in assumption introduction scenario."""
         graph, metadata = assumption_introduction_scenario()
