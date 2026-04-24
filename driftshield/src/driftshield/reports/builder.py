@@ -257,10 +257,7 @@ class ReportBuilder:
                         finding_id=f"finding:pattern_resemblance:{match.match_id}",
                         finding_kind="pattern_resemblance",
                         subject_ref=match.scope_ref,
-                        summary=(
-                            f"Local OSS-safe signals resemble {match.family_id} "
-                            f"via {match.signature_id}."
-                        ),
+                        summary=_pattern_resemblance_finding_summary(match),
                         evidence_refs=(
                             list(match.evidence_refs)
                             if match.evidence_refs
@@ -324,42 +321,74 @@ class ReportBuilder:
         for index, item in enumerate(candidates, start=1):
             if not isinstance(item, Mapping):
                 continue
-            match = self._pattern_match_from_payload(session, item, index)
-            if match is not None:
-                matches.append(match)
+            matches.extend(self._pattern_matches_from_payload(session, item, index))
         return matches
 
-    def _pattern_match_from_payload(
+    def _pattern_matches_from_payload(
         self,
         session: DomainSession,
         payload: Mapping[str, Any],
         index: int,
-    ) -> PatternMatch | None:
+    ) -> list[PatternMatch]:
         signature_id = _string_value(payload.get("signature_id"))
         family_id = _string_value(payload.get("family_id") or payload.get("primary_family_id"))
-        if signature_id is None or family_id is None:
-            return None
+        family_ids = _ordered_family_ids(payload)
+        if family_id is not None and family_id not in family_ids:
+            family_ids.insert(0, family_id)
+
+        if signature_id is None and not family_ids:
+            return []
 
         signature_layer = (
             dict(payload.get("signature_layer"))
             if isinstance(payload.get("signature_layer"), Mapping)
             else {}
         )
+        rationale = _string_value(payload.get("rationale") or payload.get("summary")) or ""
+        if rationale and "symptom" not in signature_layer:
+            signature_layer["symptom"] = rationale
         evidence_refs = _string_list(
             payload.get("evidence_refs") or payload.get("evidence_event_refs")
         )
-        return PatternMatch(
-            match_id=_string_value(payload.get("match_id"))
-            or f"pattern_match:{session.id}:{index}",
-            signature_id=signature_id,
-            family_id=family_id,
-            signature_layer=signature_layer,
-            scope_ref=_string_value(payload.get("scope_ref")) or f"session:{session.id}",
-            evidence_refs=evidence_refs,
-            confidence=_float_value(payload.get("confidence")),
-            rationale=_string_value(payload.get("rationale") or payload.get("summary")) or "",
-            source=_string_value(payload.get("source")) or "local",
-        )
+        scope_ref = _string_value(payload.get("scope_ref")) or f"session:{session.id}"
+        confidence = _float_value(payload.get("confidence"))
+        source = _string_value(payload.get("source")) or "local"
+        match_id = _string_value(payload.get("match_id")) or f"pattern_match:{session.id}:{index}"
+
+        if signature_id is not None:
+            resolved_family_id = family_id or (family_ids[0] if family_ids else None)
+            if resolved_family_id is None:
+                return []
+            return [
+                PatternMatch(
+                    match_id=match_id,
+                    signature_id=signature_id,
+                    family_id=resolved_family_id,
+                    signature_layer=signature_layer,
+                    scope_ref=scope_ref,
+                    evidence_refs=evidence_refs,
+                    confidence=confidence,
+                    rationale=rationale,
+                    source=source,
+                )
+            ]
+
+        matches: list[PatternMatch] = []
+        for family_offset, derived_family_id in enumerate(family_ids, start=1):
+            matches.append(
+                PatternMatch(
+                    match_id=f"{match_id}:{family_offset}",
+                    signature_id=f"family:{derived_family_id}",
+                    family_id=derived_family_id,
+                    signature_layer=dict(signature_layer),
+                    scope_ref=scope_ref,
+                    evidence_refs=evidence_refs,
+                    confidence=confidence,
+                    rationale=rationale,
+                    source=source,
+                )
+            )
+        return matches
 
     def _pattern_resemblance_summary(
         self,
@@ -557,6 +586,29 @@ def _confidence_label(confidence: float | None) -> str:
 
 def _plural(noun: str, count: int) -> str:
     return noun if count == 1 else f"{noun}s"
+
+
+def _ordered_family_ids(payload: Mapping[str, Any]) -> list[str]:
+    ordered: list[str] = []
+
+    primary_family_id = _string_value(payload.get("primary_family_id"))
+    if primary_family_id is not None:
+        ordered.append(primary_family_id)
+
+    matched_family_ids = payload.get("matched_family_ids")
+    if isinstance(matched_family_ids, list):
+        for item in matched_family_ids:
+            family_id = _string_value(item)
+            if family_id is not None and family_id not in ordered:
+                ordered.append(family_id)
+
+    return ordered
+
+
+def _pattern_resemblance_finding_summary(match: PatternMatch) -> str:
+    if match.signature_id.startswith("family:"):
+        return f"Local OSS-safe signals resemble {match.family_id}."
+    return f"Local OSS-safe signals resemble {match.family_id} via {match.signature_id}."
 
 
 def _lineage_excerpt(result: AnalysisResult) -> str:
