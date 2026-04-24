@@ -252,6 +252,9 @@ def select_inflection_node(
     best_score, _, best_node, best_reasons = scored[0]
     runner_up_score = scored[1][0] if len(scored) > 1 else None
     runner_up_node = scored[1][2] if len(scored) > 1 else None
+    selected_score = best_score
+    alternate_score = runner_up_score
+    alternate_node = runner_up_node
 
     fallback_node = _fallback_walkback_node(path)
     fallback_idx = next((idx for idx, node in flagged_candidates if node.id == fallback_node.id), None) if fallback_node else None
@@ -283,12 +286,15 @@ def select_inflection_node(
         best_node = fallback_node
         best_reasons = ["fallback to closest flagged node on the failure path"]
         strategy = "walkback_fallback"
+        selected_score = fallback_score
+        alternate_score = best_score
+        alternate_node = scored[0][2]
     else:
         strategy = "weighted"
 
     confidence = _selection_confidence(
-        selected_score=fallback_score if strategy == "walkback_fallback" and fallback_score is not None else best_score,
-        alternate_score=best_score if strategy == "walkback_fallback" else runner_up_score,
+        selected_score=selected_score,
+        alternate_score=alternate_score,
         strategy=strategy,
     )
 
@@ -313,9 +319,9 @@ def select_inflection_node(
         node=best_node,
         explanation=explanation,
         strategy=strategy,
-        score=fallback_score if strategy == "walkback_fallback" else best_score,
-        runner_up_score=best_score if strategy == "walkback_fallback" else runner_up_score,
-        runner_up_node=runner_up_node,
+        score=selected_score,
+        runner_up_score=alternate_score,
+        runner_up_node=alternate_node,
     )
 
     return InflectionSelection(
@@ -323,9 +329,9 @@ def select_inflection_node(
         explanation=explanation,
         strategy=strategy,
         candidate_break_point=candidate_break_point,
-        score=fallback_score if strategy == "walkback_fallback" else best_score,
-        runner_up_score=best_score if strategy == "walkback_fallback" else runner_up_score,
-        runner_up_node=runner_up_node,
+        score=selected_score,
+        runner_up_score=alternate_score,
+        runner_up_node=alternate_node,
     )
 
 

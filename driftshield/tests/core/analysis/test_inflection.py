@@ -172,6 +172,34 @@ class TestInflectionWithScenarios:
         assert selection.candidate_break_point.confidence < 0.6
         assert selection.candidate_break_point.uncertainty_reasons
 
+    def test_fallback_break_point_evidence_tracks_actual_top_competitor(self):
+        event1 = make_event(
+            action="earliest_coverage_gap",
+            risk_classification=RiskClassification(coverage_gap=True),
+        )
+        event2 = make_event(
+            action="middle_constraint_drift",
+            parent_event_id=event1.id,
+            risk_classification=RiskClassification(constraint_violation=True),
+        )
+        event3 = make_event(
+            action="latest_context_drift",
+            parent_event_id=event2.id,
+            risk_classification=RiskClassification(context_contamination=True),
+        )
+        event4 = make_event(action="failure", parent_event_id=event3.id)
+
+        graph = build_graph([event1, event2, event3, event4], session_id="test")
+        selection = select_inflection_node(graph, event4.id)
+
+        assert selection.strategy == "walkback_fallback"
+        assert selection.node is not None
+        assert selection.node.id == event3.id
+        assert selection.runner_up_node is not None
+        assert selection.runner_up_node.id == event2.id
+        assert f"node:{event2.id}" in selection.candidate_break_point.evidence_refs
+        assert f"node:{event1.id}" not in selection.candidate_break_point.evidence_refs
+
     def test_assumption_introduction_scenario(self):
         """Finds correct inflection in assumption introduction scenario."""
         graph, metadata = assumption_introduction_scenario()
