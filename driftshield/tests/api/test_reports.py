@@ -1,3 +1,5 @@
+import io
+import json
 import uuid
 from datetime import datetime, timezone
 
@@ -17,7 +19,7 @@ from driftshield.core.models import (
     Session as DomainSession,
     SessionStatus,
 )
-from driftshield.db.models import Base, SessionModel, DecisionNodeModel, ReportModel
+from driftshield.db.models import Base, DecisionNodeModel, ForensicCaseModel, ReportModel, SessionModel
 from driftshield.db.persistence import PersistenceService
 
 
@@ -48,6 +50,42 @@ def auth_headers():
 
 
 @pytest.fixture
+def sample_transcript():
+    lines = [
+        {
+            "sessionId": "forensic-workflow-session-123",
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "tool_1",
+                        "name": "Read",
+                        "input": {"file_path": "/tmp/evidence.txt"},
+                    }
+                ]
+            },
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        },
+        {
+            "sessionId": "forensic-workflow-session-123",
+            "type": "user",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "tool_1",
+                        "content": "contents",
+                    }
+                ]
+            },
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        },
+    ]
+    return "\n".join(json.dumps(line) for line in lines).encode()
+
+
+@pytest.fixture
 def seeded_session(db_session):
     session_id = uuid.uuid4()
     s = SessionModel(
@@ -72,6 +110,131 @@ def test_generate_report(client, auth_headers, seeded_session):
     data = response.json()
     assert "id" in data
     assert data["report_type"] == "full"
+
+
+def test_generate_report_rejects_unknown_report_type(client, auth_headers, seeded_session):
+    response = client.post(
+        f"/api/sessions/{seeded_session}/report",
+        headers=auth_headers,
+        json={"report_type": "unknown"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Unsupported report type: unknown"
+
+
+def test_generate_forensic_report_from_transcript_returns_forensic_contract(
+    client,
+    auth_headers,
+    sample_transcript,
+):
+    response = client.post(
+        "/api/forensics/report",
+        headers=auth_headers,
+        files={"file": ("sample.jsonl", io.BytesIO(sample_transcript), "application/jsonl")},
+        data={"format": "claude_code", "report_type": "summary"},
+    )
+
+    assert response.status_code == 201
+
+    data = response.json()
+    assert data["ingest_status"] == "created"
+    assert data["deduplicated"] is False
+    assert data["parser_name"] == "claude_code"
+    assert data["report"]["report_type"] == "summary"
+    assert data["report"]["content_json"]["schema_version"] == "forensic_report.v1"
+    assert data["report"]["content_json"]["summary"]["what_happened"]
+    assert data["forensic_case"]["state"] == "reported"
+    assert data["forensic_case"]["report_id"] == data["report"]["id"]
+
+
+def test_generate_forensic_report_rejects_unknown_report_type_without_ingesting(
+    client,
+    auth_headers,
+    sample_transcript,
+    db_session,
+):
+    response = client.post(
+        "/api/forensics/report",
+        headers=auth_headers,
+        files={"file": ("sample.jsonl", io.BytesIO(sample_transcript), "application/jsonl")},
+        data={"format": "claude_code", "report_type": "unknown"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Unsupported report type: unknown"
+    assert db_session.query(SessionModel).count() == 0
+    assert db_session.query(ReportModel).count() == 0
+
+
+def test_generate_forensic_report_reuses_session_for_duplicate_upload(
+    client,
+    auth_headers,
+    sample_transcript,
+    db_session,
+):
+    first = client.post(
+        "/api/forensics/report",
+        headers=auth_headers,
+        files={"file": ("sample.jsonl", io.BytesIO(sample_transcript), "application/jsonl")},
+        data={"format": "claude_code", "report_type": "full"},
+    )
+    second = client.post(
+        "/api/forensics/report",
+        headers=auth_headers,
+        files={"file": ("sample.jsonl", io.BytesIO(sample_transcript), "application/jsonl")},
+        data={"format": "claude_code", "report_type": "full"},
+    )
+
+    assert first.status_code == 201
+    assert second.status_code == 200
+
+    first_data = first.json()
+    second_data = second.json()
+    assert second_data["deduplicated"] is True
+    assert second_data["ingest_status"] == "deduped"
+    assert second_data["session_id"] == first_data["session_id"]
+    assert second_data["report"]["id"] == first_data["report"]["id"]
+
+    assert db_session.query(SessionModel).count() == 1
+    assert db_session.query(ReportModel).count() == 1
+
+
+def test_generate_forensic_report_rolls_back_ingest_when_report_build_fails(
+    client,
+    auth_headers,
+    sample_transcript,
+    db_session,
+    monkeypatch,
+):
+    def fail_build(self, session, result, report_type):
+        raise RuntimeError("report builder failed")
+
+    emit_calls = []
+
+    def fake_record_analysis_event(self, **kwargs):
+        emit_calls.append(kwargs)
+        return True
+
+    monkeypatch.setattr("driftshield.api.routes.reports.ReportBuilder.build", fail_build)
+    monkeypatch.setattr(
+        "driftshield.api.ingest_workflow.TelemetryService.record_analysis_event",
+        fake_record_analysis_event,
+    )
+
+    with pytest.raises(RuntimeError, match="report builder failed"):
+        client.post(
+            "/api/forensics/report",
+            headers=auth_headers,
+            files={"file": ("sample.jsonl", io.BytesIO(sample_transcript), "application/jsonl")},
+            data={"format": "claude_code", "report_type": "summary"},
+        )
+
+    assert db_session.query(SessionModel).count() == 0
+    assert db_session.query(DecisionNodeModel).count() == 0
+    assert db_session.query(ForensicCaseModel).count() == 0
+    assert db_session.query(ReportModel).count() == 0
+    assert emit_calls == []
 
 
 def test_list_reports_for_session(client, auth_headers, seeded_session, db_session):

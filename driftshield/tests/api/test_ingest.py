@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
+from fastapi import HTTPException, UploadFile
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.exc import IntegrityError
@@ -12,6 +13,7 @@ from sqlalchemy.orm import Session as DBSession
 from sqlalchemy.pool import StaticPool
 
 from driftshield.api.app import create_app
+from driftshield.api.ingest_workflow import read_upload_bytes
 from driftshield.db.models import Base, DecisionNodeModel, SessionModel
 from driftshield.db.ingest_service import TranscriptIngestService
 from driftshield.db.persistence import IngestOutcome, PersistenceService
@@ -250,9 +252,12 @@ def test_ingest_recovers_from_duplicate_commit_race(client, auth_headers, sample
         emit_calls.append(kwargs)
         return True
 
-    monkeypatch.setattr("driftshield.api.routes.ingest.TranscriptIngestService.ingest_bytes", fake_ingest_bytes)
+    monkeypatch.setattr("driftshield.api.ingest_workflow.TranscriptIngestService.ingest_bytes", fake_ingest_bytes)
     monkeypatch.setattr(PersistenceService, "get_ingest_outcome", fake_get_ingest_outcome)
-    monkeypatch.setattr("driftshield.api.routes.ingest.TelemetryService.record_analysis_event", fake_record_analysis_event)
+    monkeypatch.setattr(
+        "driftshield.api.ingest_workflow.TelemetryService.record_analysis_event",
+        fake_record_analysis_event,
+    )
 
     response = _post_ingest(client, auth_headers, sample_transcript)
 
@@ -268,6 +273,28 @@ def test_ingest_recovers_from_duplicate_commit_race(client, auth_headers, sample
         "deduplicated": True,
     }
     assert emit_calls == []
+
+
+def test_read_upload_bytes_stops_once_payload_exceeds_limit(monkeypatch):
+    class TrackingStream(io.BytesIO):
+        def __init__(self, payload: bytes):
+            super().__init__(payload)
+            self.bytes_served = 0
+
+        def read(self, size=-1):
+            chunk = super().read(size)
+            self.bytes_served += len(chunk)
+            return chunk
+
+    monkeypatch.setenv("MAX_REQUEST_BYTES", "25")
+    stream = TrackingStream(b"x" * 100)
+    file = UploadFile(filename="oversized.jsonl", file=stream)
+
+    with pytest.raises(HTTPException) as exc_info:
+        read_upload_bytes(file, chunk_size=10)
+
+    assert exc_info.value.status_code == 413
+    assert stream.bytes_served == 30
 
 
 def test_ingest_crewai_transcript_with_explicit_parser(client, auth_headers):
@@ -426,7 +453,7 @@ def test_ingest_succeeds_even_when_post_commit_telemetry_emit_fails(client, auth
         raise OSError("disk full")
 
     monkeypatch.setattr(
-        "driftshield.api.routes.ingest.TelemetryService.record_analysis_event",
+        "driftshield.api.ingest_workflow.TelemetryService.record_analysis_event",
         fail_record_analysis_event,
     )
 
