@@ -52,3 +52,5 @@ def test_export_json_section_structure(report_data):
     assert "title" in section
     assert "content" in section
     assert "node_table" in section
+    assert data["candidate_break_point"] is not None
+    assert data["candidate_break_point"]["status"] == "no_clear_break_point"

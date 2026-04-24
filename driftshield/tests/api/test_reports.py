@@ -13,6 +13,7 @@ from driftshield.core.models import (
     CanonicalEvent,
     EventType,
     ForensicCaseState,
+    RiskClassification,
     Session as DomainSession,
     SessionStatus,
 )
@@ -131,6 +132,7 @@ def test_generated_report_has_real_content(client, auth_headers, seeded_session,
     assert "Forensic Analysis Report" in data["content_markdown"]
     assert data["content_json"]["sections"] is not None
     assert len(data["content_json"]["sections"]) == 4
+    assert data["content_json"]["candidate_break_point"]["status"] == "no_clear_break_point"
     assert "recurrence_probability" not in data["content_json"]
 
 
@@ -177,6 +179,69 @@ def test_generate_report_updates_forensic_case_without_losing_saved_evidence_art
         and ref.metadata == {"kind": "path", "value": "/tmp/evidence.txt", "source": "inputs"}
         for ref in case.artifact_refs
     )
+
+
+def test_generate_report_preserves_legacy_inflection_fields_for_uncertain_break_points(
+    client,
+    auth_headers,
+    db_session,
+):
+    session_id = uuid.uuid4()
+    events = [
+        CanonicalEvent(
+            id=uuid.uuid4(),
+            session_id=str(session_id),
+            timestamp=datetime.now(timezone.utc),
+            event_type=EventType.TOOL_CALL,
+            agent_id="test-agent",
+            action="early_policy_drift",
+            risk_classification=RiskClassification(policy_divergence=True),
+        ),
+        CanonicalEvent(
+            id=uuid.uuid4(),
+            session_id=str(session_id),
+            timestamp=datetime.now(timezone.utc),
+            event_type=EventType.TOOL_CALL,
+            agent_id="test-agent",
+            action="later_constraint_drift",
+            parent_event_id=None,
+            risk_classification=RiskClassification(constraint_violation=True),
+        ),
+        CanonicalEvent(
+            id=uuid.uuid4(),
+            session_id=str(session_id),
+            timestamp=datetime.now(timezone.utc),
+            event_type=EventType.OUTPUT,
+            agent_id="test-agent",
+            action="failure",
+        ),
+    ]
+    events[1].parent_event_id = events[0].id
+    events[1].parent_event_refs = [events[0].id]
+    events[2].parent_event_id = events[1].id
+    events[2].parent_event_refs = [events[1].id]
+    domain_session = DomainSession(
+        id=session_id,
+        agent_id="test-agent",
+        started_at=datetime.now(timezone.utc),
+        status=SessionStatus.COMPLETED,
+    )
+    service = PersistenceService(db_session)
+    service.save(domain_session, analyze_session(events))
+    db_session.commit()
+
+    response = client.post(
+        f"/api/sessions/{session_id}/report",
+        headers=auth_headers,
+        json={"report_type": "full"},
+    )
+
+    assert response.status_code == 201
+
+    report = db_session.get(ReportModel, uuid.UUID(response.json()["id"]))
+    assert report is not None
+    assert report.content_json["candidate_break_point"]["status"] == "no_clear_break_point"
+    assert report.content_json["inflection_node_id"] is not None
 
 
 def test_graveyard_summary_route_is_removed(client, auth_headers):

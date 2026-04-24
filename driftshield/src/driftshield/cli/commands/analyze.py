@@ -144,13 +144,13 @@ def analyze(
     if json_output:
         import json
         if len(all_results) == 1:
-            console.print(format_json(all_results[0][1]))
+            typer.echo(format_json(all_results[0][1]))
         else:
             data = []
             for file_path, result in all_results:
                 import json as json_lib
                 data.append(json_lib.loads(format_json(result)))
-            console.print(json.dumps(data, indent=2))
+            typer.echo(json.dumps(data, indent=2))
     elif quiet:
         for file_path, result in all_results:
             if len(all_results) > 1:

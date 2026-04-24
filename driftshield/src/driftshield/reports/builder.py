@@ -38,6 +38,7 @@ class ReportBuilder:
             inflection_action=(
                 result.inflection_node.action if result.inflection_node else None
             ),
+            candidate_break_point=result.candidate_break_point,
             total_events=result.total_events,
             flagged_events=result.flagged_events,
         )
@@ -67,16 +68,29 @@ class ReportBuilder:
         )
 
     def _build_inflection_section(self, result: AnalysisResult) -> ReportSection:
-        if result.inflection_node:
+        if result.candidate_break_point and result.candidate_break_point.is_identified:
+            break_point = result.candidate_break_point
             content = (
-                f"Inflection detected at node #{result.inflection_node.sequence_num} "
-                f"({result.inflection_node.action}). "
-                f"This is where the agent's reasoning first diverged from expected behaviour."
+                f"{break_point.summary} Confidence {break_point.confidence:.2f}."
+                if break_point.confidence is not None
+                else break_point.summary
+            )
+            if break_point.uncertainty_reasons:
+                content += " Uncertainty: " + "; ".join(break_point.uncertainty_reasons) + "."
+        elif result.candidate_break_point:
+            break_point = result.candidate_break_point
+            content = break_point.summary
+            if break_point.uncertainty_reasons:
+                content += " Uncertainty: " + "; ".join(break_point.uncertainty_reasons) + "."
+        elif result.inflection_node:
+            content = (
+                f"Observable evidence suggests the run visibly broke at event "
+                f"#{result.inflection_node.sequence_num} ({result.inflection_node.action})."
             )
         else:
-            content = "No inflection node detected. The decision path appears consistent."
+            content = "No clear break point detected from observable run evidence."
         return ReportSection(
-            title="Inflection Node Identification",
+            title="Candidate Break Point Assessment",
             content=content,
         )
 

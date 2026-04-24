@@ -3,9 +3,13 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-import pytest
-
-from driftshield.core.models import CanonicalEvent, EventType, RiskClassification
+from driftshield.core.models import (
+    BreakPointStatus,
+    CandidateBreakPoint,
+    CanonicalEvent,
+    EventType,
+    RiskClassification,
+)
 from driftshield.core.graph.builder import build_graph
 from driftshield.core.analysis.session import AnalysisResult
 from driftshield.cli.output import format_summary, format_json
@@ -30,12 +34,30 @@ def make_analysis_result(
                 inflection_node = node
                 break
 
+    candidate_break_point = CandidateBreakPoint(
+        status=BreakPointStatus.NO_CLEAR_BREAK_POINT,
+        summary="No clear break point detected from observable run evidence.",
+    )
+    if inflection_node is not None:
+        candidate_break_point = CandidateBreakPoint(
+            status=BreakPointStatus.IDENTIFIED,
+            summary=(
+                f"Observable evidence suggests the run visibly broke at event "
+                f"#{inflection_node.sequence_num} ({inflection_node.action})."
+            ),
+            node_id=inflection_node.id,
+            sequence_num=inflection_node.sequence_num,
+            action=inflection_node.action,
+            confidence=1.0,
+        )
+
     return AnalysisResult(
         events=events,
         graph=graph,
         inflection_node=inflection_node,
         total_events=len(events),
         flagged_events=flagged,
+        candidate_break_point=candidate_break_point,
     )
 
 
@@ -47,6 +69,7 @@ class TestFormatSummary:
 
         assert "Events:  0" in output or "Events: 0" in output
         assert "Flagged: 0" in output or "Flagged:  0" in output
+        assert "Candidate Break Point:" in output
 
     def test_shows_session_id(self):
         """Summary shows session ID."""
@@ -72,6 +95,10 @@ class TestFormatSummary:
             inflection_node=None,
             total_events=1,
             flagged_events=1,
+            candidate_break_point=CandidateBreakPoint(
+                status=BreakPointStatus.NO_CLEAR_BREAK_POINT,
+                summary="No clear break point detected from observable run evidence.",
+            ),
         )
         output = format_summary(result)
 
@@ -95,10 +122,18 @@ class TestFormatSummary:
             inflection_node=graph.nodes[0],
             total_events=1,
             flagged_events=1,
+            candidate_break_point=CandidateBreakPoint(
+                status=BreakPointStatus.IDENTIFIED,
+                summary="Observable evidence suggests the run visibly broke at event #0 (bad_decision).",
+                node_id=graph.nodes[0].id,
+                sequence_num=graph.nodes[0].sequence_num,
+                action=graph.nodes[0].action,
+                confidence=1.0,
+            ),
         )
         output = format_summary(result)
 
-        assert "Inflection" in output
+        assert "Candidate Break Point" in output
         assert "bad_decision" in output
 
 
@@ -131,8 +166,20 @@ class TestFormatJson:
             inflection_node=graph.nodes[0],
             total_events=1,
             flagged_events=1,
+            candidate_break_point=CandidateBreakPoint(
+                status=BreakPointStatus.IDENTIFIED,
+                summary=(
+                    "Observable evidence suggests the run visibly broke at event #0 "
+                    "(inflection_action)."
+                ),
+                node_id=graph.nodes[0].id,
+                sequence_num=graph.nodes[0].sequence_num,
+                action=graph.nodes[0].action,
+                confidence=1.0,
+            ),
         )
         output = format_json(result)
 
         assert "inflection" in output
         assert "inflection_action" in output
+        assert "candidate_break_point" in output

@@ -585,9 +585,31 @@ def _build_forensic_case_artifact_refs(
                 "inflection_node_id": (
                     str(result.inflection_node.id) if result.inflection_node is not None else None
                 ),
+                "candidate_break_point": (
+                    result.candidate_break_point.to_dict()
+                    if result.candidate_break_point is not None
+                    else None
+                ),
             },
         ),
     ]
+
+    if result.candidate_break_point is not None:
+        refs.append(
+            ForensicArtifactRef(
+                ref_id=f"finding:candidate_break_point:{session.id}",
+                kind="finding",
+                role="candidate_break_point",
+                target_ref=(
+                    str(result.candidate_break_point.node_id)
+                    if result.candidate_break_point.node_id is not None
+                    else str(session.id)
+                ),
+                summary=result.candidate_break_point.summary,
+                evidence_refs=list(result.candidate_break_point.evidence_refs),
+                metadata=result.candidate_break_point.to_dict(),
+            )
+        )
 
     included_node_refs = 0
     for node in result.graph.nodes:

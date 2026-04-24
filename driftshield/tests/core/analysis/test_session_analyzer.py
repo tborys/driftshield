@@ -5,7 +5,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from driftshield.core.analysis.session import analyze_session, AnalysisResult
-from driftshield.core.models import CanonicalEvent, EventType
+from driftshield.core.models import CanonicalEvent, EventType, RiskClassification
 from driftshield.parsers.claude_code import ClaudeCodeParser
 from tests.fixtures.scenarios import (
     coverage_gap_scenario,
@@ -98,6 +98,25 @@ class TestAnalyzeSession:
         # If risks were detected, inflection should be found
         if any(e.has_risk_flags() for e in result.events):
             assert result.inflection_node is not None
+
+    def test_preserves_legacy_inflection_node_when_candidate_break_point_is_uncertain(self):
+        event1 = make_event(
+            action="early_policy_drift",
+            risk_classification=RiskClassification(policy_divergence=True),
+        )
+        event2 = make_event(
+            action="later_constraint_drift",
+            parent_event_id=event1.id,
+            risk_classification=RiskClassification(constraint_violation=True),
+        )
+        event3 = make_event(action="failure", parent_event_id=event2.id)
+
+        result = analyze_session([event1, event2, event3])
+
+        assert result.candidate_break_point is not None
+        assert result.candidate_break_point.status.value == "no_clear_break_point"
+        assert result.inflection_node is not None
+        assert result.inflection_explanation is not None
 
     def test_with_real_transcript(self):
         """Runs analysis on real transcript without error."""

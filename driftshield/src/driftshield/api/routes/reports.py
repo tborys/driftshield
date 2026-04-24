@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session as DBSession
 
 from driftshield.api.auth import require_api_key
 from driftshield.api.dependencies import get_db
-from driftshield.core.analysis.inflection import find_inflection_node
+from driftshield.core.analysis.inflection import select_inflection_node
 from driftshield.core.analysis.session import AnalysisResult
 from driftshield.db.models import SessionModel, ReportModel
 from driftshield.db.persistence import PersistenceService
@@ -41,7 +41,7 @@ def generate_report(
         raise HTTPException(status_code=404, detail="No graph data for session")
 
     # Reconstruct AnalysisResult from stored data
-    inflection = find_inflection_node(graph, graph.nodes[-1].id) if graph.nodes else None
+    selection = select_inflection_node(graph, graph.nodes[-1].id) if graph.nodes else None
     events = [node.event for node in graph.nodes]
     flagged = sum(
         1 for e in events if e.risk_classification and e.risk_classification.has_any_flag()
@@ -50,9 +50,11 @@ def generate_report(
     result = AnalysisResult(
         events=events,
         graph=graph,
-        inflection_node=inflection,
+        inflection_node=selection.node if selection is not None else None,
         total_events=len(events),
         flagged_events=flagged,
+        inflection_explanation=selection.explanation if selection is not None else None,
+        candidate_break_point=selection.candidate_break_point if selection is not None else None,
     )
 
     report_type = ReportType(request.report_type)
