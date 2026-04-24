@@ -2,6 +2,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+from typing import Any
 
 from driftshield.core.models import CandidateBreakPoint
 
@@ -38,6 +39,53 @@ class ReportSection:
 
 
 @dataclass
+class ReportSummary:
+    headline: str = ""
+    what_happened: str = ""
+    where_it_broke: str = ""
+    evidence_basis: str = ""
+    confidence: float | None = None
+    confidence_label: str = "unknown"
+    uncertainty: list[str] = field(default_factory=list)
+    pattern_resemblance: str = ""
+    oss_safety_note: str = ""
+
+
+@dataclass
+class ReportFinding:
+    finding_id: str
+    finding_kind: str
+    subject_ref: str
+    summary: str
+    evidence_refs: list[str] = field(default_factory=list)
+    confidence: float | None = None
+    status: str = "reported"
+
+
+@dataclass
+class PatternMatch:
+    match_id: str
+    signature_id: str
+    family_id: str
+    signature_layer: dict[str, Any]
+    scope_ref: str
+    evidence_refs: list[str] = field(default_factory=list)
+    confidence: float | None = None
+    rationale: str = ""
+    source: str = "local"
+
+
+@dataclass
+class EvidenceRef:
+    ref_id: str
+    target_kind: str
+    target_ref: str
+    role: str
+    excerpt: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class ReportData:
     session_id: uuid.UUID
     agent_id: str
@@ -50,3 +98,8 @@ class ReportData:
     total_events: int = 0
     flagged_events: int = 0
     classification: str = "isolated"
+    schema_version: str = "forensic_report.v1"
+    summary: ReportSummary = field(default_factory=ReportSummary)
+    findings: list[ReportFinding] = field(default_factory=list)
+    pattern_matches: list[PatternMatch] = field(default_factory=list)
+    evidence_index: list[EvidenceRef] = field(default_factory=list)

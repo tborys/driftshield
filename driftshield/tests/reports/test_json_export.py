@@ -54,3 +54,16 @@ def test_export_json_section_structure(report_data):
     assert "node_table" in section
     assert data["candidate_break_point"] is not None
     assert data["candidate_break_point"]["status"] == "no_clear_break_point"
+
+
+def test_export_json_includes_forensic_report_v1_contract(report_data):
+    data = export_json(report_data)
+
+    assert data["schema_version"] == "forensic_report.v1"
+    assert data["summary"]["what_happened"]
+    assert "does not claim decision-grade" in data["summary"]["oss_safety_note"]
+    assert data["findings"]
+    assert data["evidence_index"]
+    assert all(item["evidence_refs"] for item in data["findings"])
+    assert "root_cause" not in data
+    assert "recurrence_probability" not in data
