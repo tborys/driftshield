@@ -58,6 +58,49 @@ This command validates:
 - bundled sample report generation
 - ingest API smoke tests
 
+## Manual forensic workflow smoke paths
+
+These checks cover the operator-facing CLI and API paths for the Phase 2b forensic
+workflow.
+
+### CLI smoke
+
+From `driftshield/` after setup:
+
+```bash
+source .venv/bin/activate
+driftshield report tests/fixtures/transcripts/sample_claude_code_session.jsonl --format json
+```
+
+Expected result:
+- exit code `0`
+- response includes `"schema_version": "forensic_report.v1"`
+- response includes a non-empty `summary.what_happened`
+
+### API smoke
+
+With the backend running and `API_KEY` exported from `driftshield/.env`:
+
+```bash
+cd driftshield
+source .venv/bin/activate
+set -a
+source .env
+set +a
+curl -sS \
+  -X POST http://localhost:8080/api/forensics/report \
+  -H "X-API-Key: $API_KEY" \
+  -F "file=@tests/fixtures/transcripts/sample_claude_code_session.jsonl" \
+  -F "format=claude_code" \
+  -F "report_type=summary"
+```
+
+Expected result:
+- first run returns HTTP `201`; repeat upload of the same file returns HTTP `200`
+- payload includes `report.content_json.schema_version = "forensic_report.v1"`
+- payload includes `forensic_case.state = "reported"`
+- repeat upload reuses the same `session_id`
+
 ## OSS boundary checks
 
 When updating docs or workflows, avoid presenting these as bundled OSS

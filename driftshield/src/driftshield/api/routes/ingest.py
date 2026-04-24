@@ -1,18 +1,10 @@
-import hashlib
-import os
-from datetime import datetime, timezone
-
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
-from sqlalchemy.exc import IntegrityError
+from fastapi import APIRouter, Depends, File, Form, Response, UploadFile
 from sqlalchemy.orm import Session as DBSession
 
 from driftshield.api.auth import require_api_key
 from driftshield.api.dependencies import get_db
+from driftshield.api.ingest_workflow import ingest_transcript_bytes
 from driftshield.api.schemas import IngestResponse
-from driftshield.cli.parsers import PARSERS
-from driftshield.db.ingest_service import TranscriptIngestService, metrics_payload_from_analysis_result
-from driftshield.db.persistence import IngestProvenance, PersistenceService
-from driftshield.telemetry import TelemetryService
 
 router = APIRouter()
 
@@ -26,58 +18,13 @@ def ingest_transcript(
     db: DBSession = Depends(get_db),
 ):
     del api_key
-
-    normalised = format.replace("-", "_")
-    if normalised == "auto":
-        normalised = _detect_format(file.filename)
-    if normalised not in PARSERS:
-        raise HTTPException(status_code=422, detail=f"Unsupported format: {format}")
-
     raw_bytes = file.file.read()
-    max_request_bytes = int(os.environ.get("MAX_REQUEST_BYTES", str(25 * 1024 * 1024)))
-    if len(raw_bytes) > max_request_bytes:
-        raise HTTPException(status_code=413, detail=f"Request body exceeds {max_request_bytes} bytes")
-    ingest_service = TranscriptIngestService(db)
-    try:
-        outcome, analysis_result = ingest_service.ingest_bytes(
-            raw_bytes=raw_bytes,
-            parser_name=normalised,
-            source_path=file.filename,
-        )
-        db.commit()
-        if not outcome.deduplicated and analysis_result is not None:
-            metrics = metrics_payload_from_analysis_result(analysis_result)
-            try:
-                TelemetryService().record_analysis_event(
-                    outcome_status=metrics["outcome_status"],
-                    match_count=metrics["match_count"],
-                    primary_family_id=metrics["primary_family_id"],
-                    mixed_family=metrics["mixed_family"],
-                    not_classifiable_reason=metrics["not_classifiable_reason"],
-                )
-            except Exception:
-                pass
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except IntegrityError:
-        db.rollback()
-        outcome = PersistenceService(db).get_ingest_outcome(
-            IngestProvenance(
-                transcript_hash=hashlib.sha256(raw_bytes).hexdigest(),
-                source_session_id=None,
-                source_path=file.filename,
-                parser_version=f"{normalised}@1",
-                ingested_at=datetime.now(timezone.utc),
-            )
-        )
-        if outcome is None:
-            raise
-    except Exception as exc:
-        db.rollback()
-        raise HTTPException(
-            status_code=422,
-            detail=f"Failed to process transcript: {exc}",
-        ) from exc
+    outcome, _, _ = ingest_transcript_bytes(
+        db,
+        raw_bytes=raw_bytes,
+        format_name=format,
+        filename=file.filename,
+    )
 
     if outcome.deduplicated:
         response.status_code = 200
@@ -90,9 +37,3 @@ def ingest_transcript(
         status=outcome.status,
         deduplicated=outcome.deduplicated,
     )
-
-
-def _detect_format(filename: str | None) -> str:
-    if filename and filename.endswith(".jsonl"):
-        return "claude_code"
-    return "unknown"

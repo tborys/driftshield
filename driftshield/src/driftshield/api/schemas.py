@@ -114,6 +114,38 @@ class IngestResponse(BaseModel):
     deduplicated: bool = False
 
 
+class GeneratedReportResponse(BaseModel):
+    id: uuid.UUID
+    session_id: uuid.UUID
+    generated_at: datetime
+    report_type: str
+    content_markdown: str | None = None
+    content_json: dict[str, Any] | None = None
+    generated_by: str | None = None
+
+
+class ForensicCaseResponse(BaseModel):
+    id: uuid.UUID
+    session_id: uuid.UUID
+    state: str
+    report_id: uuid.UUID | None = None
+    artifact_refs: list[dict[str, Any]] = Field(default_factory=list)
+    review_refs: list[str] = Field(default_factory=list)
+    audit_refs: list[str] = Field(default_factory=list)
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class ForensicWorkflowResponse(BaseModel):
+    session_id: uuid.UUID
+    ingest_status: str
+    deduplicated: bool = False
+    parser_name: str
+    source_path: str | None = None
+    report: GeneratedReportResponse
+    forensic_case: ForensicCaseResponse
+
+
 class ConnectorResponse(BaseModel):
     id: uuid.UUID
     source_type: str

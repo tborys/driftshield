@@ -250,9 +250,12 @@ def test_ingest_recovers_from_duplicate_commit_race(client, auth_headers, sample
         emit_calls.append(kwargs)
         return True
 
-    monkeypatch.setattr("driftshield.api.routes.ingest.TranscriptIngestService.ingest_bytes", fake_ingest_bytes)
+    monkeypatch.setattr("driftshield.api.ingest_workflow.TranscriptIngestService.ingest_bytes", fake_ingest_bytes)
     monkeypatch.setattr(PersistenceService, "get_ingest_outcome", fake_get_ingest_outcome)
-    monkeypatch.setattr("driftshield.api.routes.ingest.TelemetryService.record_analysis_event", fake_record_analysis_event)
+    monkeypatch.setattr(
+        "driftshield.api.ingest_workflow.TelemetryService.record_analysis_event",
+        fake_record_analysis_event,
+    )
 
     response = _post_ingest(client, auth_headers, sample_transcript)
 
@@ -426,7 +429,7 @@ def test_ingest_succeeds_even_when_post_commit_telemetry_emit_fails(client, auth
         raise OSError("disk full")
 
     monkeypatch.setattr(
-        "driftshield.api.routes.ingest.TelemetryService.record_analysis_event",
+        "driftshield.api.ingest_workflow.TelemetryService.record_analysis_event",
         fail_record_analysis_event,
     )
 
