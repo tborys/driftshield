@@ -160,6 +160,29 @@ source .venv/bin/activate
 driftshield ingest --latest
 ```
 
+### Generate a forensic report through the API
+
+With the backend running and `API_KEY` exported from `driftshield/.env`, upload a
+transcript directly to the API and get the persisted `forensic_report.v1` payload
+back in one call:
+
+```bash
+cd driftshield
+source .venv/bin/activate
+set -a
+source .env
+set +a
+curl -sS \
+  -X POST http://localhost:8080/api/forensics/report \
+  -H "X-API-Key: $API_KEY" \
+  -F "file=@tests/fixtures/transcripts/sample_claude_code_session.jsonl" \
+  -F "format=claude_code" \
+  -F "report_type=summary"
+```
+
+This returns the ingested `session_id`, persisted forensic case metadata, and the
+full JSON report contract that the CLI and dashboard surfaces share.
+
 ## How It Works
 
 ```
@@ -206,6 +229,9 @@ driftshield inspect <file.jsonl> --node 0
 
 # Generate a report
 driftshield report <file.jsonl>
+
+# Generate a JSON report contract from the CLI
+driftshield report <file.jsonl> --format json
 
 # Discover available transcript sources
 driftshield connectors list
