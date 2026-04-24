@@ -107,6 +107,14 @@ def test_analyze_session_emits_inflection_explanation_from_flagged_node() -> Non
             "inflection_reason:recovery penalty for 1 clean node(s) after this point",
         ],
     )
+    assert result.candidate_break_point is not None
+    assert result.candidate_break_point.status.value == "identified"
+    assert result.candidate_break_point.node_id == risky_event.id
+    assert f"node:{risky_event.id}" in result.candidate_break_point.evidence_refs
+    assert "risk:coverage_gap" in result.candidate_break_point.evidence_refs
+    assert "inflection_reason:severity from coverage_gap" in result.candidate_break_point.evidence_refs
+    assert "inputs.sections" in result.candidate_break_point.evidence_refs
+    assert "outputs.reviewed_sections" in result.candidate_break_point.evidence_refs
     assert result.inflection_node.event.risk_classification is not None
     assert result.inflection_node.event.risk_classification.explanations["coverage_gap"] == ExplanationPayload(
         reason="Output referenced fewer items than were provided in the input.",

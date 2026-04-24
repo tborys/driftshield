@@ -11,6 +11,11 @@ def export_json(report: ReportData) -> dict[str, Any]:
         "report_type": report.report_type.value,
         "total_events": report.total_events,
         "flagged_events": report.flagged_events,
+        "candidate_break_point": (
+            report.candidate_break_point.to_dict()
+            if report.candidate_break_point is not None
+            else None
+        ),
         "inflection_node_id": str(report.inflection_node_id) if report.inflection_node_id else None,
         "inflection_action": report.inflection_action,
         "classification": report.classification,

@@ -41,7 +41,7 @@ def test_render_full_report_markdown(full_report_data):
     assert "# Forensic Analysis Report" in md
     assert "test-agent" in md
     assert "Behavioural Lineage Reconstruction" in md
-    assert "Inflection Node Identification" in md
+    assert "Candidate Break Point Assessment" in md
     assert "Risk State Transition Mapping" in md
     assert "Systemic Exposure Assessment" in md
 

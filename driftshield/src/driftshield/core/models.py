@@ -44,6 +44,100 @@ class ExplanationPayload:
         )
 
 
+class BreakPointStatus(str, Enum):
+    """Status of the OSS-safe candidate break-point assessment."""
+
+    IDENTIFIED = "identified"
+    NO_CLEAR_BREAK_POINT = "no_clear_break_point"
+
+
+@dataclass
+class CandidateBreakPoint:
+    """Observable, OSS-safe break-point finding for a single analyzed run."""
+
+    status: BreakPointStatus
+    summary: str
+    finding_kind: str = "candidate_break_point"
+    node_id: UUID | None = None
+    sequence_num: int | None = None
+    action: str | None = None
+    confidence: float | None = None
+    evidence_refs: list[str] = field(default_factory=list)
+    risk_flags: list[str] = field(default_factory=list)
+    uncertainty_reasons: list[str] = field(default_factory=list)
+    strategy: str = "none"
+
+    @property
+    def is_identified(self) -> bool:
+        return self.status is BreakPointStatus.IDENTIFIED and self.node_id is not None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "finding_kind": self.finding_kind,
+            "status": self.status.value,
+            "summary": self.summary,
+            "node_id": str(self.node_id) if self.node_id is not None else None,
+            "sequence_num": self.sequence_num,
+            "action": self.action,
+            "confidence": self.confidence,
+            "evidence_refs": list(self.evidence_refs),
+            "risk_flags": list(self.risk_flags),
+            "uncertainty_reasons": list(self.uncertainty_reasons),
+            "strategy": self.strategy,
+        }
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any] | None) -> "CandidateBreakPoint | None":
+        if not isinstance(payload, dict):
+            return None
+
+        status_value = payload.get("status")
+        summary = payload.get("summary")
+        if not isinstance(status_value, str) or not isinstance(summary, str):
+            return None
+
+        try:
+            status = BreakPointStatus(status_value)
+        except ValueError:
+            return None
+
+        node_id_value = payload.get("node_id")
+        node_id: UUID | None = None
+        if isinstance(node_id_value, str) and node_id_value:
+            try:
+                node_id = UUID(node_id_value)
+            except ValueError:
+                return None
+
+        return cls(
+            finding_kind=(
+                payload.get("finding_kind")
+                if isinstance(payload.get("finding_kind"), str)
+                else "candidate_break_point"
+            ),
+            status=status,
+            summary=summary,
+            node_id=node_id,
+            sequence_num=payload.get("sequence_num")
+            if isinstance(payload.get("sequence_num"), int)
+            else None,
+            action=payload.get("action") if isinstance(payload.get("action"), str) else None,
+            confidence=payload.get("confidence")
+            if isinstance(payload.get("confidence"), (int, float))
+            else None,
+            evidence_refs=[
+                str(ref) for ref in payload.get("evidence_refs", []) if isinstance(ref, str)
+            ],
+            risk_flags=[str(flag) for flag in payload.get("risk_flags", []) if isinstance(flag, str)],
+            uncertainty_reasons=[
+                str(reason)
+                for reason in payload.get("uncertainty_reasons", [])
+                if isinstance(reason, str)
+            ],
+            strategy=payload.get("strategy") if isinstance(payload.get("strategy"), str) else "none",
+        )
+
+
 @dataclass
 class RiskClassification:
     """Risk flags for a decision node transition."""

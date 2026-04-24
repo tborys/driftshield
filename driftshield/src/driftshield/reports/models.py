@@ -3,6 +3,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 
+from driftshield.core.models import CandidateBreakPoint
+
 
 class ReportType(Enum):
     FULL = "full"
@@ -44,6 +46,7 @@ class ReportData:
     sections: list[ReportSection]
     inflection_node_id: uuid.UUID | None = None
     inflection_action: str | None = None
+    candidate_break_point: CandidateBreakPoint | None = None
     total_events: int = 0
     flagged_events: int = 0
     classification: str = "isolated"

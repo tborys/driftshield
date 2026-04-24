@@ -174,6 +174,11 @@ def test_save_creates_draft_forensic_case_with_evidence_artifacts(
         for ref in case.artifact_refs
     )
     assert any(
+        ref.role == "candidate_break_point"
+        and ref.metadata["status"] == "no_clear_break_point"
+        for ref in case.artifact_refs
+    )
+    assert any(
         ref.role == "event_artifact"
         and ref.target_ref == str(result.graph.nodes[0].id)
         and ref.metadata == {"kind": "path", "value": "/test", "source": "inputs"}
@@ -568,6 +573,14 @@ def test_save_and_load_graph_round_trip_explanations(db_session):
             "inflection_reason:point-of-no-return position near the observed failure",
         ],
     }
+    case = service.load_case_for_session(session_id)
+    assert case is not None
+    assert any(
+        ref.role == "candidate_break_point"
+        and ref.metadata["status"] == "identified"
+        and ref.metadata["node_id"] == str(event.id)
+        for ref in case.artifact_refs
+    )
 
     graph = service.load_graph(session_id)
 
