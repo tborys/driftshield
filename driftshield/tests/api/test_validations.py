@@ -73,6 +73,10 @@ def seeded_report(db_session, seeded_session):
                     {
                         "finding_id": f"finding:candidate_break_point:{seeded_session}",
                         "finding_kind": "candidate_break_point",
+                    },
+                    {
+                        "finding_id": f"finding:evidence_gap:{seeded_session}",
+                        "finding_kind": "evidence_gap",
                     }
                 ],
                 "pattern_matches": [
@@ -279,6 +283,57 @@ def test_create_forensic_feedback_rejects_unknown_report_target(
 
     assert resp.status_code == 422
     assert "Pattern match target_ref not found" in resp.json()["detail"]
+
+
+def test_create_forensic_feedback_requires_report_for_report_scoped_target(
+    client,
+    auth_headers,
+    seeded_session,
+):
+    payload = {
+        "target_kind": "pattern_match",
+        "target_ref": "pattern_match:session-1:0",
+        "category": "failure_family",
+        "outcome": "different_family",
+        "reviewer": "demo",
+        "suggested_failure_family": "verification_failure",
+    }
+
+    resp = client.post(
+        f"/api/sessions/{seeded_session}/forensic-feedback",
+        headers=auth_headers,
+        json=payload,
+    )
+
+    assert resp.status_code == 422
+    assert "report_id is required for pattern_match feedback" in resp.json()["detail"]
+
+
+def test_create_forensic_feedback_validates_evidence_gap_target(
+    client,
+    auth_headers,
+    seeded_session,
+    seeded_report,
+):
+    payload = {
+        "target_kind": "evidence_gap",
+        "target_ref": f"finding:evidence_gap:{seeded_session}",
+        "category": "evidence",
+        "outcome": "missing",
+        "reviewer": "demo",
+        "report_id": str(seeded_report),
+        "problem_detail": "The report should cite the failed tool result.",
+    }
+
+    resp = client.post(
+        f"/api/sessions/{seeded_session}/forensic-feedback",
+        headers=auth_headers,
+        json=payload,
+    )
+
+    assert resp.status_code == 201
+    assert resp.json()["target_kind"] == "evidence_gap"
+    assert resp.json()["verdict"] == "reject"
 
 
 def test_create_forensic_feedback_rejects_vague_family_redirect(

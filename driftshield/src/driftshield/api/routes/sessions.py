@@ -34,6 +34,13 @@ from driftshield.db.persistence import PersistenceService
 from driftshield.db.validation_service import ValidationService
 
 router = APIRouter()
+_REPORT_BOUND_FEEDBACK_TARGET_KINDS = {
+    "classification",
+    "finding",
+    "pattern_match",
+    "candidate_break_point",
+    "evidence_gap",
+}
 
 
 def _count_risks(nodes: list[DecisionNodeModel]) -> int:
@@ -243,6 +250,12 @@ def _load_report_for_feedback(
             raise HTTPException(status_code=422, detail="report_id must match report target_ref")
         report_id = target_report_id
 
+    if report_id is None and payload.target_kind in _REPORT_BOUND_FEEDBACK_TARGET_KINDS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"report_id is required for {payload.target_kind} feedback",
+        )
+
     if report_id is None:
         return None
 
@@ -263,6 +276,10 @@ def _validate_report_feedback_target(
         findings = content.get("findings") if isinstance(content, dict) else None
         if not _contains_ref(findings, "finding_id", payload.target_ref):
             raise HTTPException(status_code=422, detail="Finding target_ref not found in report")
+    elif payload.target_kind == "evidence_gap":
+        findings = content.get("findings") if isinstance(content, dict) else None
+        if not _contains_finding_kind(findings, payload.target_ref, "evidence_gap"):
+            raise HTTPException(status_code=422, detail="Evidence gap target_ref not found in report")
     elif payload.target_kind == "pattern_match":
         matches = content.get("pattern_matches") if isinstance(content, dict) else None
         if not _contains_ref(matches, "match_id", payload.target_ref):
@@ -279,6 +296,17 @@ def _contains_ref(items: object, key: str, value: str) -> bool:
     if not isinstance(items, list):
         return False
     return any(isinstance(item, dict) and item.get(key) == value for item in items)
+
+
+def _contains_finding_kind(items: object, finding_id: str, finding_kind: str) -> bool:
+    if not isinstance(items, list):
+        return False
+    return any(
+        isinstance(item, dict)
+        and item.get("finding_id") == finding_id
+        and item.get("finding_kind") == finding_kind
+        for item in items
+    )
 
 
 @router.get("/api/sessions")
