@@ -87,6 +87,51 @@ def test_record_validation_accepts_review_outcome_metadata(db_session):
     assert row.metadata_json["review_outcome"]["label"] == "useful_failure"
 
 
+def test_record_forensic_feedback_is_structured_and_retrievable(db_session):
+    session_id = _seed_session(db_session)
+    report_id = uuid.uuid4()
+    service = ValidationService(db_session)
+
+    row = service.record_forensic_feedback(
+        session_id=session_id,
+        target_kind="pattern_match",
+        target_ref="pattern_match:session-1:0",
+        category="failure_family",
+        outcome="different_family",
+        reviewer="demo",
+        report_id=report_id,
+        confidence=0.67,
+        suggested_failure_family="verification_failure",
+        problem_detail="visible output fits verification failure better",
+    )
+
+    assert row.target_type == "forensic_feedback"
+    assert row.verdict == "reject"
+    feedback = row.metadata_json["forensic_feedback"]
+    assert feedback["schema_version"] == "forensic_feedback.v1"
+    assert feedback["target_kind"] == "pattern_match"
+    assert feedback["category"] == "failure_family"
+    assert feedback["suggested_failure_family"] == "verification_failure"
+
+    rows = service.list_forensic_feedback(session_id=session_id, report_id=report_id)
+    assert [item.id for item in rows] == [row.id]
+
+
+def test_record_forensic_feedback_requires_specific_family_for_redirect(db_session):
+    session_id = _seed_session(db_session)
+    service = ValidationService(db_session)
+
+    with pytest.raises(ValueError, match="suggested_failure_family is required"):
+        service.record_forensic_feedback(
+            session_id=session_id,
+            target_kind="pattern_match",
+            target_ref="pattern_match:session-1:0",
+            category="failure_family",
+            outcome="different_family",
+            reviewer="demo",
+        )
+
+
 def test_export_validations_filters_private_records_and_keeps_provenance(db_session, tmp_path):
     session_id = _seed_session(db_session)
     service = ValidationService(db_session)

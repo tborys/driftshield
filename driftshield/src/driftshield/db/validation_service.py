@@ -20,6 +20,33 @@ _ALLOWED_REVIEW_OUTCOMES = {
     "wrong_inflection",
     "needs_follow_up",
 }
+_ALLOWED_FORENSIC_FEEDBACK_TARGET_KINDS = {
+    "classification",
+    "report",
+    "finding",
+    "pattern_match",
+    "candidate_break_point",
+    "evidence_gap",
+}
+_ALLOWED_FORENSIC_FEEDBACK_OUTCOMES = {
+    "classification": {"correct", "incorrect", "unresolved"},
+    "evidence": {"sufficient", "missing", "unconvincing", "unresolved"},
+    "failure_family": {"correct", "different_family", "unresolved"},
+    "report_quality": {"useful", "unclear", "not_useful", "unresolved"},
+    "candidate_break_point": {"correct", "incorrect", "unresolved"},
+}
+_FORENSIC_FEEDBACK_VERDICTS = {
+    "correct": "accept",
+    "sufficient": "accept",
+    "useful": "accept",
+    "incorrect": "reject",
+    "missing": "reject",
+    "unconvincing": "reject",
+    "different_family": "reject",
+    "not_useful": "reject",
+    "unclear": "needs_review",
+    "unresolved": "needs_review",
+}
 _REVIEW_OUTCOME_VERDICTS = {
     "useful_failure": "accept",
     "true_inflection": "accept",
@@ -183,6 +210,65 @@ class ValidationService:
             shareable=shareable,
         )
 
+    def record_forensic_feedback(
+        self,
+        *,
+        session_id: uuid.UUID,
+        target_kind: str,
+        target_ref: str,
+        category: str,
+        outcome: str,
+        reviewer: str,
+        report_id: uuid.UUID | None = None,
+        confidence: float | None = None,
+        notes: str | None = None,
+        suggested_failure_family: str | None = None,
+        problem_detail: str | None = None,
+        shareable: bool = False,
+    ) -> AnalystValidationModel:
+        """Record bounded OSS-safe feedback about a forensic report result."""
+        if target_kind not in _ALLOWED_FORENSIC_FEEDBACK_TARGET_KINDS:
+            allowed = ", ".join(sorted(_ALLOWED_FORENSIC_FEEDBACK_TARGET_KINDS))
+            raise ValueError(f"target_kind must be one of: {allowed}")
+
+        allowed_outcomes = _ALLOWED_FORENSIC_FEEDBACK_OUTCOMES.get(category)
+        if allowed_outcomes is None:
+            allowed = ", ".join(sorted(_ALLOWED_FORENSIC_FEEDBACK_OUTCOMES))
+            raise ValueError(f"category must be one of: {allowed}")
+        if outcome not in allowed_outcomes:
+            allowed = ", ".join(sorted(allowed_outcomes))
+            raise ValueError(f"outcome for category {category!r} must be one of: {allowed}")
+
+        if category == "failure_family" and outcome == "different_family":
+            if not suggested_failure_family:
+                raise ValueError(
+                    "suggested_failure_family is required when outcome is different_family"
+                )
+
+        metadata_json = {
+            "forensic_feedback": {
+                "schema_version": "forensic_feedback.v1",
+                "target_kind": target_kind,
+                "category": category,
+                "outcome": outcome,
+                "report_id": str(report_id) if report_id is not None else None,
+                "suggested_failure_family": suggested_failure_family,
+                "problem_detail": problem_detail,
+            }
+        }
+
+        return self._record(
+            session_id=session_id,
+            target_type="forensic_feedback",
+            target_ref=target_ref,
+            verdict=_FORENSIC_FEEDBACK_VERDICTS[outcome],
+            reviewer=reviewer,
+            confidence=confidence,
+            notes=notes,
+            metadata_json=metadata_json,
+            shareable=shareable,
+        )
+
     def list_validations(
         self,
         *,
@@ -209,6 +295,29 @@ class ValidationService:
                 created_at=row.created_at,
             )
             for row in query.all()
+        ]
+
+    def list_forensic_feedback(
+        self,
+        *,
+        session_id: uuid.UUID,
+        report_id: uuid.UUID | None = None,
+    ) -> list[ValidationRecord]:
+        rows = [
+            row
+            for row in self.list_validations(session_id=session_id)
+            if row.target_type == "forensic_feedback"
+        ]
+        if report_id is None:
+            return rows
+
+        report_id_value = str(report_id)
+        return [
+            row
+            for row in rows
+            if isinstance(row.metadata_json, dict)
+            and isinstance(row.metadata_json.get("forensic_feedback"), dict)
+            and row.metadata_json["forensic_feedback"].get("report_id") == report_id_value
         ]
 
     def export_training_dataset_jsonl(self, path: Path) -> int:

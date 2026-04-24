@@ -218,6 +218,38 @@ class ValidationResponse(BaseModel):
     created_at: datetime
 
 
+class ForensicFeedbackCreateRequest(BaseModel):
+    target_kind: str
+    target_ref: str
+    category: str
+    outcome: str
+    reviewer: str
+    report_id: uuid.UUID | None = None
+    confidence: float | None = Field(default=None, ge=0, le=1)
+    notes: str | None = None
+    suggested_failure_family: str | None = None
+    problem_detail: str | None = None
+    shareable: bool = False
+
+
+class ForensicFeedbackResponse(BaseModel):
+    id: uuid.UUID
+    session_id: uuid.UUID
+    target_kind: str
+    target_ref: str
+    category: str
+    outcome: str
+    verdict: str
+    reviewer: str
+    report_id: uuid.UUID | None = None
+    confidence: float | None = None
+    notes: str | None = None
+    suggested_failure_family: str | None = None
+    problem_detail: str | None = None
+    shareable: bool = False
+    created_at: datetime
+
+
 class ErrorResponse(BaseModel):
     detail: str
     code: str | None = None

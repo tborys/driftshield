@@ -8,6 +8,8 @@ from driftshield.api.auth import require_api_key
 from driftshield.api.dependencies import get_db
 from driftshield.api.schemas import (
     ExplanationPayloadResponse,
+    ForensicFeedbackCreateRequest,
+    ForensicFeedbackResponse,
     GraphEdgeResponse,
     GraphNodeResponse,
     GraphResponse,
@@ -25,12 +27,20 @@ from driftshield.api.schemas import (
 from driftshield.core.models import RiskClassification
 from driftshield.db.models import (
     DecisionNodeModel,
+    ReportModel,
     SessionModel,
 )
 from driftshield.db.persistence import PersistenceService
 from driftshield.db.validation_service import ValidationService
 
 router = APIRouter()
+_REPORT_BOUND_FEEDBACK_TARGET_KINDS = {
+    "classification",
+    "finding",
+    "pattern_match",
+    "candidate_break_point",
+    "evidence_gap",
+}
 
 
 def _count_risks(nodes: list[DecisionNodeModel]) -> int:
@@ -178,6 +188,124 @@ def _extract_recurrence_status(session: SessionModel) -> RecurrenceStatusRespons
         recurrence_count=_optional_int(payload.get("recurrence_count")),
         summary=payload.get("summary") if isinstance(payload.get("summary"), str) else None,
         raw=payload,
+    )
+
+
+def _feedback_response(row) -> ForensicFeedbackResponse:
+    metadata = row.metadata_json if isinstance(row.metadata_json, dict) else {}
+    feedback = metadata.get("forensic_feedback") if isinstance(metadata, dict) else None
+    if not isinstance(feedback, dict):
+        feedback = {}
+
+    report_id = None
+    if isinstance(feedback.get("report_id"), str):
+        try:
+            report_id = uuid.UUID(feedback["report_id"])
+        except ValueError:
+            report_id = None
+
+    return ForensicFeedbackResponse(
+        id=row.id,
+        session_id=row.session_id,
+        target_kind=str(feedback.get("target_kind") or ""),
+        target_ref=row.target_ref,
+        category=str(feedback.get("category") or ""),
+        outcome=str(feedback.get("outcome") or ""),
+        verdict=row.verdict,
+        reviewer=row.reviewer,
+        report_id=report_id,
+        confidence=row.confidence,
+        notes=row.notes,
+        suggested_failure_family=(
+            feedback.get("suggested_failure_family")
+            if isinstance(feedback.get("suggested_failure_family"), str)
+            else None
+        ),
+        problem_detail=(
+            feedback.get("problem_detail")
+            if isinstance(feedback.get("problem_detail"), str)
+            else None
+        ),
+        shareable=row.shareable,
+        created_at=row.created_at,
+    )
+
+
+def _load_report_for_feedback(
+    *,
+    session_id: uuid.UUID,
+    payload: ForensicFeedbackCreateRequest,
+    db: DBSession,
+) -> ReportModel | None:
+    report_id = payload.report_id
+    if payload.target_kind == "report":
+        try:
+            target_report_id = uuid.UUID(payload.target_ref)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail="target_ref must be a report UUID when target_kind is report",
+            ) from exc
+        if report_id is not None and report_id != target_report_id:
+            raise HTTPException(status_code=422, detail="report_id must match report target_ref")
+        report_id = target_report_id
+
+    if report_id is None and payload.target_kind in _REPORT_BOUND_FEEDBACK_TARGET_KINDS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"report_id is required for {payload.target_kind} feedback",
+        )
+
+    if report_id is None:
+        return None
+
+    report = db.get(ReportModel, report_id)
+    if report is None or report.session_id != session_id:
+        raise HTTPException(status_code=404, detail="Report not found for session")
+
+    _validate_report_feedback_target(report, payload)
+    return report
+
+
+def _validate_report_feedback_target(
+    report: ReportModel,
+    payload: ForensicFeedbackCreateRequest,
+) -> None:
+    content = report.content_json if isinstance(report.content_json, dict) else {}
+    if payload.target_kind == "finding":
+        findings = content.get("findings") if isinstance(content, dict) else None
+        if not _contains_ref(findings, "finding_id", payload.target_ref):
+            raise HTTPException(status_code=422, detail="Finding target_ref not found in report")
+    elif payload.target_kind == "evidence_gap":
+        findings = content.get("findings") if isinstance(content, dict) else None
+        if not _contains_finding_kind(findings, payload.target_ref, "evidence_gap"):
+            raise HTTPException(status_code=422, detail="Evidence gap target_ref not found in report")
+    elif payload.target_kind == "pattern_match":
+        matches = content.get("pattern_matches") if isinstance(content, dict) else None
+        if not _contains_ref(matches, "match_id", payload.target_ref):
+            raise HTTPException(status_code=422, detail="Pattern match target_ref not found in report")
+    elif payload.target_kind == "candidate_break_point":
+        if not isinstance(content.get("candidate_break_point"), dict):
+            raise HTTPException(status_code=422, detail="Report has no candidate break point target")
+    elif payload.target_kind == "classification":
+        if not isinstance(content.get("classification"), str):
+            raise HTTPException(status_code=422, detail="Report has no classification target")
+
+
+def _contains_ref(items: object, key: str, value: str) -> bool:
+    if not isinstance(items, list):
+        return False
+    return any(isinstance(item, dict) and item.get(key) == value for item in items)
+
+
+def _contains_finding_kind(items: object, finding_id: str, finding_kind: str) -> bool:
+    if not isinstance(items, list):
+        return False
+    return any(
+        isinstance(item, dict)
+        and item.get("finding_id") == finding_id
+        and item.get("finding_kind") == finding_kind
+        for item in items
     )
 
 
@@ -414,3 +542,63 @@ def create_session_validation(
         created_at=row.created_at,
     )
     return created.model_dump(mode="json")
+
+
+@router.get("/api/sessions/{session_id}/forensic-feedback")
+def list_session_forensic_feedback(
+    session_id: uuid.UUID,
+    report_id: uuid.UUID | None = Query(default=None),
+    api_key: str = Depends(require_api_key),
+    db: DBSession = Depends(get_db),
+):
+    session = db.get(SessionModel, session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    if report_id is not None:
+        report = db.get(ReportModel, report_id)
+        if report is None or report.session_id != session_id:
+            raise HTTPException(status_code=404, detail="Report not found for session")
+
+    rows = ValidationService(db).list_forensic_feedback(
+        session_id=session_id,
+        report_id=report_id,
+    )
+    return [_feedback_response(row).model_dump(mode="json") for row in rows]
+
+
+@router.post("/api/sessions/{session_id}/forensic-feedback", status_code=201)
+def create_session_forensic_feedback(
+    session_id: uuid.UUID,
+    payload: ForensicFeedbackCreateRequest,
+    api_key: str = Depends(require_api_key),
+    db: DBSession = Depends(get_db),
+):
+    session = db.get(SessionModel, session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    report = _load_report_for_feedback(session_id=session_id, payload=payload, db=db)
+
+    service = ValidationService(db)
+    try:
+        row = service.record_forensic_feedback(
+            session_id=session_id,
+            target_kind=payload.target_kind,
+            target_ref=payload.target_ref,
+            category=payload.category,
+            outcome=payload.outcome,
+            reviewer=payload.reviewer,
+            report_id=report.id if report is not None else payload.report_id,
+            confidence=payload.confidence,
+            notes=payload.notes,
+            suggested_failure_family=payload.suggested_failure_family,
+            problem_detail=payload.problem_detail,
+            shareable=payload.shareable,
+        )
+        db.commit()
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return _feedback_response(row).model_dump(mode="json")
