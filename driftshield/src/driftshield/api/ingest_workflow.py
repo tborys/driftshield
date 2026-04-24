@@ -1,11 +1,11 @@
 import hashlib
-import os
 from datetime import datetime, timezone
 
-from fastapi import HTTPException
+from fastapi import HTTPException, UploadFile
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DBSession
 
+from driftshield.api.security import get_max_request_bytes
 from driftshield.cli.parsers import PARSERS
 from driftshield.core.analysis.session import AnalysisResult
 from driftshield.db.ingest_service import TranscriptIngestService, metrics_payload_from_analysis_result
@@ -34,6 +34,7 @@ def ingest_transcript_bytes(
     raw_bytes: bytes,
     format_name: str,
     filename: str | None,
+    commit: bool = True,
 ) -> tuple[IngestOutcome, AnalysisResult | None, str]:
     normalised = resolve_format(format_name, filename)
     _validate_request_size(raw_bytes)
@@ -45,9 +46,10 @@ def ingest_transcript_bytes(
             parser_name=normalised,
             source_path=filename,
         )
-        db.commit()
-        if not outcome.deduplicated and analysis_result is not None:
-            _record_analysis_telemetry(analysis_result)
+        if commit:
+            db.commit()
+            if not outcome.deduplicated and analysis_result is not None:
+                record_analysis_telemetry(analysis_result)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except IntegrityError:
@@ -77,7 +79,29 @@ def ingest_transcript_bytes(
     return outcome, analysis_result, normalised
 
 
-def _record_analysis_telemetry(result: AnalysisResult) -> None:
+def read_upload_bytes(
+    file: UploadFile,
+    *,
+    chunk_size: int = 1024 * 1024,
+) -> bytes:
+    max_request_bytes = get_max_request_bytes()
+    total_bytes = 0
+    chunks: list[bytes] = []
+
+    while True:
+        chunk = file.file.read(chunk_size)
+        if not chunk:
+            break
+
+        total_bytes += len(chunk)
+        if total_bytes > max_request_bytes:
+            raise HTTPException(status_code=413, detail=f"Request body exceeds {max_request_bytes} bytes")
+        chunks.append(chunk)
+
+    return b"".join(chunks)
+
+
+def record_analysis_telemetry(result: AnalysisResult) -> None:
     metrics = metrics_payload_from_analysis_result(result)
     try:
         TelemetryService().record_analysis_event(
@@ -92,6 +116,6 @@ def _record_analysis_telemetry(result: AnalysisResult) -> None:
 
 
 def _validate_request_size(raw_bytes: bytes) -> None:
-    max_request_bytes = int(os.environ.get("MAX_REQUEST_BYTES", str(25 * 1024 * 1024)))
+    max_request_bytes = get_max_request_bytes()
     if len(raw_bytes) > max_request_bytes:
         raise HTTPException(status_code=413, detail=f"Request body exceeds {max_request_bytes} bytes")

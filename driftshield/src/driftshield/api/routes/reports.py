@@ -6,7 +6,11 @@ from sqlalchemy.orm import Session as DBSession
 
 from driftshield.api.auth import require_api_key
 from driftshield.api.dependencies import get_db
-from driftshield.api.ingest_workflow import ingest_transcript_bytes
+from driftshield.api.ingest_workflow import (
+    ingest_transcript_bytes,
+    read_upload_bytes,
+    record_analysis_telemetry,
+)
 from driftshield.api.schemas import (
     ForensicCaseResponse,
     ForensicWorkflowResponse,
@@ -57,39 +61,48 @@ def generate_forensic_report(
 ):
     del api_key
     requested_report_type = _parse_report_type(report_type)
-    raw_bytes = file.file.read()
-    outcome, _, parser_name = ingest_transcript_bytes(
-        db,
-        raw_bytes=raw_bytes,
-        format_name=format,
-        filename=file.filename,
-    )
+    raw_bytes = read_upload_bytes(file)
 
-    if outcome.deduplicated:
-        existing_report = _load_existing_report_for_case(
+    try:
+        outcome, analysis_result, parser_name = ingest_transcript_bytes(
+            db,
+            raw_bytes=raw_bytes,
+            format_name=format,
+            filename=file.filename,
+            commit=False,
+        )
+
+        if outcome.deduplicated:
+            existing_report = _load_existing_report_for_case(
+                session_id=outcome.session_id,
+                report_type=requested_report_type,
+                db=db,
+            )
+            if existing_report is not None:
+                report, forensic_case = existing_report
+                response.status_code = 200
+                return ForensicWorkflowResponse(
+                    session_id=outcome.session_id,
+                    ingest_status=outcome.status,
+                    deduplicated=outcome.deduplicated,
+                    parser_name=parser_name,
+                    source_path=file.filename,
+                    report=_report_response(report),
+                    forensic_case=_forensic_case_response(forensic_case),
+                )
+
+        report, forensic_case = _create_report_for_session(
             session_id=outcome.session_id,
             report_type=requested_report_type,
             db=db,
         )
-        if existing_report is not None:
-            report, forensic_case = existing_report
-            response.status_code = 200
-            return ForensicWorkflowResponse(
-                session_id=outcome.session_id,
-                ingest_status=outcome.status,
-                deduplicated=outcome.deduplicated,
-                parser_name=parser_name,
-                source_path=file.filename,
-                report=_report_response(report),
-                forensic_case=_forensic_case_response(forensic_case),
-            )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
 
-    report, forensic_case = _create_report_for_session(
-        session_id=outcome.session_id,
-        report_type=requested_report_type,
-        db=db,
-    )
-    db.commit()
+    if not outcome.deduplicated and analysis_result is not None:
+        record_analysis_telemetry(analysis_result)
 
     return ForensicWorkflowResponse(
         session_id=outcome.session_id,

@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
+from fastapi import HTTPException, UploadFile
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.exc import IntegrityError
@@ -12,6 +13,7 @@ from sqlalchemy.orm import Session as DBSession
 from sqlalchemy.pool import StaticPool
 
 from driftshield.api.app import create_app
+from driftshield.api.ingest_workflow import read_upload_bytes
 from driftshield.db.models import Base, DecisionNodeModel, SessionModel
 from driftshield.db.ingest_service import TranscriptIngestService
 from driftshield.db.persistence import IngestOutcome, PersistenceService
@@ -271,6 +273,28 @@ def test_ingest_recovers_from_duplicate_commit_race(client, auth_headers, sample
         "deduplicated": True,
     }
     assert emit_calls == []
+
+
+def test_read_upload_bytes_stops_once_payload_exceeds_limit(monkeypatch):
+    class TrackingStream(io.BytesIO):
+        def __init__(self, payload: bytes):
+            super().__init__(payload)
+            self.bytes_served = 0
+
+        def read(self, size=-1):
+            chunk = super().read(size)
+            self.bytes_served += len(chunk)
+            return chunk
+
+    monkeypatch.setenv("MAX_REQUEST_BYTES", "25")
+    stream = TrackingStream(b"x" * 100)
+    file = UploadFile(filename="oversized.jsonl", file=stream)
+
+    with pytest.raises(HTTPException) as exc_info:
+        read_upload_bytes(file, chunk_size=10)
+
+    assert exc_info.value.status_code == 413
+    assert stream.bytes_served == 30
 
 
 def test_ingest_crewai_transcript_with_explicit_parser(client, auth_headers):
