@@ -43,7 +43,11 @@ def test_render_full_report_markdown(full_report_data):
     assert "Behavioural Lineage Reconstruction" in md
     assert "Candidate Break Point Assessment" in md
     assert "Risk State Transition Mapping" in md
-    assert "Systemic Exposure Assessment" in md
+    assert "Single-Run Exposure Assessment" in md
+    assert "What happened" in md
+    assert "Confidence and uncertainty" in md
+    assert "Evidence Index" in md
+    assert "does not claim decision-grade" in md
 
 
 def test_render_has_node_table(full_report_data):

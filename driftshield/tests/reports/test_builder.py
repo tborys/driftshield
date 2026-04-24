@@ -4,7 +4,10 @@ from datetime import datetime, timezone
 import pytest
 
 from driftshield.core.models import (
-    CanonicalEvent, EventType, Session as DomainSession, SessionStatus,
+    CanonicalEvent,
+    EventType,
+    Session as DomainSession,
+    SessionStatus,
 )
 from driftshield.core.analysis.session import analyze_session
 from driftshield.reports.builder import ReportBuilder
@@ -34,6 +37,39 @@ def sample_result():
     return result, session
 
 
+@pytest.fixture
+def failed_report():
+    session_id = uuid.uuid4()
+    now = datetime.now(timezone.utc)
+    risky_event = CanonicalEvent(
+        id=uuid.uuid4(),
+        session_id=str(session_id),
+        timestamp=now,
+        event_type=EventType.TOOL_CALL,
+        agent_id="test-agent",
+        action="review_sections",
+        inputs={"sections": ["intro", "body", "appendix"]},
+        outputs={"reviewed_sections": ["intro", "body"]},
+    )
+    failure_event = CanonicalEvent(
+        id=uuid.uuid4(),
+        session_id=str(session_id),
+        timestamp=now,
+        event_type=EventType.OUTPUT,
+        agent_id="test-agent",
+        action="deliver_answer",
+        parent_event_id=risky_event.id,
+    )
+    result = analyze_session([risky_event, failure_event])
+    session = DomainSession(
+        id=session_id,
+        agent_id="test-agent",
+        started_at=now,
+        status=SessionStatus.FAILED,
+    )
+    return ReportBuilder().build(session, result, report_type=ReportType.FULL)
+
+
 def test_build_full_report(sample_result):
     result, session = sample_result
     builder = ReportBuilder()
@@ -46,7 +82,7 @@ def test_build_full_report(sample_result):
     assert report_data.sections[0].title == "Behavioural Lineage Reconstruction"
     assert report_data.sections[1].title == "Candidate Break Point Assessment"
     assert report_data.sections[2].title == "Risk State Transition Mapping"
-    assert report_data.sections[3].title == "Systemic Exposure Assessment"
+    assert report_data.sections[3].title == "Single-Run Exposure Assessment"
 
 
 def test_build_summary_report(sample_result):
@@ -77,3 +113,47 @@ def test_break_point_section_uses_candidate_break_point_summary(sample_result):
     break_point = report_data.candidate_break_point
     assert break_point is not None
     assert report_data.sections[1].content.startswith(break_point.summary)
+
+
+def test_report_v1_contains_summary_findings_and_evidence_index(failed_report):
+    assert failed_report.schema_version == "forensic_report.v1"
+    assert "observable event" in failed_report.summary.what_happened
+    assert "event #" in failed_report.summary.where_it_broke
+    assert "single-run evidence" in failed_report.summary.oss_safety_note
+    assert "does not claim decision-grade" in failed_report.summary.oss_safety_note
+
+    candidate_findings = [
+        finding
+        for finding in failed_report.findings
+        if finding.finding_kind == "candidate_break_point"
+    ]
+    assert candidate_findings
+    assert all(finding.evidence_refs for finding in failed_report.findings)
+    assert any(ref.target_kind == "decision_node" for ref in failed_report.evidence_index)
+    assert any(ref.ref_id.startswith("node:") for ref in failed_report.evidence_index)
+
+
+def test_report_v1_can_describe_local_pattern_resemblance_from_metadata(sample_result):
+    result, session = sample_result
+    session.metadata = {
+        "signature_match": {
+            "matches": [
+                {
+                    "signature_id": "SIG-COMM-001",
+                    "family_id": "coverage_gap",
+                    "signature_layer": {"symptom": "required evidence skipped"},
+                    "confidence": 0.72,
+                    "rationale": "local community signature matched reviewed event shape",
+                    "evidence_event_refs": [f"node:{result.graph.nodes[0].id}"],
+                    "source": "local",
+                }
+            ]
+        }
+    }
+
+    report = ReportBuilder().build(session, result, report_type=ReportType.FULL)
+
+    assert report.pattern_matches
+    assert report.pattern_matches[0].signature_id == "SIG-COMM-001"
+    assert report.pattern_matches[0].family_id == "coverage_gap"
+    assert "coverage_gap" in report.summary.pattern_resemblance

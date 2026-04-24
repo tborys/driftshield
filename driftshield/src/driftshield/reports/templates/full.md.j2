@@ -6,7 +6,37 @@
 **Generated:** {{ report.generated_at.strftime('%Y-%m-%d %H:%M:%S UTC') }}
 **Events:** {{ report.total_events }} total, {{ report.flagged_events }} flagged
 
+> OSS safety: {{ report.summary.oss_safety_note }}
+
 ---
+
+## What happened
+
+{{ report.summary.what_happened }}
+
+## Rough break point
+
+{{ report.summary.where_it_broke }}
+
+## Evidence basis
+
+{{ report.summary.evidence_basis }}
+
+## Confidence and uncertainty
+
+**Confidence:** {{ report.summary.confidence_label }}{% if report.summary.confidence is not none %} ({{ '%.2f'|format(report.summary.confidence) }}){% endif %}
+{% if report.summary.uncertainty %}
+
+**Uncertainty:**
+{% for reason in report.summary.uncertainty %}
+- {{ reason }}
+{% endfor %}
+{% endif %}
+
+## Pattern resemblance
+
+{{ report.summary.pattern_resemblance }}
+
 {% for section in report.sections %}
 
 ## {{ loop.index }}. {{ section.title }}
@@ -25,4 +55,12 @@
 - **{{ t.from_node_id | string | truncate(8, False, '') }}** → **{{ t.to_node_id | string | truncate(8, False, '') }}**: {{ t.description }}
 {% endfor %}
 {% endif %}
+{% endfor %}
+
+## Evidence Index
+
+| Ref | Target | Role | Excerpt |
+|---|---|---|---|
+{% for ref in report.evidence_index %}
+| {{ ref.ref_id }} | {{ ref.target_kind }}: {{ ref.target_ref | string | truncate(12, False, '') }} | {{ ref.role }} | {{ ref.excerpt or 'n/a' }} |
 {% endfor %}

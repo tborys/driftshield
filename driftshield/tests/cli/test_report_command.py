@@ -36,7 +36,7 @@ def sample_transcript(tmp_path):
         },
     ]
     filepath = tmp_path / "transcript.jsonl"
-    filepath.write_text("\n".join(json.dumps(l) for l in lines))
+    filepath.write_text("\n".join(json.dumps(line) for line in lines))
     return filepath
 
 
@@ -51,6 +51,16 @@ def test_report_command_summary_type(sample_transcript):
     assert result.exit_code == 0
     assert "Forensic Analysis Report" in result.stdout
     assert "Risk State Transition Mapping" not in result.stdout
+
+
+def test_report_command_outputs_json(sample_transcript):
+    result = runner.invoke(app, ["report", str(sample_transcript), "--format", "json"])
+
+    assert result.exit_code == 0
+    data = json.loads(result.stdout)
+    assert data["schema_version"] == "forensic_report.v1"
+    assert data["summary"]["what_happened"]
+    assert data["evidence_index"]
 
 
 def test_report_command_supports_bundled_quickstart_fixture(tmp_path):
