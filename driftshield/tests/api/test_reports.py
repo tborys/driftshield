@@ -248,6 +248,67 @@ def test_generate_report_preserves_legacy_inflection_fields_for_uncertain_break_
     assert report.content_json["inflection_node_id"] is not None
 
 
+def test_generate_report_projects_legacy_family_only_signature_summary(
+    client,
+    auth_headers,
+    db_session,
+):
+    session_id = uuid.uuid4()
+    db_session.add(
+        SessionModel(
+            id=session_id,
+            agent_id="legacy-agent",
+            started_at=datetime.now(timezone.utc),
+            status="completed",
+            metadata_json={
+                "signature_summary": {
+                    "status": "matched",
+                    "primary_family_id": "coverage_gap",
+                    "matched_family_ids": ["coverage_gap", "verification_failure"],
+                    "match_count": 2,
+                    "summary": "Matched two known failure families.",
+                }
+            },
+        )
+    )
+    db_session.add_all(
+        [
+            DecisionNodeModel(
+                id=uuid.uuid4(),
+                session_id=session_id,
+                sequence_num=1,
+                event_type="TOOL_CALL",
+                action="review",
+                coverage_gap=True,
+            ),
+            DecisionNodeModel(
+                id=uuid.uuid4(),
+                session_id=session_id,
+                sequence_num=2,
+                event_type="OUTPUT",
+                action="deliver",
+            ),
+        ]
+    )
+    db_session.commit()
+
+    response = client.post(
+        f"/api/sessions/{session_id}/report",
+        headers=auth_headers,
+        json={"report_type": "full"},
+    )
+
+    assert response.status_code == 201
+
+    report = db_session.get(ReportModel, uuid.UUID(response.json()["id"]))
+    assert report is not None
+    assert [match["family_id"] for match in report.content_json["pattern_matches"]] == [
+        "coverage_gap",
+        "verification_failure",
+    ]
+    assert report.content_json["pattern_matches"][0]["signature_id"] == "family:coverage_gap"
+
+
 def test_graveyard_summary_route_is_removed(client, auth_headers):
     response = client.get("/api/graveyard/summary", headers=auth_headers)
     assert response.status_code == 404
