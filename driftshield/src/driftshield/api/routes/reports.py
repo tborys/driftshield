@@ -65,15 +65,31 @@ def generate_forensic_report(
         filename=file.filename,
     )
 
+    if outcome.deduplicated:
+        existing_report = _load_existing_report_for_case(
+            session_id=outcome.session_id,
+            report_type=requested_report_type,
+            db=db,
+        )
+        if existing_report is not None:
+            report, forensic_case = existing_report
+            response.status_code = 200
+            return ForensicWorkflowResponse(
+                session_id=outcome.session_id,
+                ingest_status=outcome.status,
+                deduplicated=outcome.deduplicated,
+                parser_name=parser_name,
+                source_path=file.filename,
+                report=_report_response(report),
+                forensic_case=_forensic_case_response(forensic_case),
+            )
+
     report, forensic_case = _create_report_for_session(
         session_id=outcome.session_id,
         report_type=requested_report_type,
         db=db,
     )
     db.commit()
-
-    if outcome.deduplicated:
-        response.status_code = 200
 
     return ForensicWorkflowResponse(
         session_id=outcome.session_id,
@@ -159,6 +175,24 @@ def _create_report_for_session(
     db.add(report)
     db.flush()
     forensic_case = service.upsert_forensic_case(domain_session, result, report=report)
+    return report, forensic_case
+
+
+def _load_existing_report_for_case(
+    *,
+    session_id: uuid.UUID,
+    report_type: ReportType,
+    db: DBSession,
+) -> tuple[ReportModel, ForensicCase] | None:
+    service = PersistenceService(db)
+    forensic_case = service.load_case_for_session(session_id)
+    if forensic_case is None or forensic_case.report_id is None:
+        return None
+
+    report = db.get(ReportModel, forensic_case.report_id)
+    if report is None or report.report_type != report_type.value:
+        return None
+
     return report, forensic_case
 
 

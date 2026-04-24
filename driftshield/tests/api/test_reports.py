@@ -194,10 +194,10 @@ def test_generate_forensic_report_reuses_session_for_duplicate_upload(
     assert second_data["deduplicated"] is True
     assert second_data["ingest_status"] == "deduped"
     assert second_data["session_id"] == first_data["session_id"]
-    assert second_data["report"]["id"] != first_data["report"]["id"]
+    assert second_data["report"]["id"] == first_data["report"]["id"]
 
     assert db_session.query(SessionModel).count() == 1
-    assert db_session.query(ReportModel).count() == 2
+    assert db_session.query(ReportModel).count() == 1
 
 
 def test_list_reports_for_session(client, auth_headers, seeded_session, db_session):
