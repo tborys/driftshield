@@ -356,7 +356,9 @@ class ReportBuilder:
         match_id = _string_value(payload.get("match_id")) or f"pattern_match:{session.id}:{index}"
 
         if signature_id is not None:
-            resolved_family_id = family_id or family_ids[0]
+            resolved_family_id = family_id or (family_ids[0] if family_ids else None)
+            if resolved_family_id is None:
+                return []
             return [
                 PatternMatch(
                     match_id=match_id,

@@ -181,3 +181,20 @@ def test_report_v1_accepts_legacy_family_only_signature_summary(sample_result):
     assert report.pattern_matches[0].rationale == "Matched two known failure families."
     assert "coverage_gap" in report.summary.pattern_resemblance
     assert "verification_failure" in report.summary.pattern_resemblance
+
+
+def test_report_v1_ignores_signature_only_payload_without_family_fields(sample_result):
+    result, session = sample_result
+    session.metadata = {
+        "signature_summary": {
+            "signature_id": "sig:test",
+            "summary": "Incomplete signature payload without family metadata.",
+        }
+    }
+
+    report = ReportBuilder().build(session, result, report_type=ReportType.FULL)
+
+    assert report.pattern_matches == []
+    assert report.summary.pattern_resemblance == (
+        "No local pattern resemblance was available from OSS-safe signals."
+    )
