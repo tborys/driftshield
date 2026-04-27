@@ -65,8 +65,8 @@ def telemetry_heartbeat() -> None:
 def telemetry_emit_analysis(
     outcome_status: str = typer.Option(..., "--outcome-status", help="matched, unclassified, or not_classifiable"),
     match_count: int = typer.Option(0, "--match-count", min=0),
-    primary_family_id: str | None = typer.Option(None, "--primary-family-id"),
-    mixed_family: bool = typer.Option(False, "--mixed-family"),
+    primary_mechanism_id: str | None = typer.Option(None, "--primary-mechanism-id"),
+    mixed_mechanism: bool = typer.Option(False, "--mixed-mechanism"),
     not_classifiable_reason: str | None = typer.Option(None, "--not-classifiable-reason"),
 ) -> None:
     """Emit one sample analysis-result telemetry event for smoke testing."""
@@ -79,8 +79,8 @@ def telemetry_emit_analysis(
     emitted = TelemetryService().record_analysis_event(
         outcome_status=validated_outcome_status,
         match_count=match_count,
-        primary_family_id=primary_family_id,
-        mixed_family=mixed_family,
+        primary_mechanism_id=primary_mechanism_id,
+        mixed_mechanism=mixed_mechanism,
         not_classifiable_reason=not_classifiable_reason,
     )
     if not emitted:

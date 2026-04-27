@@ -66,7 +66,7 @@ class ReportFinding:
 class PatternMatch:
     match_id: str
     signature_id: str
-    family_id: str
+    mechanism_id: str
     signature_layer: dict[str, Any]
     scope_ref: str
     evidence_refs: list[str] = field(default_factory=list)
