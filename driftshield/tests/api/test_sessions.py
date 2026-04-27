@@ -159,10 +159,10 @@ def test_get_session_detail(client, auth_headers, seeded_session):
     }
     assert data["signature_match"] == {
         "status": "matched",
-        "primary_family_id": "coverage_gap",
-        "matched_family_ids": ["coverage_gap", "verification_failure"],
+        "primary_mechanism_id": "coverage_gap",
+        "matched_mechanism_ids": ["coverage_gap", "verification_failure"],
         "match_count": 2,
-        "summary": "Matched two known failure families.",
+        "summary": "Matched two known failure mechanisms from local OSS-safe signals.",
         "raw": {
             "status": "matched",
             "primary_family_id": "coverage_gap",
@@ -171,18 +171,7 @@ def test_get_session_detail(client, auth_headers, seeded_session):
             "summary": "Matched two known failure families.",
         },
     }
-    assert data["recurrence_status"] == {
-        "status": "recurring",
-        "cluster_id": "cluster-42",
-        "recurrence_count": 3,
-        "summary": "Seen in three related runs.",
-        "raw": {
-            "status": "recurring",
-            "cluster_id": "cluster-42",
-            "recurrence_count": 3,
-            "summary": "Seen in three related runs.",
-        },
-    }
+    assert "recurrence_status" not in data
 
 
 def test_get_session_detail_falls_back_to_legacy_outcome_status(client, auth_headers, db_session):
@@ -220,7 +209,8 @@ def test_get_session_detail_falls_back_to_legacy_outcome_status(client, auth_hea
     assert response.status_code == 200
     payload = response.json()
     assert payload["signature_match"]["status"] == "matched"
-    assert payload["signature_match"]["primary_family_id"] == "coverage_gap"
+    assert payload["signature_match"]["primary_mechanism_id"] == "coverage_gap"
+    assert "recurrence_status" not in payload
 
 
 def test_get_session_detail_orders_explanations_by_sequence(client, auth_headers, db_session):

@@ -107,8 +107,8 @@ def record_analysis_telemetry(result: AnalysisResult) -> None:
         TelemetryService().record_analysis_event(
             outcome_status=metrics["outcome_status"],
             match_count=metrics["match_count"],
-            primary_family_id=metrics["primary_family_id"],
-            mixed_family=metrics["mixed_family"],
+            primary_mechanism_id=metrics["primary_family_id"],
+            mixed_mechanism=metrics["mixed_family"],
             not_classifiable_reason=metrics["not_classifiable_reason"],
         )
     except Exception:

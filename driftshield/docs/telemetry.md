@@ -53,12 +53,12 @@ Fields:
 - `payload.outcome_status`
 - `payload.classifiable`
 - `payload.match_count`
-- `payload.primary_family_id`
-- `payload.mixed_family`
+- `payload.primary_mechanism_id`
+- `payload.mixed_mechanism`
 - `payload.not_classifiable_reason`
 - `payload.event_inventory_version = phase-2a-v1`
 
-These fields intentionally mirror the required Phase 2a run-level inventory for outcome status, classifiability, match count, family rollup, and not-classifiable reasons without adding broader product analytics.
+These fields intentionally mirror the required Phase 2a run-level inventory for outcome status, classifiability, match count, mechanism rollup, and not-classifiable reasons without adding broader product analytics.
 
 Current OSS emission path:
 
@@ -82,7 +82,7 @@ DRIFTSHIELD_HOME=/tmp/driftshield driftshield telemetry heartbeat
 DRIFTSHIELD_HOME=/tmp/driftshield driftshield telemetry emit-analysis \
   --outcome-status matched \
   --match-count 1 \
-  --primary-family-id coverage_gap
+  --primary-mechanism-id coverage_gap
 ```
 
 ## Out of scope for Phase 2a

@@ -465,11 +465,11 @@ def test_generate_report_projects_legacy_family_only_signature_summary(
 
     report = db_session.get(ReportModel, uuid.UUID(response.json()["id"]))
     assert report is not None
-    assert [match["family_id"] for match in report.content_json["pattern_matches"]] == [
+    assert [match["mechanism_id"] for match in report.content_json["pattern_matches"]] == [
         "coverage_gap",
         "verification_failure",
     ]
-    assert report.content_json["pattern_matches"][0]["signature_id"] == "family:coverage_gap"
+    assert report.content_json["pattern_matches"][0]["signature_id"] == "mechanism:coverage_gap"
 
 
 def test_generate_report_ignores_signature_only_payload_without_family_fields(

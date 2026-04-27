@@ -42,7 +42,7 @@ async function mockSessionArtifacts(page: Page) {
   })
 }
 
-test('shows matched signature and recurrence states from backend metadata', async ({ page }) => {
+test('shows matched OSS signature recognition states from backend metadata', async ({ page }) => {
   await page.route(`**/api/sessions/${sessionId}`, async (route) => {
     await route.fulfill({
       contentType: 'application/json',
@@ -67,17 +67,10 @@ test('shows matched signature and recurrence states from backend metadata', asyn
         explanations: { risk_explanations: {}, inflection_explanation: null },
         signature_match: {
           status: 'matched',
-          primary_family_id: 'coverage_gap',
-          matched_family_ids: ['coverage_gap', 'verification_failure'],
+          primary_mechanism_id: 'coverage_gap',
+          matched_mechanism_ids: ['coverage_gap', 'verification_failure'],
           match_count: 2,
-          summary: 'Matched two known failure families.',
-          raw: null,
-        },
-        recurrence_status: {
-          status: 'recurring',
-          cluster_id: 'cluster-42',
-          recurrence_count: 3,
-          summary: 'Seen in three related runs.',
+          summary: 'Matched two known failure mechanisms from local OSS-safe signals.',
           raw: null,
         },
       }),
@@ -105,15 +98,14 @@ test('shows matched signature and recurrence states from backend metadata', asyn
 
   await page.goto(`/sessions/${sessionId}`)
 
-  await expect(page.getByText('Signature: matched')).toBeVisible()
-  await expect(page.getByText('Recurrence: recurring')).toBeVisible()
-  await expect(page.getByText('Matched two known failure families.')).toBeVisible()
-  await expect(page.getByText('Seen in three related runs.')).toBeVisible()
-  await expect(page.getByText('Primary family:')).toBeVisible()
-  await expect(page.getByText('Cluster:')).toBeVisible()
+  await expect(page.getByText('Recognition: matched')).toBeVisible()
+  await expect(page.getByText('Matched two known failure mechanisms from local OSS-safe signals.')).toBeVisible()
+  await expect(page.getByText('Primary mechanism:')).toBeVisible()
+  await expect(page.getByText('Matched mechanisms')).toBeVisible()
+  await expect(page.getByText('Recurrence: recurring')).not.toBeVisible()
 })
 
-test('shows unavailable state when backend omits signature and recurrence fields', async ({ page }) => {
+test('shows unavailable state when backend omits OSS signature recognition fields', async ({ page }) => {
   await page.route(`**/api/sessions/${sessionId}`, async (route) => {
     await route.fulfill({
       contentType: 'application/json',
@@ -155,7 +147,7 @@ test('shows unavailable state when backend omits signature and recurrence fields
 
   await page.goto(`/sessions/${sessionId}`)
 
-  await expect(page.getByText('This session does not expose signature or recurrence data yet.')).toBeVisible()
+  await expect(page.getByText('This session does not expose OSS signature recognition data yet.')).toBeVisible()
 })
 
 test('keeps the investigation view alive when graph payload omits lineage fields', async ({ page }) => {
@@ -178,17 +170,10 @@ test('keeps the investigation view alive when graph payload omits lineage fields
         explanations: { risk_explanations: {}, inflection_explanation: null },
         signature_match: {
           status: 'matched',
-          primary_family_id: 'coverage_gap',
-          matched_family_ids: ['coverage_gap'],
+          primary_mechanism_id: 'coverage_gap',
+          matched_mechanism_ids: ['coverage_gap'],
           match_count: 1,
-          summary: 'Matched one known failure family.',
-          raw: null,
-        },
-        recurrence_status: {
-          status: 'new',
-          cluster_id: null,
-          recurrence_count: 0,
-          summary: 'No related runs yet.',
+          summary: 'Matched one known failure mechanism from local OSS-safe signals.',
           raw: null,
         },
       }),
@@ -226,7 +211,7 @@ test('keeps the investigation view alive when graph payload omits lineage fields
 
   await page.goto(`/sessions/${sessionId}`)
 
-  await expect(page.getByText('Signature: matched')).toBeVisible()
+  await expect(page.getByText('Recognition: matched')).toBeVisible()
   await expect(page.getByText('Investigation graph')).toBeVisible()
   await expect(page.getByText('Root node')).toBeVisible()
 })

@@ -14,7 +14,6 @@ from driftshield.api.schemas import (
     GraphNodeResponse,
     GraphResponse,
     PaginatedResponse,
-    RecurrenceStatusResponse,
     SessionDetail,
     SessionExplanationItemResponse,
     SessionExplanationsResponse,
@@ -154,39 +153,40 @@ def _extract_signature_match(session: SessionModel) -> SignatureMatchSummaryResp
     if not isinstance(payload, dict):
         return None
 
-    matched_family_ids = payload.get("matched_family_ids")
-    if not isinstance(matched_family_ids, list):
-        matched_family_ids = []
+    matched_mechanism_ids = payload.get("matched_mechanism_ids")
+    if not isinstance(matched_mechanism_ids, list):
+        matched_mechanism_ids = payload.get("matched_family_ids")
+    if not isinstance(matched_mechanism_ids, list):
+        matched_mechanism_ids = []
 
     status = payload.get("status")
     if not isinstance(status, str):
         status = payload.get("outcome_status") if isinstance(payload.get("outcome_status"), str) else None
 
-    return SignatureMatchSummaryResponse(
-        status=status,
-        primary_family_id=(
+    primary_mechanism_id = payload.get("primary_mechanism_id")
+    if not isinstance(primary_mechanism_id, str):
+        primary_mechanism_id = (
             payload.get("primary_family_id")
             if isinstance(payload.get("primary_family_id"), str)
             else None
-        ),
-        matched_family_ids=[item for item in matched_family_ids if isinstance(item, str)],
+        )
+
+    summary = payload.get("summary") if isinstance(payload.get("summary"), str) else None
+    if summary is not None and "OSS-safe signals" not in summary:
+        rewritten = summary.replace("failure families", "failure mechanisms").replace(
+            "failure family", "failure mechanism"
+        )
+        if rewritten.startswith("Matched ") and rewritten.endswith("."):
+            summary = rewritten[:-1] + " from local OSS-safe signals."
+        else:
+            summary = rewritten
+
+    return SignatureMatchSummaryResponse(
+        status=status,
+        primary_mechanism_id=primary_mechanism_id,
+        matched_mechanism_ids=[item for item in matched_mechanism_ids if isinstance(item, str)],
         match_count=_optional_int(payload.get("match_count")),
-        summary=payload.get("summary") if isinstance(payload.get("summary"), str) else None,
-        raw=payload,
-    )
-
-
-def _extract_recurrence_status(session: SessionModel) -> RecurrenceStatusResponse | None:
-    metadata = session.metadata_json or {}
-    payload = metadata.get("recurrence_status")
-    if not isinstance(payload, dict):
-        return None
-
-    return RecurrenceStatusResponse(
-        status=payload.get("status") if isinstance(payload.get("status"), str) else None,
-        cluster_id=payload.get("cluster_id") if isinstance(payload.get("cluster_id"), str) else None,
-        recurrence_count=_optional_int(payload.get("recurrence_count")),
-        summary=payload.get("summary") if isinstance(payload.get("summary"), str) else None,
+        summary=summary,
         raw=payload,
     )
 
@@ -394,7 +394,6 @@ def get_session(
         risk_summary=_risk_summary(nodes),
         explanations=_session_explanations(nodes),
         signature_match=_extract_signature_match(session),
-        recurrence_status=_extract_recurrence_status(session),
     )
 
 

@@ -62,7 +62,7 @@ def test_emit_analysis_uses_phase_2a_metric_fields(tmp_path, monkeypatch):
             "matched",
             "--match-count",
             "2",
-            "--primary-family-id",
+            "--primary-mechanism-id",
             "verification_failure",
         ],
     )
@@ -75,10 +75,10 @@ def test_emit_analysis_uses_phase_2a_metric_fields(tmp_path, monkeypatch):
         "classifiable": True,
         "event_inventory_version": "phase-2a-v1",
         "match_count": 2,
-        "mixed_family": False,
+        "mixed_mechanism": False,
         "not_classifiable_reason": None,
         "outcome_status": "matched",
-        "primary_family_id": "verification_failure",
+        "primary_mechanism_id": "verification_failure",
     }
 
 

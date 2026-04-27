@@ -17,7 +17,7 @@ function labelFromValue(value: string | null | undefined) {
   return value.replace(/[_-]/g, ' ')
 }
 
-function SignatureAndRecurrenceCard({
+function SignatureRecognitionCard({
   loading,
   session,
 }: {
@@ -25,22 +25,19 @@ function SignatureAndRecurrenceCard({
   session: ReturnType<typeof useSession>['data']
 }) {
   const signatureMatch = session?.signature_match ?? null
-  const recurrenceStatus = session?.recurrence_status ?? null
-  const matchedFamilies = signatureMatch?.matched_family_ids ?? []
+  const matchedMechanisms = signatureMatch?.matched_mechanism_ids ?? []
   const matchStatus = signatureMatch?.status ?? null
-  const recurrenceLabel = labelFromValue(recurrenceStatus?.status)
   const signatureLabel = labelFromValue(matchStatus)
   const hasSignatureData = signatureMatch !== null
-  const hasRecurrenceData = recurrenceStatus !== null
-  const showUnavailable = !loading && !hasSignatureData && !hasRecurrenceData
+  const showUnavailable = !loading && !hasSignatureData
   const showUnmatched = !loading && hasSignatureData && matchStatus === 'unmatched'
 
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="text-base">Signature and recurrence</CardTitle>
+        <CardTitle className="text-base">OSS signature recognition</CardTitle>
         <CardDescription>
-          Phase 2a classification output from the backend, with explicit unavailable states.
+          Phase 2a recognition output from the backend, limited to local OSS-safe signals.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
@@ -48,22 +45,16 @@ function SignatureAndRecurrenceCard({
           <div className="text-muted-foreground">Loading classification summary...</div>
         ) : showUnavailable ? (
           <div className="rounded-md border bg-muted/30 p-3 text-muted-foreground">
-            This session does not expose signature or recurrence data yet.
+            This session does not expose OSS signature recognition data yet.
           </div>
         ) : (
           <>
             <div className="flex flex-wrap gap-2">
               <Badge variant={matchStatus === 'matched' ? 'destructive' : 'outline'}>
-                Signature: {signatureLabel ?? 'unavailable'}
-              </Badge>
-              <Badge variant={recurrenceStatus?.status === 'recurring' ? 'destructive' : 'outline'}>
-                Recurrence: {recurrenceLabel ?? 'unavailable'}
+                Recognition: {signatureLabel ?? 'unavailable'}
               </Badge>
               {signatureMatch?.match_count !== null && signatureMatch?.match_count !== undefined && (
                 <Badge variant="outline">{signatureMatch.match_count} match{signatureMatch.match_count === 1 ? '' : 'es'}</Badge>
-              )}
-              {recurrenceStatus?.recurrence_count !== null && recurrenceStatus?.recurrence_count !== undefined && (
-                <Badge variant="outline">{recurrenceStatus.recurrence_count} related run{recurrenceStatus.recurrence_count === 1 ? '' : 's'}</Badge>
               )}
             </div>
 
@@ -71,28 +62,21 @@ function SignatureAndRecurrenceCard({
             {!signatureMatch?.summary && showUnmatched && (
               <p className="text-muted-foreground">No signature matches were returned for this session.</p>
             )}
-            {recurrenceStatus?.summary && <p>{recurrenceStatus.summary}</p>}
 
-            {matchedFamilies.length > 0 && (
+            {matchedMechanisms.length > 0 && (
               <div className="space-y-2">
-                <div className="text-xs font-medium text-muted-foreground">Matched families</div>
+                <div className="text-xs font-medium text-muted-foreground">Matched mechanisms</div>
                 <div className="flex flex-wrap gap-2">
-                  {matchedFamilies.map((familyId) => (
-                    <Badge key={familyId} variant="secondary">{labelFromValue(familyId) ?? familyId}</Badge>
+                  {matchedMechanisms.map((mechanismId) => (
+                    <Badge key={mechanismId} variant="secondary">{labelFromValue(mechanismId) ?? mechanismId}</Badge>
                   ))}
                 </div>
               </div>
             )}
 
-            {signatureMatch?.primary_family_id && (
+            {signatureMatch?.primary_mechanism_id && (
               <div className="text-muted-foreground">
-                Primary family: <span className="font-medium text-foreground">{labelFromValue(signatureMatch.primary_family_id)}</span>
-              </div>
-            )}
-
-            {recurrenceStatus?.cluster_id && (
-              <div className="text-muted-foreground">
-                Cluster: <span className="font-mono text-foreground">{recurrenceStatus.cluster_id}</span>
+                Primary mechanism: <span className="font-medium text-foreground">{labelFromValue(signatureMatch.primary_mechanism_id)}</span>
               </div>
             )}
           </>
@@ -204,7 +188,7 @@ export function InvestigationPage() {
         )}
         </div>
 
-        <SignatureAndRecurrenceCard loading={sessionLoading} session={session} />
+        <SignatureRecognitionCard loading={sessionLoading} session={session} />
       </div>
 
       <InvestigationView graph={graph} />
