@@ -155,7 +155,7 @@ def test_report_v1_can_describe_local_pattern_resemblance_from_metadata(sample_r
 
     assert report.pattern_matches
     assert report.pattern_matches[0].signature_id == "SIG-COMM-001"
-    assert report.pattern_matches[0].family_id == "coverage_gap"
+    assert report.pattern_matches[0].mechanism_id == "coverage_gap"
     assert "coverage_gap" in report.summary.pattern_resemblance
 
 
@@ -173,12 +173,12 @@ def test_report_v1_accepts_legacy_family_only_signature_summary(sample_result):
 
     report = ReportBuilder().build(session, result, report_type=ReportType.FULL)
 
-    assert [match.family_id for match in report.pattern_matches] == [
+    assert [match.mechanism_id for match in report.pattern_matches] == [
         "coverage_gap",
         "verification_failure",
     ]
-    assert report.pattern_matches[0].signature_id == "family:coverage_gap"
-    assert report.pattern_matches[0].rationale == "Matched two known failure families."
+    assert report.pattern_matches[0].signature_id == "mechanism:coverage_gap"
+    assert report.pattern_matches[0].rationale == "Matched two known failure mechanisms from local OSS-safe signals."
     assert "coverage_gap" in report.summary.pattern_resemblance
     assert "verification_failure" in report.summary.pattern_resemblance
 

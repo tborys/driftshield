@@ -331,12 +331,17 @@ class ReportBuilder:
         index: int,
     ) -> list[PatternMatch]:
         signature_id = _string_value(payload.get("signature_id"))
-        family_id = _string_value(payload.get("family_id") or payload.get("primary_family_id"))
-        family_ids = _ordered_family_ids(payload)
-        if family_id is not None and family_id not in family_ids:
-            family_ids.insert(0, family_id)
+        mechanism_id = _string_value(
+            payload.get("mechanism_id")
+            or payload.get("family_id")
+            or payload.get("primary_mechanism_id")
+            or payload.get("primary_family_id")
+        )
+        mechanism_ids = _ordered_mechanism_ids(payload)
+        if mechanism_id is not None and mechanism_id not in mechanism_ids:
+            mechanism_ids.insert(0, mechanism_id)
 
-        if signature_id is None and not family_ids:
+        if signature_id is None and not mechanism_ids:
             return []
 
         signature_layer = (
@@ -356,14 +361,14 @@ class ReportBuilder:
         match_id = _string_value(payload.get("match_id")) or f"pattern_match:{session.id}:{index}"
 
         if signature_id is not None:
-            resolved_family_id = family_id or (family_ids[0] if family_ids else None)
-            if resolved_family_id is None:
+            resolved_mechanism_id = mechanism_id or (mechanism_ids[0] if mechanism_ids else None)
+            if resolved_mechanism_id is None:
                 return []
             return [
                 PatternMatch(
                     match_id=match_id,
                     signature_id=signature_id,
-                    family_id=resolved_family_id,
+                    mechanism_id=resolved_mechanism_id,
                     signature_layer=signature_layer,
                     scope_ref=scope_ref,
                     evidence_refs=evidence_refs,
@@ -374,12 +379,12 @@ class ReportBuilder:
             ]
 
         matches: list[PatternMatch] = []
-        for family_offset, derived_family_id in enumerate(family_ids, start=1):
+        for mechanism_offset, derived_mechanism_id in enumerate(mechanism_ids, start=1):
             matches.append(
                 PatternMatch(
-                    match_id=f"{match_id}:{family_offset}",
-                    signature_id=f"family:{derived_family_id}",
-                    family_id=derived_family_id,
+                    match_id=f"{match_id}:{mechanism_offset}",
+                    signature_id=f"mechanism:{derived_mechanism_id}",
+                    mechanism_id=derived_mechanism_id,
                     signature_layer=dict(signature_layer),
                     scope_ref=scope_ref,
                     evidence_refs=evidence_refs,
@@ -396,8 +401,8 @@ class ReportBuilder:
         result: AnalysisResult,
     ) -> str:
         if pattern_matches:
-            families = ", ".join(match.family_id for match in pattern_matches)
-            return f"Local OSS-safe pattern signals resemble: {families}."
+            mechanisms = ", ".join(match.mechanism_id for match in pattern_matches)
+            return f"Local OSS-safe pattern signals resemble: {mechanisms}."
 
         active_flags = self._active_risk_flags(result)
         if active_flags:
@@ -588,27 +593,31 @@ def _plural(noun: str, count: int) -> str:
     return noun if count == 1 else f"{noun}s"
 
 
-def _ordered_family_ids(payload: Mapping[str, Any]) -> list[str]:
+def _ordered_mechanism_ids(payload: Mapping[str, Any]) -> list[str]:
     ordered: list[str] = []
 
-    primary_family_id = _string_value(payload.get("primary_family_id"))
-    if primary_family_id is not None:
-        ordered.append(primary_family_id)
+    primary_mechanism_id = _string_value(
+        payload.get("primary_mechanism_id") or payload.get("primary_family_id")
+    )
+    if primary_mechanism_id is not None:
+        ordered.append(primary_mechanism_id)
 
-    matched_family_ids = payload.get("matched_family_ids")
-    if isinstance(matched_family_ids, list):
-        for item in matched_family_ids:
-            family_id = _string_value(item)
-            if family_id is not None and family_id not in ordered:
-                ordered.append(family_id)
+    matched_mechanism_ids = payload.get("matched_mechanism_ids")
+    if not isinstance(matched_mechanism_ids, list):
+        matched_mechanism_ids = payload.get("matched_family_ids")
+    if isinstance(matched_mechanism_ids, list):
+        for item in matched_mechanism_ids:
+            mechanism_id = _string_value(item)
+            if mechanism_id is not None and mechanism_id not in ordered:
+                ordered.append(mechanism_id)
 
     return ordered
 
 
 def _pattern_resemblance_finding_summary(match: PatternMatch) -> str:
-    if match.signature_id.startswith("family:"):
-        return f"Local OSS-safe signals resemble {match.family_id}."
-    return f"Local OSS-safe signals resemble {match.family_id} via {match.signature_id}."
+    if match.signature_id.startswith("mechanism:"):
+        return f"Local OSS-safe signals resemble {match.mechanism_id}."
+    return f"Local OSS-safe signals resemble {match.mechanism_id} via {match.signature_id}."
 
 
 def _lineage_excerpt(result: AnalysisResult) -> str:
