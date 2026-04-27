@@ -39,7 +39,7 @@ def export_json(report: ReportData) -> dict[str, Any]:
             {
                 "match_id": match.match_id,
                 "signature_id": match.signature_id,
-                "family_id": match.family_id,
+                "mechanism_id": match.mechanism_id,
                 "signature_layer": dict(match.signature_layer),
                 "scope_ref": match.scope_ref,
                 "evidence_refs": list(match.evidence_refs),

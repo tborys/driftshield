@@ -383,10 +383,10 @@ def test_ingest_emits_unclassified_phase_2a_metrics_when_telemetry_is_enabled(cl
         "classifiable": True,
         "event_inventory_version": "phase-2a-v1",
         "match_count": 0,
-        "mixed_family": False,
+        "mixed_mechanism": False,
         "not_classifiable_reason": None,
         "outcome_status": "unclassified",
-        "primary_family_id": None,
+        "primary_mechanism_id": None,
     }
 
 
@@ -426,10 +426,10 @@ def test_ingest_emits_matched_phase_2a_metrics_when_analysis_flags_risk(client, 
         "classifiable": True,
         "event_inventory_version": "phase-2a-v1",
         "match_count": 1,
-        "mixed_family": False,
+        "mixed_mechanism": False,
         "not_classifiable_reason": None,
         "outcome_status": "matched",
-        "primary_family_id": "coverage_gap",
+        "primary_mechanism_id": "coverage_gap",
     }
 
 

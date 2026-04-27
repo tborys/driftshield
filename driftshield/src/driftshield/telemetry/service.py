@@ -116,8 +116,8 @@ class TelemetryService:
         *,
         outcome_status: str,
         match_count: int,
-        primary_family_id: str | None = None,
-        mixed_family: bool = False,
+        primary_mechanism_id: str | None = None,
+        mixed_mechanism: bool = False,
         not_classifiable_reason: str | None = None,
     ) -> bool:
         validated_outcome_status = validate_outcome_status(outcome_status)
@@ -133,8 +133,8 @@ class TelemetryService:
                     "outcome_status": validated_outcome_status,
                     "classifiable": validated_outcome_status in {"matched", "unclassified"},
                     "match_count": match_count,
-                    "primary_family_id": primary_family_id,
-                    "mixed_family": mixed_family,
+                    "primary_mechanism_id": primary_mechanism_id,
+                    "mixed_mechanism": mixed_mechanism,
                     "not_classifiable_reason": not_classifiable_reason,
                     "event_inventory_version": "phase-2a-v1",
                 },
