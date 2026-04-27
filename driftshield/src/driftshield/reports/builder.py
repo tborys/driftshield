@@ -26,6 +26,18 @@ OSS_SAFETY_NOTE = (
 )
 
 
+def _rewrite_legacy_mechanism_summary(summary: str) -> str:
+    if "OSS-safe signals" in summary:
+        return summary
+
+    rewritten = summary.replace("failure families", "failure mechanisms").replace(
+        "failure family", "failure mechanism"
+    )
+    if rewritten.startswith("Matched ") and rewritten.endswith("."):
+        return rewritten[:-1] + " from local OSS-safe signals."
+    return rewritten
+
+
 class ReportBuilder:
     def build(
         self,
@@ -350,6 +362,8 @@ class ReportBuilder:
             else {}
         )
         rationale = _string_value(payload.get("rationale") or payload.get("summary")) or ""
+        if rationale:
+            rationale = _rewrite_legacy_mechanism_summary(rationale)
         if rationale and "symptom" not in signature_layer:
             signature_layer["symptom"] = rationale
         evidence_refs = _string_list(
