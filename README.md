@@ -9,18 +9,22 @@ report a human can inspect.
 
 As teams move from single prompts to multi-step and agentic workflows, failures become harder to
 explain. A workflow can follow the right steps but still produce the wrong outcome, acknowledge a
-constraint and then ignore it, or behave inconsistently across runs. Similar failures can recur,
-but teams still end up treating each broken run like a one-off debugging exercise.
+constraint and then ignore it, or behave inconsistently across runs.
 
 The OSS core focuses on one failed run at a time. It helps teams explain what happened, inspect
-where the run broke, and produce an investigation-grade artifact for debugging, review, and
-follow-up.
+where the run broke, recognise known failure mechanisms within that run, and produce an
+investigation-grade artefact for debugging, review, and follow-up.
+
+Optional private-path enrichment can add richer per-run analysis when a team explicitly enables
+it. Broader recurrence tracking and organisation-level prioritisation are later product layers,
+not bundled OSS guarantees.
 
 ## Why DriftShield
 
 - Move from raw logs and traces to an inspectable failure investigation
 - See where a workflow broke and how the run drifted off course
-- Give engineers and product teams a shared artifact for debugging and review
+- Recognise known failure mechanisms within a single failed run
+- Give engineers and product teams a shared artefact for debugging and review
 
 ## Built For
 
@@ -46,7 +50,7 @@ DriftShield uses a parser protocol. New sources can be added by implementing a s
 
 ## Community signature packs
 
-Phase 2a uses a deliberately simple pull flow for community-safe signature packs. Packs are versioned JSON manifests that follow the Phase 2a contract and can be fetched directly from a Git ref or tag.
+The OSS repo supports a deliberately simple pull flow for community-safe signature packs. Packs are versioned JSON manifests that follow the public contract and can be fetched directly from a Git ref or tag.
 
 Example:
 
@@ -65,12 +69,31 @@ driftshield signatures pull community-general \
   --url http://127.0.0.1:8000/community-general.json
 ```
 
-Compatibility rules for the first rollout:
+Compatibility rules for the current OSS pull path:
 
 - `schema_version` is the compatibility gate and is validated before installation
 - `pack_metadata.version` is the pack release version and determines the install path
 - only `pack_kind: community` is accepted by the OSS pull path
 - the pull flow is intentionally replaceable later without committing DriftShield to a marketplace design
+
+## OSS scope and product boundary
+
+This public repo is the OSS recognition and investigation layer.
+
+It includes:
+
+- transcript parsing and ingestion
+- per-run investigation and reporting
+- community signature-pack support
+- public-safe dashboards, CLI flows, and API paths for failed-run analysis
+
+It does not by itself claim to provide:
+
+- controlled cross-run recurrence tracking
+- organisation-level prioritisation or ranking
+- governance, assurance, or enterprise workflow policy layers
+
+If a public sentence sounds like a bundled promise about what repeats across runs or what matters most across an organisation, it is too strong for this OSS surface.
 
 ## Quick Start
 
