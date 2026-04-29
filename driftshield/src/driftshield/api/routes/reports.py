@@ -74,13 +74,7 @@ def generate_report(
     )
 
     report_type = _parse_report_type(request.report_type)
-    metadata = session_model.metadata_json or {}
-    integrity_snapshot = None
-    if isinstance(metadata.get("integrity_summary"), dict):
-        integrity_snapshot = {
-            "summary": metadata.get("integrity_summary"),
-            "provenance": metadata.get("integrity_provenance"),
-        }
+    integrity_snapshot = _integrity_snapshot_for_session(session_model)
 
     report_data = ReportBuilder().build(
         domain_session,
@@ -222,12 +216,21 @@ def _create_report_for_session(
     if domain_session is None:
         raise HTTPException(status_code=404, detail="Session not found")
 
+    session_model = db.get(SessionModel, session_id)
+    if session_model is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
     graph = service.load_graph(session_id)
     if graph is None:
         raise HTTPException(status_code=404, detail="No graph data for session")
 
     result = _analysis_result_from_graph(graph)
-    report_data = ReportBuilder().build(domain_session, result, report_type=report_type)
+    report_data = ReportBuilder().build(
+        domain_session,
+        result,
+        report_type=report_type,
+        integrity_snapshot=_integrity_snapshot_for_session(session_model),
+    )
 
     report = ReportModel(
         id=uuid.uuid4(),
@@ -242,6 +245,18 @@ def _create_report_for_session(
     db.flush()
     forensic_case = service.upsert_forensic_case(domain_session, result, report=report)
     return report, forensic_case
+
+
+def _integrity_snapshot_for_session(
+    session_model: SessionModel,
+) -> dict[str, object] | None:
+    metadata = session_model.metadata_json or {}
+    if not isinstance(metadata.get("integrity_summary"), dict):
+        return None
+    return {
+        "summary": metadata.get("integrity_summary"),
+        "provenance": metadata.get("integrity_provenance"),
+    }
 
 
 def _load_existing_report_for_case(

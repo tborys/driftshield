@@ -176,6 +176,8 @@ def test_generate_forensic_report_from_transcript_returns_forensic_contract(
     assert data["report"]["report_type"] == "summary"
     assert data["report"]["content_json"]["schema_version"] == "forensic_report.v1"
     assert data["report"]["content_json"]["summary"]["what_happened"]
+    assert data["report"]["content_json"]["integrity_snapshot"]["summary"]["trust_band"] == "trusted"
+    assert "**Integrity:** trusted" in data["report"]["content_markdown"]
     assert data["forensic_case"]["state"] == "reported"
     assert data["forensic_case"]["report_id"] == data["report"]["id"]
 
@@ -227,6 +229,7 @@ def test_generate_forensic_report_reuses_session_for_duplicate_upload(
     assert second_data["ingest_status"] == "deduped"
     assert second_data["session_id"] == first_data["session_id"]
     assert second_data["report"]["id"] == first_data["report"]["id"]
+    assert second_data["report"]["content_json"]["integrity_snapshot"]["summary"]["trust_band"] == "trusted"
 
     assert db_session.query(SessionModel).count() == 1
     assert db_session.query(ReportModel).count() == 1
@@ -239,7 +242,7 @@ def test_generate_forensic_report_rolls_back_ingest_when_report_build_fails(
     db_session,
     monkeypatch,
 ):
-    def fail_build(self, session, result, report_type):
+    def fail_build(self, session, result, report_type, **kwargs):
         raise RuntimeError("report builder failed")
 
     emit_calls = []
