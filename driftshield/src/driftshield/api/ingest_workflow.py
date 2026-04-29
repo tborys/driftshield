@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session as DBSession
 from driftshield.api.security import get_max_request_bytes
 from driftshield.cli.parsers import PARSERS
 from driftshield.core.analysis.session import AnalysisResult
+from driftshield.db.behaviour_service import BehaviourEventService
 from driftshield.db.ingest_service import TranscriptIngestService, metrics_payload_from_analysis_result
 from driftshield.db.persistence import IngestOutcome, IngestProvenance, PersistenceService
 from driftshield.telemetry import TelemetryService
@@ -46,6 +47,8 @@ def ingest_transcript_bytes(
             parser_name=normalised,
             source_path=filename,
         )
+        if not outcome.deduplicated and analysis_result is not None and analysis_result.events:
+            BehaviourEventService(db).link_new_run_after_pattern_view(session_id=outcome.session_id)
         if commit:
             db.commit()
             if not outcome.deduplicated and analysis_result is not None:
