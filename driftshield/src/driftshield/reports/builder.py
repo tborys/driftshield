@@ -44,6 +44,7 @@ class ReportBuilder:
         session: DomainSession,
         result: AnalysisResult,
         report_type: ReportType = ReportType.FULL,
+        integrity_snapshot: dict[str, object] | None = None,
     ) -> ReportData:
         pattern_matches = self._build_pattern_matches(session)
         findings = self._build_findings(session, result, pattern_matches)
@@ -82,6 +83,7 @@ class ReportBuilder:
             findings=findings,
             pattern_matches=pattern_matches,
             evidence_index=evidence_index,
+            integrity_snapshot=integrity_snapshot,
         )
 
     def _build_lineage_section(self, result: AnalysisResult) -> ReportSection:
@@ -356,9 +358,10 @@ class ReportBuilder:
         if signature_id is None and not mechanism_ids:
             return []
 
+        signature_layer_value = payload.get("signature_layer")
         signature_layer = (
-            dict(payload.get("signature_layer"))
-            if isinstance(payload.get("signature_layer"), Mapping)
+            dict(signature_layer_value)
+            if isinstance(signature_layer_value, Mapping)
             else {}
         )
         rationale = _string_value(payload.get("rationale") or payload.get("summary")) or ""

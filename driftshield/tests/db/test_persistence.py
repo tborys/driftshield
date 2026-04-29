@@ -465,6 +465,26 @@ def test_ingest_persists_transcript_provenance(db_session, sample_ingest_payload
     assert stored.parser_version == provenance.parser_version
     assert stored.ingested_at is not None
     assert stored.ingested_at.replace(tzinfo=timezone.utc) == provenance.ingested_at
+    assert stored.metadata_json is not None
+    assert stored.metadata_json["integrity_summary"]["integrity_schema_version"] == "phase3e.v1"
+    assert stored.metadata_json["integrity_summary"]["trust_band"] == "trusted"
+    assert stored.metadata_json["integrity_summary"]["final_learning_weight"] == 0.95
+    assert stored.metadata_json["integrity_summary"]["evidence_counts"] == {
+        "total_events": 2,
+        "flagged_events": 0,
+    }
+    assert stored.metadata_json["integrity_provenance"] == {
+        "source_type": "claude_code",
+        "source_session_id": "source-session-123",
+        "source_path": "fixtures/source-session-123.jsonl",
+        "parser_version": "claude_code@1",
+        "transcript_hash": provenance.transcript_hash,
+        "ingested_at": provenance.ingested_at.isoformat(),
+        "integrity_policy_version": "phase3e.v1.default",
+        "integrity_schema_version": "phase3e.v1",
+        "integrity_evaluated_at": provenance.ingested_at.isoformat(),
+        "evidence_counts": {"total_events": 2, "flagged_events": 0},
+    }
 
 
 def test_ingest_is_idempotent_and_returns_explicit_dedupe(db_session, sample_ingest_payload):

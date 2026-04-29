@@ -68,6 +68,7 @@ def export_json(report: ReportData) -> dict[str, Any]:
         "inflection_node_id": str(report.inflection_node_id) if report.inflection_node_id else None,
         "inflection_action": report.inflection_action,
         "classification": report.classification,
+        "integrity_snapshot": report.integrity_snapshot,
         "sections": [
             {
                 "title": s.title,

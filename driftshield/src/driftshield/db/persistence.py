@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session as DBSession
 from driftshield.core.analysis.session import AnalysisResult
 from driftshield.core.graph.builder import build_graph
 from driftshield.core.graph.models import DecisionNode, LineageGraph
+from driftshield.core.integrity import build_integrity_provenance, build_integrity_summary
 from driftshield.core.models import (
     CanonicalEvent,
     EventType,
@@ -116,6 +117,7 @@ class PersistenceService:
         self._apply_session_fields(
             session_model,
             session=session,
+            result=result,
             provenance=provenance,
         )
         self._db.add(session_model)
@@ -137,6 +139,7 @@ class PersistenceService:
         self._apply_session_fields(
             session_model,
             session=session,
+            result=result,
             provenance=provenance,
         )
         self._replace_session_result(session.id)
@@ -149,14 +152,20 @@ class PersistenceService:
         session_model: SessionModel,
         *,
         session: DomainSession,
+        result: AnalysisResult,
         provenance: IngestProvenance | None,
     ) -> None:
+        metadata = dict(getattr(session, "metadata", None) or {})
+        integrity_summary = build_integrity_summary(session, result, provenance)
+        metadata["integrity_summary"] = integrity_summary
+        metadata["integrity_provenance"] = build_integrity_provenance(integrity_summary, provenance)
+
         session_model.external_id = getattr(session, "external_id", None)
         session_model.agent_id = session.agent_id
         session_model.started_at = session.started_at
         session_model.ended_at = getattr(session, "ended_at", None)
         session_model.status = session.status.value
-        session_model.metadata_json = getattr(session, "metadata", None)
+        session_model.metadata_json = metadata
         session_model.transcript_hash = provenance.transcript_hash if provenance else None
         session_model.source_session_id = provenance.source_session_id if provenance else None
         session_model.source_path = provenance.source_path if provenance else None
@@ -436,11 +445,13 @@ def _node_model_to_event(node: DecisionNodeModel, session_id: uuid.UUID) -> Cano
     metadata = dict(node.metadata_json or {})
     if node.inflection_explanation is not None:
         metadata["inflection_explanation"] = node.inflection_explanation
-    lineage = metadata.get("lineage") if isinstance(metadata.get("lineage"), dict) else {}
-    normalized_event = (
-        metadata.get("normalized_event")
-        if isinstance(metadata.get("normalized_event"), dict)
-        else {}
+
+    lineage_value = metadata.get("lineage")
+    lineage: dict[str, object] = dict(lineage_value) if isinstance(lineage_value, dict) else {}
+
+    normalized_event_value = metadata.get("normalized_event")
+    normalized_event: dict[str, object] = (
+        dict(normalized_event_value) if isinstance(normalized_event_value, dict) else {}
     )
 
     parent_refs: list[uuid.UUID] = []
@@ -457,41 +468,42 @@ def _node_model_to_event(node: DecisionNodeModel, session_id: uuid.UUID) -> Cano
     if node.parent_node_id is not None and node.parent_node_id not in parent_refs:
         parent_refs.insert(0, node.parent_node_id)
 
-    ambiguities = [
-        str(item)
-        for item in lineage.get("lineage_ambiguities", [])
-        if isinstance(item, str)
-    ]
-    for item in normalized_event.get("ambiguities", []):
-        if isinstance(item, str) and item not in ambiguities:
-            ambiguities.append(item)
+    lineage_ambiguities_value = lineage.get("lineage_ambiguities")
+    ambiguities = (
+        [str(item) for item in lineage_ambiguities_value if isinstance(item, str)]
+        if isinstance(lineage_ambiguities_value, list)
+        else []
+    )
+
+    normalized_ambiguities_value = normalized_event.get("ambiguities")
+    if isinstance(normalized_ambiguities_value, list):
+        for item in normalized_ambiguities_value:
+            if isinstance(item, str) and item not in ambiguities:
+                ambiguities.append(item)
+
+    ordinal_value = normalized_event.get("ordinal")
+    actor_value = normalized_event.get("actor")
+    lineage_summary_value = lineage.get("summary")
+    normalized_summary_value = normalized_event.get("summary")
 
     return CanonicalEvent(
         id=node.id,
         session_id=str(session_id),
-        timestamp=node.timestamp,
-        ordinal=(
-            normalized_event.get("ordinal")
-            if isinstance(normalized_event.get("ordinal"), int)
-            else node.sequence_num
-        ),
+        timestamp=node.timestamp or datetime.now(timezone.utc),
+        ordinal=ordinal_value if isinstance(ordinal_value, int) else node.sequence_num,
         event_type=EventType(node.event_type),
         agent_id="",
-        action=node.action,
+        action=node.action or "",
         parent_event_id=node.parent_node_id,
-        inputs=node.inputs,
-        outputs=node.outputs,
+        inputs=node.inputs or {},
+        outputs=node.outputs or {},
         metadata=metadata,
-        actor=(
-            dict(normalized_event.get("actor"))
-            if isinstance(normalized_event.get("actor"), dict)
-            else None
-        ),
+        actor=dict(actor_value) if isinstance(actor_value, dict) else None,
         summary=(
-            lineage.get("summary")
-            if isinstance(lineage.get("summary"), str)
-            else normalized_event.get("summary")
-            if isinstance(normalized_event.get("summary"), str)
+            lineage_summary_value
+            if isinstance(lineage_summary_value, str)
+            else normalized_summary_value
+            if isinstance(normalized_summary_value, str)
             else None
         ),
         parent_event_refs=parent_refs,
@@ -499,13 +511,13 @@ def _node_model_to_event(node: DecisionNodeModel, session_id: uuid.UUID) -> Cano
         artifact_refs=_normalized_event_refs(normalized_event.get("artifact_refs")),
         constraints=_normalized_event_refs(normalized_event.get("constraints")),
         tool_activity=(
-            dict(normalized_event.get("tool_activity"))
-            if isinstance(normalized_event.get("tool_activity"), dict)
+            dict(tool_activity_value)
+            if isinstance((tool_activity_value := normalized_event.get("tool_activity")), dict)
             else None
         ),
         failure_context=(
-            dict(normalized_event.get("failure_context"))
-            if isinstance(normalized_event.get("failure_context"), dict)
+            dict(failure_context_value)
+            if isinstance((failure_context_value := normalized_event.get("failure_context")), dict)
             else None
         ),
         ambiguities=ambiguities,

@@ -1,5 +1,6 @@
 import math
 import uuid
+from typing import Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session as DBSession
@@ -13,6 +14,7 @@ from driftshield.api.schemas import (
     GraphEdgeResponse,
     GraphNodeResponse,
     GraphResponse,
+    IntegrityStatusResponse,
     PaginatedResponse,
     SessionDetail,
     SessionExplanationItemResponse,
@@ -25,12 +27,13 @@ from driftshield.api.schemas import (
 )
 from driftshield.core.models import RiskClassification
 from driftshield.db.models import (
+    AnalystValidationModel,
     DecisionNodeModel,
     ReportModel,
     SessionModel,
 )
 from driftshield.db.persistence import PersistenceService
-from driftshield.db.validation_service import ValidationService
+from driftshield.db.validation_service import ValidationRecord, ValidationService
 
 router = APIRouter()
 _REPORT_BOUND_FEEDBACK_TARGET_KINDS = {
@@ -82,10 +85,10 @@ def _risk_flags_for_node(node: DecisionNodeModel) -> list[str]:
     return flags
 
 
-def _explanation_payload(payload: dict | None) -> ExplanationPayloadResponse | None:
+def _explanation_payload(payload: dict[str, object] | None) -> ExplanationPayloadResponse | None:
     if payload is None:
         return None
-    return ExplanationPayloadResponse(**payload)
+    return ExplanationPayloadResponse(**cast(dict[str, Any], payload))
 
 
 def _risk_explanations_for_node(node: DecisionNodeModel) -> dict[str, ExplanationPayloadResponse]:
@@ -97,6 +100,11 @@ def _risk_explanations_for_node(node: DecisionNodeModel) -> dict[str, Explanatio
 
 
 def _session_provenance(session: SessionModel) -> SessionProvenanceResponse | None:
+    metadata = session.metadata_json or {}
+    integrity_provenance = metadata.get("integrity_provenance")
+    if isinstance(integrity_provenance, dict):
+        return SessionProvenanceResponse(**integrity_provenance)
+
     if not any(
         [
             session.source_session_id,
@@ -114,8 +122,17 @@ def _session_provenance(session: SessionModel) -> SessionProvenanceResponse | No
         source_session_id=session.source_session_id,
         source_path=session.source_path,
         parser_version=session.parser_version,
+        transcript_hash=session.transcript_hash,
         ingested_at=session.ingested_at,
     )
+
+
+def _extract_integrity_status(session: SessionModel) -> IntegrityStatusResponse | None:
+    metadata = session.metadata_json or {}
+    payload = metadata.get("integrity_summary")
+    if not isinstance(payload, dict):
+        return None
+    return IntegrityStatusResponse(**payload)
 
 
 def _session_explanations(nodes: list[DecisionNodeModel]) -> SessionExplanationsResponse:
@@ -191,7 +208,9 @@ def _extract_signature_match(session: SessionModel) -> SignatureMatchSummaryResp
     )
 
 
-def _feedback_response(row) -> ForensicFeedbackResponse:
+def _feedback_response(
+    row: ValidationRecord | AnalystValidationModel,
+) -> ForensicFeedbackResponse:
     metadata = row.metadata_json if isinstance(row.metadata_json, dict) else {}
     feedback = metadata.get("forensic_feedback") if isinstance(metadata, dict) else None
     if not isinstance(feedback, dict):
@@ -319,7 +338,7 @@ def list_sessions(
     since_hours: int | None = Query(default=None, ge=1),
     api_key: str = Depends(require_api_key),
     db: DBSession = Depends(get_db),
-):
+) -> PaginatedResponse:
     service = PersistenceService(db)
     try:
         sessions, total = service.list_sessions(
@@ -352,6 +371,7 @@ def list_sessions(
                 risk_flag_count=risk_count,
                 has_inflection=has_inflection,
                 provenance=_session_provenance(session),
+                integrity_status=_extract_integrity_status(session),
             )
         )
 
@@ -369,7 +389,7 @@ def get_session(
     session_id: uuid.UUID,
     api_key: str = Depends(require_api_key),
     db: DBSession = Depends(get_db),
-):
+) -> SessionDetail:
     session = db.get(SessionModel, session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -389,6 +409,7 @@ def get_session(
         risk_flag_count=risk_count,
         has_inflection=any(node.is_inflection_node for node in nodes),
         provenance=_session_provenance(session),
+        integrity_status=_extract_integrity_status(session),
         total_events=len(nodes),
         flagged_events=risk_count,
         risk_summary=_risk_summary(nodes),
@@ -402,7 +423,7 @@ def get_session_graph(
     session_id: uuid.UUID,
     api_key: str = Depends(require_api_key),
     db: DBSession = Depends(get_db),
-):
+) -> GraphResponse:
     session = db.get(SessionModel, session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -473,7 +494,7 @@ def list_session_validations(
     session_id: uuid.UUID,
     api_key: str = Depends(require_api_key),
     db: DBSession = Depends(get_db),
-):
+) -> list[dict[str, object]]:
     session = db.get(SessionModel, session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -504,7 +525,7 @@ def create_session_validation(
     payload: ValidationCreateRequest,
     api_key: str = Depends(require_api_key),
     db: DBSession = Depends(get_db),
-):
+) -> dict[str, object]:
     session = db.get(SessionModel, session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -549,7 +570,7 @@ def list_session_forensic_feedback(
     report_id: uuid.UUID | None = Query(default=None),
     api_key: str = Depends(require_api_key),
     db: DBSession = Depends(get_db),
-):
+) -> list[dict[str, object]]:
     session = db.get(SessionModel, session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -572,7 +593,7 @@ def create_session_forensic_feedback(
     payload: ForensicFeedbackCreateRequest,
     api_key: str = Depends(require_api_key),
     db: DBSession = Depends(get_db),
-):
+) -> dict[str, object]:
     session = db.get(SessionModel, session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")

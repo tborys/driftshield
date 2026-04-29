@@ -5,6 +5,10 @@
 **Agent:** {{ report.agent_id }}
 **Generated:** {{ report.generated_at.strftime('%Y-%m-%d %H:%M:%S UTC') }}
 **Events:** {{ report.total_events }} total, {{ report.flagged_events }} flagged
+{% if report.integrity_snapshot and report.integrity_snapshot.summary %}
+**Integrity:** {{ report.integrity_snapshot.summary.trust_band }} (weight {{ report.integrity_snapshot.summary.final_learning_weight }})
+**Integrity reasons:** {{ report.integrity_snapshot.summary.integrity_reasons | join(', ') }}
+{% endif %}
 
 > OSS safety: {{ report.summary.oss_safety_note }}
 

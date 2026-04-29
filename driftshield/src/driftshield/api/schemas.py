@@ -16,7 +16,28 @@ class SessionProvenanceResponse(BaseModel):
     source_session_id: str | None = None
     source_path: str | None = None
     parser_version: str | None = None
+    transcript_hash: str | None = None
     ingested_at: datetime | None = None
+    integrity_policy_version: str | None = None
+    integrity_schema_version: str | None = None
+    integrity_evaluated_at: datetime | None = None
+    evidence_counts: dict[str, int] = Field(default_factory=dict)
+
+
+class IntegrityStatusResponse(BaseModel):
+    integrity_schema_version: str | None = None
+    trust_band: str | None = None
+    structural_score: float | None = None
+    semantic_score: float | None = None
+    source_factor: float | None = None
+    pattern_integrity_score: float | None = None
+    final_learning_weight: float | None = None
+    integrity_reasons: list[str] = Field(default_factory=list)
+    requires_review: bool | None = None
+    integrity_evaluated_at: datetime | None = None
+    integrity_policy_version: str | None = None
+    evidence_counts: dict[str, int] = Field(default_factory=dict)
+    pattern_integrity_note: str | None = None
 
 
 class SessionExplanationItemResponse(BaseModel):
@@ -39,6 +60,7 @@ class SessionSummary(BaseModel):
     risk_flag_count: int = 0
     has_inflection: bool = False
     provenance: SessionProvenanceResponse | None = None
+    integrity_status: IntegrityStatusResponse | None = None
 
 
 class SignatureMatchSummaryResponse(BaseModel):

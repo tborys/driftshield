@@ -55,6 +55,33 @@ def seeded_session(db_session):
         parser_version="claude_code@1",
         ingested_at=datetime.now(timezone.utc),
         metadata_json={
+            "integrity_summary": {
+                "integrity_schema_version": "phase3e.v1",
+                "trust_band": "trusted",
+                "structural_score": 1.0,
+                "semantic_score": 0.9,
+                "source_factor": 0.95,
+                "pattern_integrity_score": 0.95,
+                "final_learning_weight": 0.8123,
+                "integrity_reasons": ["pattern_integrity_placeholder_oss_v1"],
+                "requires_review": False,
+                "integrity_evaluated_at": "2026-04-29T07:58:00+00:00",
+                "integrity_policy_version": "phase3e.v1.default",
+                "evidence_counts": {"total_events": 1, "flagged_events": 1},
+                "pattern_integrity_note": "OSS v1 uses a conservative placeholder because private Pattern Object promotion and recurrence logic are out of scope.",
+            },
+            "integrity_provenance": {
+                "source_type": "claude_code",
+                "source_session_id": "source-session-1",
+                "source_path": "uploads/daily/test-agent.jsonl",
+                "parser_version": "claude_code@1",
+                "transcript_hash": "abc123",
+                "ingested_at": "2026-04-29T07:57:00+00:00",
+                "integrity_policy_version": "phase3e.v1.default",
+                "integrity_schema_version": "phase3e.v1",
+                "integrity_evaluated_at": "2026-04-29T07:58:00+00:00",
+                "evidence_counts": {"total_events": 1, "flagged_events": 1},
+            },
             "signature_match": {
                 "status": "matched",
                 "primary_family_id": "coverage_gap",
@@ -108,7 +135,27 @@ def test_list_sessions(client, auth_headers, seeded_session):
         "source_session_id": "source-session-1",
         "source_path": "uploads/daily/test-agent.jsonl",
         "parser_version": "claude_code@1",
+        "transcript_hash": "abc123",
         "ingested_at": data["items"][0]["provenance"]["ingested_at"],
+        "integrity_policy_version": "phase3e.v1.default",
+        "integrity_schema_version": "phase3e.v1",
+        "integrity_evaluated_at": data["items"][0]["provenance"]["integrity_evaluated_at"],
+        "evidence_counts": {"total_events": 1, "flagged_events": 1},
+    }
+    assert data["items"][0]["integrity_status"] == {
+        "integrity_schema_version": "phase3e.v1",
+        "trust_band": "trusted",
+        "structural_score": 1.0,
+        "semantic_score": 0.9,
+        "source_factor": 0.95,
+        "pattern_integrity_score": 0.95,
+        "final_learning_weight": 0.8123,
+        "integrity_reasons": ["pattern_integrity_placeholder_oss_v1"],
+        "requires_review": False,
+        "integrity_evaluated_at": data["items"][0]["integrity_status"]["integrity_evaluated_at"],
+        "integrity_policy_version": "phase3e.v1.default",
+        "evidence_counts": {"total_events": 1, "flagged_events": 1},
+        "pattern_integrity_note": "OSS v1 uses a conservative placeholder because private Pattern Object promotion and recurrence logic are out of scope.",
     }
     assert "recurrence_level" not in data["items"][0]
 
@@ -136,7 +183,11 @@ def test_get_session_detail(client, auth_headers, seeded_session):
     assert data["agent_id"] == "test-agent"
     assert data["provenance"]["source_type"] == "claude_code"
     assert data["provenance"]["source_session_id"] == "source-session-1"
+    assert data["provenance"]["transcript_hash"] == "abc123"
     assert data["risk_summary"]["coverage_gap"] == 1
+    assert data["integrity_status"]["trust_band"] == "trusted"
+    assert data["integrity_status"]["final_learning_weight"] == 0.8123
+    assert data["integrity_status"]["integrity_reasons"] == ["pattern_integrity_placeholder_oss_v1"]
     assert data["explanations"]["risk_explanations"] == {
         "coverage_gap": [
             {
@@ -211,6 +262,38 @@ def test_get_session_detail_falls_back_to_legacy_outcome_status(client, auth_hea
     assert payload["signature_match"]["status"] == "matched"
     assert payload["signature_match"]["primary_mechanism_id"] == "coverage_gap"
     assert "recurrence_status" not in payload
+
+
+def test_get_session_detail_keeps_backward_compat_for_missing_integrity_payload(client, auth_headers, db_session):
+    session_id = uuid.uuid4()
+    db_session.add(
+        SessionModel(
+            id=session_id,
+            agent_id="legacy-agent",
+            started_at=datetime.now(timezone.utc),
+            status="completed",
+            source_session_id="legacy-source",
+            source_path="uploads/legacy.jsonl",
+            parser_version="claude_code@1",
+        )
+    )
+    db_session.add(
+        DecisionNodeModel(
+            id=uuid.uuid4(),
+            session_id=session_id,
+            sequence_num=1,
+            event_type="TOOL_CALL",
+            action="legacy-review",
+        )
+    )
+    db_session.commit()
+
+    response = client.get(f"/api/sessions/{session_id}", headers=auth_headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["integrity_status"] is None
+    assert payload["provenance"]["transcript_hash"] is None
 
 
 def test_get_session_detail_orders_explanations_by_sequence(client, auth_headers, db_session):
@@ -372,7 +455,12 @@ def test_graph_endpoint_returns_risk_and_inflection_explanations(client, auth_he
         "source_session_id": "source-session-graph",
         "source_path": "uploads/graph-session.jsonl",
         "parser_version": "claude_code@1",
+        "transcript_hash": None,
         "ingested_at": payload["provenance"]["ingested_at"],
+        "integrity_policy_version": None,
+        "integrity_schema_version": None,
+        "integrity_evaluated_at": None,
+        "evidence_counts": {},
     }
     assert payload["nodes"][0]["risk_flags"] == ["coverage_gap"]
     assert payload["nodes"][0]["risk_explanations"] == {

@@ -20,7 +20,7 @@ from driftshield.core.analysis.inflection import select_inflection_node
 from driftshield.core.analysis.session import AnalysisResult
 from driftshield.core.graph.models import LineageGraph
 from driftshield.core.models import ForensicCase
-from driftshield.db.models import ReportModel
+from driftshield.db.models import ReportModel, SessionModel
 from driftshield.db.persistence import PersistenceService
 from driftshield.reports.builder import ReportBuilder
 from driftshield.reports.json_export import export_json
@@ -40,13 +40,66 @@ def generate_report(
     request: GenerateReportRequest,
     api_key: str = Depends(require_api_key),
     db: DBSession = Depends(get_db),
-):
+) -> dict[str, object]:
     del api_key
-    report, _ = _create_report_for_session(
-        session_id=session_id,
-        report_type=_parse_report_type(request.report_type),
-        db=db,
+    session_model = db.get(SessionModel, session_id)
+    if session_model is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    service = PersistenceService(db)
+    domain_session = service.load_session(session_id)
+    graph = service.load_graph(session_id)
+
+    if domain_session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    if graph is None:
+        raise HTTPException(status_code=404, detail="No graph data for session")
+
+    selection = select_inflection_node(graph, graph.nodes[-1].id) if graph.nodes else None
+    events = [node.event for node in graph.nodes]
+    flagged = sum(
+        1 for event in events if event.risk_classification and event.risk_classification.has_any_flag()
     )
+    result = AnalysisResult(
+        events=events,
+        graph=graph,
+        inflection_node=selection.node if selection is not None else None,
+        total_events=len(events),
+        flagged_events=flagged,
+        inflection_explanation=selection.explanation if selection is not None else None,
+        candidate_break_point=(
+            selection.candidate_break_point if selection is not None else None
+        ),
+    )
+
+    report_type = _parse_report_type(request.report_type)
+    metadata = session_model.metadata_json or {}
+    integrity_snapshot = None
+    if isinstance(metadata.get("integrity_summary"), dict):
+        integrity_snapshot = {
+            "summary": metadata.get("integrity_summary"),
+            "provenance": metadata.get("integrity_provenance"),
+        }
+
+    report_data = ReportBuilder().build(
+        domain_session,
+        result,
+        report_type=report_type,
+        integrity_snapshot=integrity_snapshot,
+    )
+    report = ReportModel(
+        id=uuid.uuid4(),
+        session_id=session_id,
+        generated_at=report_data.generated_at,
+        report_type=report_type.value,
+        content_markdown=render_markdown(report_data),
+        content_json=export_json(report_data),
+        generated_by="system",
+    )
+    db.add(report)
+    db.flush()
+    service.upsert_forensic_case(domain_session, result, report=report)
     return {"id": report.id, "report_type": report.report_type}
 
 
@@ -58,7 +111,7 @@ def generate_forensic_report(
     report_type: str = Form(default="full"),
     api_key: str = Depends(require_api_key),
     db: DBSession = Depends(get_db),
-):
+) -> ForensicWorkflowResponse:
     del api_key
     requested_report_type = _parse_report_type(report_type)
     raw_bytes = read_upload_bytes(file)
@@ -120,7 +173,7 @@ def list_session_reports(
     session_id: uuid.UUID,
     api_key: str = Depends(require_api_key),
     db: DBSession = Depends(get_db),
-):
+) -> list[dict[str, object]]:
     reports = (
         db.query(ReportModel)
         .filter(ReportModel.session_id == session_id)
@@ -143,7 +196,7 @@ def get_report(
     report_id: uuid.UUID,
     api_key: str = Depends(require_api_key),
     db: DBSession = Depends(get_db),
-):
+) -> dict[str, object]:
     report = db.get(ReportModel, report_id)
     if report is None:
         raise HTTPException(status_code=404, detail="Report not found")
