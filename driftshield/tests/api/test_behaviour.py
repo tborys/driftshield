@@ -99,6 +99,49 @@ def test_non_trusted_subjects_stay_unavailable_for_follow_up_metrics(client, aut
     assert payload["follow_up_status"] == "unavailable"
 
 
+def test_create_behaviour_subject_rejects_unknown_session_id(client, auth_headers):
+    response = client.post(
+        "/api/behaviour/subjects",
+        headers=auth_headers,
+        json={
+            "subject_type": "trusted_pattern",
+            "pattern_reference": "pattern:coverage-gap",
+            "trust_band": "trusted",
+            "surface": "api",
+            "session_id": str(uuid.uuid4()),
+        },
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Behaviour subject session not found"
+
+
+def test_create_behaviour_event_rejects_unknown_linked_session_id(client, auth_headers):
+    subject_response = client.post(
+        "/api/behaviour/subjects",
+        headers=auth_headers,
+        json={
+            "subject_type": "trusted_pattern",
+            "pattern_reference": "pattern:coverage-gap",
+            "trust_band": "trusted",
+            "surface": "api",
+        },
+    )
+    assert subject_response.status_code == 201
+    subject_id = subject_response.json()["id"]
+
+    response = client.post(
+        "/api/behaviour/events",
+        headers=auth_headers,
+        json={
+            "subject_id": subject_id,
+            "event_type": "new_run_after_pattern_view",
+            "linked_session_id": str(uuid.uuid4()),
+        },
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Linked behaviour event session not found"
+
+
 def test_ingest_creates_new_run_after_pattern_view_without_touching_telemetry(client, auth_headers, monkeypatch):
     viewed_at = "2026-04-29T16:30:00+00:00"
     subject_response = client.post(

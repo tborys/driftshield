@@ -13,6 +13,7 @@ from driftshield.api.schemas import (
     BehaviourSubjectResponse,
 )
 from driftshield.db.behaviour_service import BehaviourEventService
+from driftshield.db.models import SessionModel
 
 router = APIRouter()
 
@@ -45,6 +46,7 @@ def create_behaviour_subject(
 ):
     del api_key
     _validate_subject_payload(payload)
+    _require_session_exists(db, payload.session_id, detail="Behaviour subject session not found")
 
     service = BehaviourEventService(db)
     subject = service.create_subject(
@@ -84,6 +86,11 @@ def create_behaviour_event(
     del api_key
     if payload.event_type not in _ALLOWED_EVENT_TYPES:
         raise HTTPException(status_code=422, detail="Unsupported behaviour event type")
+    _require_session_exists(
+        db,
+        payload.linked_session_id,
+        detail="Linked behaviour event session not found",
+    )
 
     service = BehaviourEventService(db)
     try:
@@ -122,6 +129,18 @@ def _validate_subject_payload(payload: BehaviourSubjectCreateRequest) -> None:
             status_code=422,
             detail="Only trusted_pattern subjects can be marked trusted in OSS v1",
         )
+
+
+def _require_session_exists(
+    db: DBSession,
+    session_id: uuid.UUID | None,
+    *,
+    detail: str,
+) -> None:
+    if session_id is None:
+        return
+    if db.get(SessionModel, session_id) is None:
+        raise HTTPException(status_code=404, detail=detail)
 
 
 def _subject_response(snapshot) -> BehaviourSubjectResponse:
