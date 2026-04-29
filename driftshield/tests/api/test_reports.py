@@ -89,7 +89,39 @@ def sample_transcript():
 def seeded_session(db_session):
     session_id = uuid.uuid4()
     s = SessionModel(
-        id=session_id, agent_id="test", started_at=datetime.now(timezone.utc), status="completed"
+        id=session_id,
+        agent_id="test",
+        started_at=datetime.now(timezone.utc),
+        status="completed",
+        metadata_json={
+            "integrity_summary": {
+                "integrity_schema_version": "phase3e.v1",
+                "trust_band": "trusted",
+                "structural_score": 1.0,
+                "semantic_score": 1.0,
+                "source_factor": 0.9,
+                "pattern_integrity_score": 0.95,
+                "final_learning_weight": 0.855,
+                "integrity_reasons": ["pattern_integrity_placeholder_oss_v1"],
+                "requires_review": False,
+                "integrity_evaluated_at": "2026-04-29T07:58:00+00:00",
+                "integrity_policy_version": "phase3e.v1.default",
+                "evidence_counts": {"total_events": 1, "flagged_events": 0},
+                "pattern_integrity_note": "OSS v1 uses a conservative placeholder because private Pattern Object promotion and recurrence logic are out of scope.",
+            },
+            "integrity_provenance": {
+                "source_type": "claude_code",
+                "source_session_id": "source-session-report",
+                "source_path": "uploads/report-session.jsonl",
+                "parser_version": "claude_code@1",
+                "transcript_hash": "report-hash",
+                "ingested_at": "2026-04-29T07:57:00+00:00",
+                "integrity_policy_version": "phase3e.v1.default",
+                "integrity_schema_version": "phase3e.v1",
+                "integrity_evaluated_at": "2026-04-29T07:58:00+00:00",
+                "evidence_counts": {"total_events": 1, "flagged_events": 0},
+            },
+        },
     )
     node = DecisionNodeModel(
         id=uuid.uuid4(), session_id=session_id, sequence_num=1,
@@ -300,6 +332,8 @@ def test_generated_report_has_real_content(client, auth_headers, seeded_session,
     assert data["content_json"]["findings"]
     assert data["content_json"]["evidence_index"]
     assert data["content_json"]["candidate_break_point"]["status"] == "no_clear_break_point"
+    assert data["content_json"]["integrity_snapshot"]["summary"]["trust_band"] == "trusted"
+    assert "**Integrity:** trusted (weight 0.855)" in data["content_markdown"]
     assert "recurrence_probability" not in data["content_json"]
 
 

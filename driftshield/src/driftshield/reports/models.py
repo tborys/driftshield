@@ -103,3 +103,4 @@ class ReportData:
     findings: list[ReportFinding] = field(default_factory=list)
     pattern_matches: list[PatternMatch] = field(default_factory=list)
     evidence_index: list[EvidenceRef] = field(default_factory=list)
+    integrity_snapshot: dict[str, object] | None = None

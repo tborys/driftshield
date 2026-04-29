@@ -4,6 +4,9 @@
 **Session:** {{ report.session_id }}
 **Agent:** {{ report.agent_id }}
 **Generated:** {{ report.generated_at.strftime('%Y-%m-%d %H:%M:%S UTC') }}
+{% if report.integrity_snapshot and report.integrity_snapshot.summary %}
+**Integrity:** {{ report.integrity_snapshot.summary.trust_band }} (weight {{ report.integrity_snapshot.summary.final_learning_weight }})
+{% endif %}
 
 > OSS safety: {{ report.summary.oss_safety_note }}
 
