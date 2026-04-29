@@ -127,6 +127,51 @@ class IngestResponse(BaseModel):
     deduplicated: bool = False
 
 
+class BehaviourSubjectCreateRequest(BaseModel):
+    subject_type: str
+    pattern_reference: str
+    trust_band: str
+    surface: str
+    session_id: uuid.UUID | None = None
+    first_exposed_at: datetime | None = None
+    metadata_json: dict[str, Any] | None = None
+
+
+class BehaviourEventCreateRequest(BaseModel):
+    subject_id: uuid.UUID
+    event_type: str
+    actor_id: str | None = None
+    originating_session_id: str | None = None
+    linked_session_id: uuid.UUID | None = None
+    occurred_at: datetime | None = None
+    metadata_json: dict[str, Any] | None = None
+
+
+class BehaviourSubjectResponse(BaseModel):
+    id: uuid.UUID
+    session_id: uuid.UUID | None = None
+    subject_type: str
+    pattern_reference: str
+    trust_band: str
+    surface: str
+    first_exposed_at: datetime
+    metadata_json: dict[str, Any] = Field(default_factory=dict)
+    tracking_status: str
+    follow_up_status: str
+    event_counts: dict[str, int] = Field(default_factory=dict)
+
+
+class BehaviourEventResponse(BaseModel):
+    id: uuid.UUID
+    subject_id: uuid.UUID
+    occurred_at: datetime
+    event_type: str
+    actor_id: str | None = None
+    originating_session_id: str | None = None
+    linked_session_id: uuid.UUID | None = None
+    metadata_json: dict[str, Any] = Field(default_factory=dict)
+
+
 class GeneratedReportResponse(BaseModel):
     id: uuid.UUID
     session_id: uuid.UUID
