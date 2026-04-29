@@ -1,11 +1,13 @@
 import os
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from driftshield.api.routes.connectors import router as connectors_router
+from driftshield.api.routes.dashboard import router as dashboard_router
 from driftshield.api.routes.health import router as health_router
 from driftshield.api.routes.ingest import router as ingest_router
 from driftshield.api.routes.reports import router as reports_router
@@ -21,6 +23,7 @@ def create_app() -> FastAPI:
     )
     app.add_middleware(RequestSizeLimitMiddleware)
     app.include_router(connectors_router)
+    app.include_router(dashboard_router)
     app.include_router(health_router)
     app.include_router(ingest_router)
     app.include_router(sessions_router)
@@ -34,7 +37,7 @@ def create_app() -> FastAPI:
         app.mount("/assets", StaticFiles(directory=str(static_dir / "assets")), name="assets")
 
         @app.get("/{path:path}")
-        async def serve_spa(path: str):
+        async def serve_spa(path: str) -> Any:
             """Serve React SPA. All non-API routes fall through to index.html."""
             file_path = static_dir / path
             if file_path.exists() and file_path.is_file():
