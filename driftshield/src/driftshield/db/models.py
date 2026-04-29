@@ -209,3 +209,51 @@ class AnalystValidationModel(Base):
     metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     shareable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class BehaviourEventSubjectModel(Base):
+    __tablename__ = "behaviour_event_subjects"
+    __table_args__ = (
+        Index("ix_behaviour_event_subjects_session_id", "session_id"),
+        Index("ix_behaviour_event_subjects_pattern_reference", "pattern_reference"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    session_id: Mapped[uuid.UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("sessions.id"), nullable=True
+    )
+    subject_type: Mapped[str] = mapped_column(String, nullable=False)
+    pattern_reference: Mapped[str] = mapped_column(String, nullable=False)
+    trust_band: Mapped[str] = mapped_column(String, nullable=False)
+    surface: Mapped[str] = mapped_column(String, nullable=False)
+    first_exposed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+
+class BehaviourEventModel(Base):
+    __tablename__ = "behaviour_events"
+    __table_args__ = (
+        Index("ix_behaviour_events_subject_id_occurred_at", "subject_id", "occurred_at"),
+        Index(
+            "ix_behaviour_events_event_type_linked_session",
+            "event_type",
+            "linked_session_id",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    subject_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("behaviour_event_subjects.id"), nullable=False
+    )
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    event_type: Mapped[str] = mapped_column(String, nullable=False)
+    actor_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    originating_session_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    linked_session_id: Mapped[uuid.UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("sessions.id"), nullable=True
+    )
+    metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
