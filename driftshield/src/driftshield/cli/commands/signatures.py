@@ -10,7 +10,7 @@ from rich.console import Console
 
 from driftshield.signatures.distribution import (
     DEFAULT_COMMUNITY_REPOSITORY,
-    build_github_raw_pack_url,
+    build_github_raw_manifest_url,
     describe_pack_source,
     install_community_pack,
 )
@@ -42,7 +42,7 @@ def pull_signature_pack(
     source_url: str | None = typer.Option(
         None,
         "--url",
-        help="Explicit manifest URL. Overrides --repository/--ref when supplied.",
+        help="Explicit distribution-manifest or legacy pack URL. Overrides --repository/--ref when supplied.",
     ),
     output: Path | None = typer.Option(
         None,
@@ -57,14 +57,14 @@ def pull_signature_pack(
         raise typer.Exit(1)
 
     try:
-        resolved_source_url = source_url or build_github_raw_pack_url(
+        resolved_source_url = source_url or build_github_raw_manifest_url(
             repository=_validate_repository(repository),
             ref=ref or "",
-            pack_name=pack_name,
         )
         pulled = install_community_pack(
             source_url=resolved_source_url,
             destination=output,
+            pack_name_hint=pack_name,
         )
     except Exception as exc:
         console.print(f"[red]Error:[/red] Could not pull pack: {exc}")
@@ -75,18 +75,22 @@ def pull_signature_pack(
         "pack_version": pulled.manifest.metadata.version,
         "schema_version": pulled.manifest.schema_version,
         "source_url": describe_pack_source(pulled.source_url),
+        "manifest_url": describe_pack_source(pulled.manifest_url) if pulled.manifest_url else None,
         "installed_path": str(pulled.installed_path),
         "signature_count": len(pulled.manifest.signatures),
         "family_coverage": list(pulled.manifest.family_coverage),
+        "used_cached_pack": pulled.used_cached_pack,
     }
     if json_output:
         typer.echo(json.dumps(payload))
         return
 
     console.print(
-        "[green]Pulled community pack[/green] "
+        f"[green]{'Using cached community pack' if pulled.used_cached_pack else 'Pulled community pack'}[/green] "
         f"{payload['pack_name']}@{payload['pack_version']} "
         f"(schema {payload['schema_version']}, signatures={payload['signature_count']})."
     )
+    if payload["manifest_url"]:
+        console.print(f"Manifest: {payload['manifest_url']}")
     console.print(f"Source: {payload['source_url']}")
     console.print(f"Installed: {payload['installed_path']}")
