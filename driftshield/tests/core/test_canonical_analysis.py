@@ -41,6 +41,7 @@ def test_build_canonical_analysis_emits_result_families_for_completed_tool_calls
     assert result_event["causal_parents"] == [payload["normalized_events"][0]["event_id"]]
     assert result_event["structured_payload"]["invocation_id"] == "tool_1"
     assert result_event["structured_payload"]["result_status"] == "completed"
+    assert payload["extraction_quality_summary"]["field_recovery_summary"]["recovered_field_count"] == 0
 
 
 def test_build_canonical_analysis_preserves_developer_constraints_from_instruction_artifacts():
