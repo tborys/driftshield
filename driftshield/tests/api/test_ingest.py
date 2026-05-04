@@ -129,6 +129,7 @@ def test_ingest_persists_provenance_fields(client, auth_headers, sample_transcri
     assert canonical_analysis["normalized_events"]
     first_event = canonical_analysis["normalized_events"][0]
     assert first_event["event_family"] == "state_read"
+    assert first_event["field_recovery"]["direct_fields"]
     assert first_event["structured_payload"]["tool_name"] == "Read"
     assert first_event["structured_payload"]["state_transition"]["state_operation"] == "read"
     assert canonical_analysis["expected_vs_actual_delta"]["delta_types"] == ["no_material_delta_detected"]
@@ -136,6 +137,7 @@ def test_ingest_persists_provenance_fields(client, auth_headers, sample_transcri
     assert "state_write" in quality["missing_event_families"]
     assert quality["parse_completeness"] == quality["coverage_ratio"]
     assert quality["missing_critical_fields_status"] == "complete"
+    assert quality["field_recovery_summary"]["normalised_event_count"] == 0
     assert isinstance(quality["ambiguity_count"], int)
     assert isinstance(quality["parser_warnings"], list)
     assert quality["review_requirements"] == []

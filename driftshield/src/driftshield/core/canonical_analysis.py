@@ -17,6 +17,15 @@ _DIRECT_RECOVERY_MODE = "direct"
 _NORMALISED_RECOVERY_MODE = "normalised"
 _INFERRED_RECOVERY_MODE = "inferred"
 
+_BASE_NORMALISED_FIELDS = {
+    "actor_type",
+    "confidence",
+    "event_family",
+    "event_type",
+    "recovery_mode",
+    "sequence_index",
+}
+
 
 def build_canonical_analysis(
     *,
@@ -28,7 +37,16 @@ def build_canonical_analysis(
     missing_fields = sum(len(event["missing_fields"]) for event in normalized_events)
     ambiguity_count = sum(len(event.ambiguities) for event in result.events)
     direct_events = sum(1 for event in normalized_events if event["recovery_mode"] == _DIRECT_RECOVERY_MODE)
-    inferred_events = len(normalized_events) - direct_events
+    normalised_events = sum(
+        1 for event in normalized_events if event["recovery_mode"] == _NORMALISED_RECOVERY_MODE
+    )
+    inferred_events = sum(
+        1 for event in normalized_events if event["recovery_mode"] == _INFERRED_RECOVERY_MODE
+    )
+    recovered_fields = sum(_recovered_field_count(event["field_recovery"]) for event in normalized_events)
+    inferred_fields = sum(
+        len(event["field_recovery"]["inferred_fields"]) for event in normalized_events
+    )
 
     integrity_reasons = _integrity_reasons(result.events)
     overall_quality_band = _overall_quality_band(result.events, ambiguity_count=ambiguity_count)
@@ -97,8 +115,11 @@ def build_canonical_analysis(
             "ambiguity_count": ambiguity_count,
             "field_recovery_summary": {
                 "direct_event_count": direct_events,
+                "normalised_event_count": normalised_events,
                 "inferred_event_count": inferred_events,
                 "missing_field_count": missing_fields,
+                "recovered_field_count": recovered_fields,
+                "inferred_field_count": inferred_fields,
             },
             "inference_ratio": round(inferred_events / len(normalized_events), 4) if normalized_events else 0.0,
             "critical_gaps": critical_gaps,
@@ -148,6 +169,15 @@ def _canonical_event_payload(
     payload = structured_payload or _structured_payload(event, raw_reference=raw_reference)
     missing_fields = _event_missing_fields(event)
     recovery_mode = _recovery_mode(event, missing_fields=missing_fields)
+    field_recovery = _field_recovery(
+        event,
+        raw_reference=raw_reference,
+        payload=payload,
+        missing_fields=missing_fields,
+        recovery_mode=recovery_mode,
+        content_summary=content_summary,
+        causal_parents=causal_parents,
+    )
 
     return {
         "event_id": event_id or str(event.id),
@@ -163,6 +193,7 @@ def _canonical_event_payload(
         "causal_parents": causal_parents if causal_parents is not None else [str(ref) for ref in event.parent_event_refs],
         "confidence": _event_confidence(event, missing_fields=missing_fields),
         "recovery_mode": recovery_mode,
+        "field_recovery": field_recovery,
         "missing_fields": missing_fields,
     }
 
@@ -267,6 +298,94 @@ def _event_confidence(event: CanonicalEvent, *, missing_fields: list[str]) -> fl
     if event.failure_context and event.failure_context.get("status") == "warning":
         confidence -= 0.1
     return round(max(confidence, 0.2), 2)
+
+
+def _field_recovery(
+    event: CanonicalEvent,
+    *,
+    raw_reference: dict[str, str] | None,
+    payload: dict[str, Any],
+    missing_fields: list[str],
+    recovery_mode: str,
+    content_summary: str | None,
+    causal_parents: list[str] | None,
+) -> dict[str, list[str]]:
+    direct_fields: set[str] = set()
+    normalised_fields = set(_BASE_NORMALISED_FIELDS)
+    inferred_fields: set[str] = set()
+
+    if event.timestamp is not None:
+        direct_fields.add("timestamp")
+    if raw_reference is not None:
+        direct_fields.update({"raw_reference", "source_span"})
+    if content_summary is not None or event.summary:
+        direct_fields.add("content_summary")
+    if event.parent_event_refs or causal_parents:
+        direct_fields.add("causal_parents")
+
+    if event.ambiguities:
+        inferred_fields.update(_inferred_fields_from_ambiguities(event.ambiguities))
+
+    if event.failure_context and event.failure_context.get("status") == "warning":
+        inferred_fields.update({"structured_payload.failure_context", "structured_payload.tool_activity"})
+
+    if recovery_mode == _NORMALISED_RECOVERY_MODE:
+        normalised_fields.update(_normalised_fields_from_missing_fields(missing_fields))
+    if recovery_mode == _INFERRED_RECOVERY_MODE:
+        normalised_fields.update(_normalised_fields_from_missing_fields(missing_fields))
+
+    if payload and not _has_non_direct_structured_payload_fields(
+        normalised_fields=normalised_fields,
+        inferred_fields=inferred_fields,
+    ):
+        direct_fields.add("structured_payload")
+
+    direct_fields -= inferred_fields
+
+    return {
+        "direct_fields": sorted(direct_fields),
+        "normalised_fields": sorted(normalised_fields),
+        "inferred_fields": sorted(inferred_fields),
+        "missing_fields": list(missing_fields),
+    }
+
+
+def _recovered_field_count(field_recovery: dict[str, list[str]]) -> int:
+    return len(set(field_recovery["normalised_fields"]) - _BASE_NORMALISED_FIELDS)
+
+
+def _has_non_direct_structured_payload_fields(
+    *,
+    normalised_fields: set[str],
+    inferred_fields: set[str],
+) -> bool:
+    return any(field.startswith("structured_payload.") for field in normalised_fields | inferred_fields)
+
+
+def _normalised_fields_from_missing_fields(missing_fields: list[str]) -> set[str]:
+    field_map = {
+        "causal_parents_missing": "causal_parents",
+        "content_summary_missing": "content_summary",
+        "source_reference_missing": "raw_reference",
+        "tool_inputs_missing": "structured_payload.inputs",
+        "tool_outputs_missing": "structured_payload.outputs",
+    }
+    return {field_map[item] for item in missing_fields if item in field_map}
+
+
+def _inferred_fields_from_ambiguities(ambiguities: list[str]) -> set[str]:
+    field_map = {
+        "failure_inferred_from_text": "structured_payload.failure_context",
+        "missing_actor": "actor_type",
+        "missing_parent_ref": "causal_parents",
+        "missing_source_ref": "raw_reference",
+        "missing_tool_inputs": "structured_payload.inputs",
+        "missing_tool_outputs": "structured_payload.outputs",
+    }
+    inferred_fields = {field_map[item] for item in ambiguities if item in field_map}
+    if "failure_inferred_from_text" in ambiguities:
+        inferred_fields.add("recovery_mode")
+    return inferred_fields
 
 
 def _has_result_payload(event: CanonicalEvent) -> bool:
