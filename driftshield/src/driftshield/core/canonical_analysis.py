@@ -26,7 +26,7 @@ def build_canonical_analysis(
 ) -> dict[str, Any]:
     normalized_events = _canonical_event_payloads(result.events)
     missing_fields = sum(len(event["missing_fields"]) for event in normalized_events)
-    ambiguity_count = sum(len(event.get("missing_fields", [])) for event in normalized_events)
+    ambiguity_count = sum(len(event.ambiguities) for event in result.events)
     direct_events = sum(1 for event in normalized_events if event["recovery_mode"] == _DIRECT_RECOVERY_MODE)
     inferred_events = len(normalized_events) - direct_events
 
@@ -34,6 +34,10 @@ def build_canonical_analysis(
     overall_quality_band = _overall_quality_band(result.events, ambiguity_count=ambiguity_count)
     delta_types = _delta_types(result)
     parser_name = _parser_name(provenance)
+    coverage_ratio = round(_coverage_ratio(normalized_events), 4)
+    ordering_confidence = _ordering_confidence(result.events)
+    critical_gaps = _critical_gaps(result.events)
+    quality_warnings = _quality_warnings(result.events)
 
     return {
         "analysis_session": {
@@ -81,17 +85,32 @@ def build_canonical_analysis(
         },
         "extraction_quality_summary": {
             "overall_quality_band": overall_quality_band,
-            "coverage_ratio": round(_coverage_ratio(normalized_events), 4),
+            "coverage_ratio": coverage_ratio,
+            "parse_completeness": coverage_ratio,
             "missing_event_families": _missing_event_families(normalized_events),
-            "ordering_confidence": _ordering_confidence(result.events),
+            "ordering_confidence": ordering_confidence,
+            "structural_confidence": _structural_confidence(
+                coverage_ratio=coverage_ratio,
+                ordering_confidence=ordering_confidence,
+                ambiguity_count=ambiguity_count,
+            ),
+            "ambiguity_count": ambiguity_count,
             "field_recovery_summary": {
                 "direct_event_count": direct_events,
                 "inferred_event_count": inferred_events,
                 "missing_field_count": missing_fields,
             },
             "inference_ratio": round(inferred_events / len(normalized_events), 4) if normalized_events else 0.0,
-            "critical_gaps": _critical_gaps(result.events),
-            "quality_warnings": _quality_warnings(result.events),
+            "critical_gaps": critical_gaps,
+            "missing_critical_fields_status": _missing_critical_fields_status(critical_gaps),
+            "parser_warnings": _parser_warnings(result.events),
+            "quality_warnings": quality_warnings,
+            "review_requirements": _review_requirements(
+                critical_gaps=critical_gaps,
+                quality_warnings=quality_warnings,
+                ambiguity_count=ambiguity_count,
+                overall_quality_band=overall_quality_band,
+            ),
         },
     }
 
@@ -564,6 +583,17 @@ def _coverage_ratio(normalized_events: list[dict[str, Any]]) -> float:
     return max(0.0, min(1.0, (total_fields - missing) / total_fields))
 
 
+def _structural_confidence(
+    *,
+    coverage_ratio: float,
+    ordering_confidence: float,
+    ambiguity_count: int,
+) -> float:
+    confidence = min(coverage_ratio, ordering_confidence)
+    confidence -= min(ambiguity_count * 0.03, 0.3)
+    return round(max(confidence, 0.0), 4)
+
+
 def _missing_event_families(normalized_events: list[dict[str, Any]]) -> list[str]:
     required = {
         "user_instruction",
@@ -612,6 +642,45 @@ def _quality_warnings(events: list[CanonicalEvent]) -> list[str]:
         if event.ambiguities:
             warnings.add("event_ambiguities_present")
     return sorted(warnings)
+
+
+def _parser_warnings(events: list[CanonicalEvent]) -> list[str]:
+    warnings: set[str] = set()
+    for event in events:
+        if not event.source_refs:
+            warnings.add("missing_source_reference")
+        if event.failure_context and event.failure_context.get("status") == "warning":
+            warnings.add("parser_recovered_from_text_only_failure")
+        if event.ambiguities:
+            warnings.add("parser_observed_ambiguous_event_fields")
+    return sorted(warnings)
+
+
+def _missing_critical_fields_status(critical_gaps: list[str]) -> str:
+    if not critical_gaps:
+        return "complete"
+    if len(critical_gaps) >= 2:
+        return "missing"
+    return "partial"
+
+
+def _review_requirements(
+    *,
+    critical_gaps: list[str],
+    quality_warnings: list[str],
+    ambiguity_count: int,
+    overall_quality_band: str,
+) -> list[str]:
+    requirements: list[str] = []
+    if critical_gaps:
+        requirements.append("manual_review_required_for_missing_critical_fields")
+    if ambiguity_count:
+        requirements.append("manual_review_required_for_ambiguous_lineage")
+    if quality_warnings:
+        requirements.append("manual_review_required_for_parser_warnings")
+    if overall_quality_band in {"degraded", "insufficient_for_matching"}:
+        requirements.append("manual_review_required_before_matching")
+    return requirements
 
 
 def _overall_quality_band(events: list[CanonicalEvent], *, ambiguity_count: int) -> str:
