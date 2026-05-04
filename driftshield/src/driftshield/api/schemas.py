@@ -78,6 +78,7 @@ class SessionDetail(SessionSummary):
     risk_summary: dict[str, int] = Field(default_factory=dict)
     explanations: SessionExplanationsResponse | None = None
     signature_match: SignatureMatchSummaryResponse | None = None
+    canonical_analysis: dict[str, Any] | None = None
 
 
 class GraphNodeResponse(BaseModel):

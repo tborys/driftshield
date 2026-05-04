@@ -208,6 +208,15 @@ def _extract_signature_match(session: SessionModel) -> SignatureMatchSummaryResp
     )
 
 
+
+def _extract_canonical_analysis(session: SessionModel) -> dict[str, Any] | None:
+    metadata = session.metadata_json or {}
+    payload = metadata.get("canonical_analysis")
+    if not isinstance(payload, dict):
+        return None
+    return payload
+
+
 def _feedback_response(
     row: ValidationRecord | AnalystValidationModel,
 ) -> ForensicFeedbackResponse:
@@ -415,6 +424,7 @@ def get_session(
         risk_summary=_risk_summary(nodes),
         explanations=_session_explanations(nodes),
         signature_match=_extract_signature_match(session),
+        canonical_analysis=_extract_canonical_analysis(session),
     )
 
 

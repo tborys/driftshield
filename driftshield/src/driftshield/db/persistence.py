@@ -6,6 +6,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session as DBSession
 
 from driftshield.core.analysis.session import AnalysisResult
+from driftshield.core.canonical_analysis import build_canonical_analysis
 from driftshield.core.graph.builder import build_graph
 from driftshield.core.graph.models import DecisionNode, LineageGraph
 from driftshield.core.integrity import build_integrity_provenance, build_integrity_summary
@@ -159,6 +160,11 @@ class PersistenceService:
         integrity_summary = build_integrity_summary(session, result, provenance)
         metadata["integrity_summary"] = integrity_summary
         metadata["integrity_provenance"] = build_integrity_provenance(integrity_summary, provenance)
+        metadata["canonical_analysis"] = build_canonical_analysis(
+            session=session,
+            result=result,
+            provenance=provenance,
+        )
 
         session_model.external_id = getattr(session, "external_id", None)
         session_model.agent_id = session.agent_id
