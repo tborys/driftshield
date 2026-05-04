@@ -132,7 +132,13 @@ def test_ingest_persists_provenance_fields(client, auth_headers, sample_transcri
     assert first_event["structured_payload"]["tool_name"] == "Read"
     assert first_event["structured_payload"]["state_transition"]["state_operation"] == "read"
     assert canonical_analysis["expected_vs_actual_delta"]["delta_types"] == ["no_material_delta_detected"]
-    assert "state_write" in canonical_analysis["extraction_quality_summary"]["missing_event_families"]
+    quality = canonical_analysis["extraction_quality_summary"]
+    assert "state_write" in quality["missing_event_families"]
+    assert quality["parse_completeness"] == quality["coverage_ratio"]
+    assert quality["missing_critical_fields_status"] == "complete"
+    assert isinstance(quality["ambiguity_count"], int)
+    assert isinstance(quality["parser_warnings"], list)
+    assert quality["review_requirements"] == []
 
 
 def test_ingest_stabilizes_normalized_parent_refs(db_session):

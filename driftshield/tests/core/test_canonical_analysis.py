@@ -72,3 +72,38 @@ def test_build_canonical_analysis_preserves_developer_constraints_from_instructi
     assert developer_constraints
     assert developer_constraints[0]["constraint"] == "You must verify changes before replying."
     assert developer_constraints[0]["observed_via"] == "inferred_from_instruction_artifact"
+
+
+def test_build_canonical_analysis_exposes_extraction_quality_contract_for_ambiguous_runs():
+    event = CanonicalEvent(
+        id=uuid4(),
+        session_id="canonical-3",
+        timestamp=datetime.now(timezone.utc),
+        event_type=EventType.TOOL_CALL,
+        agent_id="claude",
+        action="Read",
+        inputs={"file_path": "README.md"},
+        outputs={},
+        ambiguities=["missing_parent_ref"],
+    )
+    result = analyze_session([event])
+
+    payload = build_canonical_analysis(
+        session=Session(
+            id=uuid4(),
+            agent_id="claude",
+            started_at=datetime.now(timezone.utc),
+            status=SessionStatus.COMPLETED,
+        ),
+        result=result,
+        provenance=None,
+    )
+
+    quality = payload["extraction_quality_summary"]
+    assert quality["parse_completeness"] == quality["coverage_ratio"]
+    assert quality["ambiguity_count"] >= 1
+    assert quality["structural_confidence"] < 1.0
+    assert quality["missing_critical_fields_status"] == "missing"
+    assert "parser_observed_ambiguous_event_fields" in quality["parser_warnings"]
+    assert "manual_review_required_for_missing_critical_fields" in quality["review_requirements"]
+    assert "manual_review_required_for_ambiguous_lineage" in quality["review_requirements"]
