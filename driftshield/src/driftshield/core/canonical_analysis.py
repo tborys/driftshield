@@ -17,6 +17,15 @@ _DIRECT_RECOVERY_MODE = "direct"
 _NORMALISED_RECOVERY_MODE = "normalised"
 _INFERRED_RECOVERY_MODE = "inferred"
 
+_BASE_NORMALISED_FIELDS = {
+    "actor_type",
+    "confidence",
+    "event_family",
+    "event_type",
+    "recovery_mode",
+    "sequence_index",
+}
+
 
 def build_canonical_analysis(
     *,
@@ -34,9 +43,7 @@ def build_canonical_analysis(
     inferred_events = sum(
         1 for event in normalized_events if event["recovery_mode"] == _INFERRED_RECOVERY_MODE
     )
-    recovered_fields = sum(
-        len(event["field_recovery"]["normalised_fields"]) for event in normalized_events
-    )
+    recovered_fields = sum(_recovered_field_count(event["field_recovery"]) for event in normalized_events)
     inferred_fields = sum(
         len(event["field_recovery"]["inferred_fields"]) for event in normalized_events
     )
@@ -304,14 +311,7 @@ def _field_recovery(
     causal_parents: list[str] | None,
 ) -> dict[str, list[str]]:
     direct_fields: set[str] = set()
-    normalised_fields = {
-        "actor_type",
-        "confidence",
-        "event_family",
-        "event_type",
-        "recovery_mode",
-        "sequence_index",
-    }
+    normalised_fields = set(_BASE_NORMALISED_FIELDS)
     inferred_fields: set[str] = set()
 
     if event.timestamp is not None:
@@ -344,6 +344,10 @@ def _field_recovery(
         "inferred_fields": sorted(inferred_fields),
         "missing_fields": list(missing_fields),
     }
+
+
+def _recovered_field_count(field_recovery: dict[str, list[str]]) -> int:
+    return len(set(field_recovery["normalised_fields"]) - _BASE_NORMALISED_FIELDS)
 
 
 def _normalised_fields_from_missing_fields(missing_fields: list[str]) -> set[str]:
