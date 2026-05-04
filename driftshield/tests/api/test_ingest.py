@@ -122,6 +122,18 @@ def test_ingest_persists_provenance_fields(client, auth_headers, sample_transcri
     assert session.parser_version == "claude_code@1"
     assert session.ingested_at is not None
 
+    canonical_analysis = session.metadata_json["canonical_analysis"]
+    assert canonical_analysis["analysis_session"]["analysis_schema_version"] == "phase-3g-canonical-v1"
+    assert canonical_analysis["analysis_session"]["source_fingerprint"] == session.transcript_hash
+    assert canonical_analysis["analysis_session"]["parser_version"] == "claude_code@1"
+    assert canonical_analysis["normalized_events"]
+    first_event = canonical_analysis["normalized_events"][0]
+    assert first_event["event_family"] == "state_read"
+    assert first_event["structured_payload"]["tool_name"] == "Read"
+    assert first_event["structured_payload"]["state_transition"]["state_operation"] == "read"
+    assert canonical_analysis["expected_vs_actual_delta"]["delta_types"] == ["no_material_delta_detected"]
+    assert "state_write" in canonical_analysis["extraction_quality_summary"]["missing_event_families"]
+
 
 def test_ingest_stabilizes_normalized_parent_refs(db_session):
     transcript = "\n".join(

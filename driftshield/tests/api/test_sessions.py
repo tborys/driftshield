@@ -89,6 +89,27 @@ def seeded_session(db_session):
                 "match_count": 2,
                 "summary": "Matched two known failure families.",
             },
+            "canonical_analysis": {
+                "analysis_session": {
+                    "session_id": str(session_id),
+                    "analysis_schema_version": "phase-3g-canonical-v1",
+                    "source_kind": "claude_code",
+                    "parser_version": "claude_code@1",
+                    "source_fingerprint": "abc123",
+                },
+                "normalized_events": [
+                    {
+                        "event_id": "node-1",
+                        "sequence_index": 0,
+                        "event_family": "tool_call",
+                        "missing_fields": [],
+                    }
+                ],
+                "run_context": {},
+                "policy_and_instruction_context": {},
+                "expected_vs_actual_delta": {"delta_types": ["missing_required_action"]},
+                "extraction_quality_summary": {"overall_quality_band": "usable"},
+            },
             "recurrence_status": {
                 "status": "recurring",
                 "cluster_id": "cluster-42",
@@ -222,6 +243,9 @@ def test_get_session_detail(client, auth_headers, seeded_session):
             "summary": "Matched two known failure families.",
         },
     }
+    assert data["canonical_analysis"]["analysis_session"]["analysis_schema_version"] == "phase-3g-canonical-v1"
+    assert data["canonical_analysis"]["normalized_events"][0]["event_family"] == "tool_call"
+    assert data["canonical_analysis"]["expected_vs_actual_delta"]["delta_types"] == ["missing_required_action"]
     assert "recurrence_status" not in data
 
 
