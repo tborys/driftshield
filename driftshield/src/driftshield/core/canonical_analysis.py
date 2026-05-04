@@ -24,7 +24,7 @@ def build_canonical_analysis(
     result: AnalysisResult,
     provenance: IngestProvenance | None,
 ) -> dict[str, Any]:
-    normalized_events = [_canonical_event_payload(event) for event in result.events]
+    normalized_events = _canonical_event_payloads(result.events)
     missing_fields = sum(len(event["missing_fields"]) for event in normalized_events)
     ambiguity_count = sum(len(event.get("missing_fields", [])) for event in normalized_events)
     direct_events = sum(1 for event in normalized_events if event["recovery_mode"] == _DIRECT_RECOVERY_MODE)
@@ -65,7 +65,7 @@ def build_canonical_analysis(
         },
         "policy_and_instruction_context": {
             "system_constraints": _constraints_for_role(result.events, "system"),
-            "developer_constraints": [],
+            "developer_constraints": _developer_constraints(result.events),
             "user_constraints": _constraints_for_role(result.events, "user"),
             "derived_operational_constraints": _derived_operational_constraints(result.events),
             "conflict_or_shadowing_notes": _constraint_conflicts(result.events),
@@ -96,7 +96,28 @@ def build_canonical_analysis(
     }
 
 
-def _canonical_event_payload(event: CanonicalEvent) -> dict[str, Any]:
+def _canonical_event_payloads(events: list[CanonicalEvent]) -> list[dict[str, Any]]:
+    payloads: list[dict[str, Any]] = []
+    sequence_index = 0
+    for event in events:
+        payloads.append(_canonical_event_payload(event, sequence_index=sequence_index))
+        sequence_index += 1
+        if _has_result_payload(event):
+            payloads.append(_canonical_result_payload(event, sequence_index=sequence_index))
+            sequence_index += 1
+    return payloads
+
+
+def _canonical_event_payload(
+    event: CanonicalEvent,
+    *,
+    sequence_index: int,
+    event_id: str | None = None,
+    event_family: str | None = None,
+    content_summary: str | None = None,
+    causal_parents: list[str] | None = None,
+    structured_payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     raw_reference = next((ref for ref in event.source_refs if ref.get("kind") != "parser"), None)
     source_span = None
     if raw_reference is not None:
@@ -105,6 +126,33 @@ def _canonical_event_payload(event: CanonicalEvent) -> dict[str, Any]:
             "value": raw_reference.get("value"),
         }
 
+    payload = structured_payload or _structured_payload(event, raw_reference=raw_reference)
+    missing_fields = _event_missing_fields(event)
+    recovery_mode = _recovery_mode(event, missing_fields=missing_fields)
+
+    return {
+        "event_id": event_id or str(event.id),
+        "sequence_index": sequence_index,
+        "event_family": event_family or _event_family(event),
+        "event_type": event.event_kind,
+        "actor_type": (event.actor or {}).get("role") or "assistant",
+        "timestamp": event.timestamp.isoformat() if isinstance(event.timestamp, datetime) else None,
+        "source_span": source_span,
+        "raw_reference": raw_reference,
+        "content_summary": content_summary or event.summary,
+        "structured_payload": payload,
+        "causal_parents": causal_parents if causal_parents is not None else [str(ref) for ref in event.parent_event_refs],
+        "confidence": _event_confidence(event, missing_fields=missing_fields),
+        "recovery_mode": recovery_mode,
+        "missing_fields": missing_fields,
+    }
+
+
+def _structured_payload(
+    event: CanonicalEvent,
+    *,
+    raw_reference: dict[str, str] | None,
+) -> dict[str, Any]:
     structured_payload: dict[str, Any] = {
         "action": event.action,
         "inputs": event.inputs,
@@ -122,26 +170,30 @@ def _canonical_event_payload(event: CanonicalEvent) -> dict[str, Any]:
         structured_payload["failure_context"] = dict(event.failure_context)
     if event.artifact_refs:
         structured_payload["artifact_refs"] = [dict(item) for item in event.artifact_refs]
+    return structured_payload
 
-    missing_fields = _event_missing_fields(event)
-    recovery_mode = _recovery_mode(event, missing_fields=missing_fields)
 
-    return {
-        "event_id": str(event.id),
-        "sequence_index": event.ordinal if event.ordinal is not None else 0,
-        "event_family": _event_family(event),
-        "event_type": event.event_kind,
-        "actor_type": (event.actor or {}).get("role") or "assistant",
-        "timestamp": event.timestamp.isoformat() if isinstance(event.timestamp, datetime) else None,
-        "source_span": source_span,
-        "raw_reference": raw_reference,
-        "content_summary": event.summary,
-        "structured_payload": structured_payload,
-        "causal_parents": [str(ref) for ref in event.parent_event_refs],
-        "confidence": _event_confidence(event, missing_fields=missing_fields),
-        "recovery_mode": recovery_mode,
-        "missing_fields": missing_fields,
+def _canonical_result_payload(event: CanonicalEvent, *, sequence_index: int) -> dict[str, Any]:
+    result_payload = {
+        "action": event.action,
+        "outputs": event.outputs,
+        "tool_activity": dict(event.tool_activity or {}),
+        **_tool_payload(event, raw_reference=_tool_raw_reference(event)),
     }
+    if event.failure_context:
+        result_payload["failure_context"] = dict(event.failure_context)
+    if event.artifact_refs:
+        result_payload["artifact_refs"] = [dict(item) for item in event.artifact_refs]
+
+    return _canonical_event_payload(
+        event,
+        sequence_index=sequence_index,
+        event_id=f"{event.id}:result",
+        event_family=_result_event_family(event),
+        content_summary=_tool_result_summary(event),
+        causal_parents=[str(event.id)],
+        structured_payload=result_payload,
+    )
 
 
 def _event_family(event: CanonicalEvent) -> str:
@@ -198,6 +250,14 @@ def _event_confidence(event: CanonicalEvent, *, missing_fields: list[str]) -> fl
     return round(max(confidence, 0.2), 2)
 
 
+def _has_result_payload(event: CanonicalEvent) -> bool:
+    return bool(event.tool_activity and (event.outputs or event.failure_context))
+
+
+def _tool_raw_reference(event: CanonicalEvent) -> dict[str, str] | None:
+    return next((ref for ref in event.source_refs if ref.get("kind") != "parser"), None)
+
+
 def _tool_event_family(event: CanonicalEvent) -> str:
     tool_name = str((event.tool_activity or {}).get("name") or event.action or "").lower()
     category = str((event.tool_activity or {}).get("category") or "").lower()
@@ -212,6 +272,20 @@ def _tool_event_family(event: CanonicalEvent) -> str:
         return "error_or_exception"
     return "tool_call"
 
+
+
+def _result_event_family(event: CanonicalEvent) -> str:
+    return "retrieval_result" if _tool_event_family(event) == "retrieval_query" else "tool_result"
+
+
+def _tool_result_summary(event: CanonicalEvent) -> str:
+    tool_name = str((event.tool_activity or {}).get("name") or event.action or "tool")
+    if event.failure_context and event.failure_context.get("error"):
+        return f"{tool_name} returned an error"
+    result_summary = _mapping_summary(event.outputs)
+    if result_summary:
+        return f"{tool_name} returned {result_summary}"
+    return f"{tool_name} returned a result"
 
 
 def _tool_payload(event: CanonicalEvent, *, raw_reference: dict[str, str] | None) -> dict[str, Any]:
@@ -368,6 +442,41 @@ def _constraints_for_role(events: list[CanonicalEvent], role: str) -> list[dict[
                 }
             )
     return payload
+
+
+def _developer_constraints(events: list[CanonicalEvent]) -> list[dict[str, Any]]:
+    payload = _constraints_for_role(events, "developer")
+    for event in events:
+        if not event.constraints or not _looks_like_developer_instruction_source(event):
+            continue
+        for constraint in event.constraints:
+            payload.append(
+                {
+                    "constraint": constraint.get("value"),
+                    "source": constraint.get("source"),
+                    "observed_via": "inferred_from_instruction_artifact",
+                    "event_id": str(event.id),
+                }
+            )
+    return payload
+
+
+def _looks_like_developer_instruction_source(event: CanonicalEvent) -> bool:
+    instruction_markers = (
+        "soul.md",
+        "style.md",
+        "identity.md",
+        "voice.md",
+        "agents.md",
+        "prompt",
+        "persona",
+        ".claude",
+        ".openclaw",
+    )
+    values: list[str] = []
+    values.extend(str(ref.get("value", "")).lower() for ref in event.artifact_refs)
+    values.extend(str(ref.get("value", "")).lower() for ref in event.source_refs)
+    return any(marker in value for value in values for marker in instruction_markers)
 
 
 def _derived_operational_constraints(events: list[CanonicalEvent]) -> list[dict[str, Any]]:
