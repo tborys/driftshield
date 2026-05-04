@@ -26,7 +26,7 @@ def build_canonical_analysis(
 ) -> dict[str, Any]:
     normalized_events = _canonical_event_payloads(result.events)
     missing_fields = sum(len(event["missing_fields"]) for event in normalized_events)
-    ambiguity_count = sum(len(event.get("missing_fields", [])) for event in normalized_events)
+    ambiguity_count = sum(len(event.ambiguities) for event in result.events)
     direct_events = sum(1 for event in normalized_events if event["recovery_mode"] == _DIRECT_RECOVERY_MODE)
     inferred_events = len(normalized_events) - direct_events
 
