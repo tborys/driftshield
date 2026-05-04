@@ -1,8 +1,9 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from driftshield.core.analysis.session import analyze_session
+from driftshield.core.analysis.session import AnalysisResult, analyze_session
 from driftshield.core.canonical_analysis import build_canonical_analysis
+from driftshield.core.graph.models import LineageGraph
 from driftshield.core.models import CanonicalEvent, EventType, Session, SessionStatus
 from driftshield.core.normalization import normalize_events
 from driftshield.parsers.claude_code import ClaudeCodeParser
@@ -107,3 +108,41 @@ def test_build_canonical_analysis_exposes_extraction_quality_contract_for_ambigu
     assert "parser_observed_ambiguous_event_fields" in quality["parser_warnings"]
     assert "manual_review_required_for_missing_critical_fields" in quality["review_requirements"]
     assert "manual_review_required_for_ambiguous_lineage" in quality["review_requirements"]
+
+
+def test_build_canonical_analysis_does_not_treat_missing_fields_as_ambiguity():
+    event = CanonicalEvent(
+        id=uuid4(),
+        session_id="canonical-4",
+        timestamp=datetime.now(timezone.utc),
+        event_type=EventType.TOOL_CALL,
+        agent_id="claude",
+        action="Read",
+        inputs={"file_path": "README.md"},
+        outputs={},
+        summary="Read invoked on README.md",
+        source_refs=[{"kind": "message_id", "value": "tool-call-1"}],
+    )
+    result = AnalysisResult(
+        events=[event],
+        graph=LineageGraph(session_id=event.session_id),
+        inflection_node=None,
+        total_events=1,
+        flagged_events=0,
+    )
+
+    payload = build_canonical_analysis(
+        session=Session(
+            id=uuid4(),
+            agent_id="claude",
+            started_at=datetime.now(timezone.utc),
+            status=SessionStatus.COMPLETED,
+        ),
+        result=result,
+        provenance=None,
+    )
+
+    quality = payload["extraction_quality_summary"]
+    assert quality["field_recovery_summary"]["missing_field_count"] >= 1
+    assert quality["ambiguity_count"] == 0
+    assert "manual_review_required_for_ambiguous_lineage" not in quality["review_requirements"]
