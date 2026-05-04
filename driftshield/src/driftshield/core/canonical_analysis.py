@@ -318,8 +318,6 @@ def _field_recovery(
         direct_fields.add("timestamp")
     if raw_reference is not None:
         direct_fields.update({"raw_reference", "source_span"})
-    if payload:
-        direct_fields.add("structured_payload")
     if content_summary is not None or event.summary:
         direct_fields.add("content_summary")
     if event.parent_event_refs or causal_parents:
@@ -336,6 +334,12 @@ def _field_recovery(
     if recovery_mode == _INFERRED_RECOVERY_MODE:
         normalised_fields.update(_normalised_fields_from_missing_fields(missing_fields))
 
+    if payload and not _has_non_direct_structured_payload_fields(
+        normalised_fields=normalised_fields,
+        inferred_fields=inferred_fields,
+    ):
+        direct_fields.add("structured_payload")
+
     direct_fields -= inferred_fields
 
     return {
@@ -348,6 +352,14 @@ def _field_recovery(
 
 def _recovered_field_count(field_recovery: dict[str, list[str]]) -> int:
     return len(set(field_recovery["normalised_fields"]) - _BASE_NORMALISED_FIELDS)
+
+
+def _has_non_direct_structured_payload_fields(
+    *,
+    normalised_fields: set[str],
+    inferred_fields: set[str],
+) -> bool:
+    return any(field.startswith("structured_payload.") for field in normalised_fields | inferred_fields)
 
 
 def _normalised_fields_from_missing_fields(missing_fields: list[str]) -> set[str]:

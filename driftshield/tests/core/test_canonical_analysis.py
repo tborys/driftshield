@@ -149,6 +149,7 @@ def test_build_canonical_analysis_does_not_treat_missing_fields_as_ambiguity():
     assert event_payload["recovery_mode"] == "normalised"
     assert event_payload["field_recovery"]["normalised_fields"]
     assert "structured_payload.outputs" in event_payload["field_recovery"]["normalised_fields"]
+    assert "structured_payload" not in event_payload["field_recovery"]["direct_fields"]
     assert event_payload["field_recovery"]["inferred_fields"] == []
     assert quality["field_recovery_summary"]["missing_field_count"] >= 1
     assert quality["field_recovery_summary"]["normalised_event_count"] == 1
@@ -201,6 +202,7 @@ def test_build_canonical_analysis_exposes_field_recovery_provenance_for_inferred
     quality = payload["extraction_quality_summary"]
 
     assert event_payload["recovery_mode"] == "inferred"
+    assert "structured_payload" not in event_payload["field_recovery"]["direct_fields"]
     assert "structured_payload.failure_context" in event_payload["field_recovery"]["inferred_fields"]
     assert "recovery_mode" in event_payload["field_recovery"]["inferred_fields"]
     assert quality["field_recovery_summary"]["inferred_event_count"] == 1
