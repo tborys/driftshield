@@ -41,6 +41,7 @@ def test_build_canonical_analysis_emits_result_families_for_completed_tool_calls
     assert result_event["causal_parents"] == [payload["normalized_events"][0]["event_id"]]
     assert result_event["structured_payload"]["invocation_id"] == "tool_1"
     assert result_event["structured_payload"]["result_status"] == "completed"
+    assert payload["extraction_quality_summary"]["field_recovery_summary"]["recovered_field_count"] == 0
 
 
 def test_build_canonical_analysis_preserves_developer_constraints_from_instruction_artifacts():
@@ -143,6 +144,66 @@ def test_build_canonical_analysis_does_not_treat_missing_fields_as_ambiguity():
     )
 
     quality = payload["extraction_quality_summary"]
+    event_payload = payload["normalized_events"][0]
+
+    assert event_payload["recovery_mode"] == "normalised"
+    assert event_payload["field_recovery"]["normalised_fields"]
+    assert "structured_payload.outputs" in event_payload["field_recovery"]["normalised_fields"]
+    assert "structured_payload" not in event_payload["field_recovery"]["direct_fields"]
+    assert event_payload["field_recovery"]["inferred_fields"] == []
     assert quality["field_recovery_summary"]["missing_field_count"] >= 1
+    assert quality["field_recovery_summary"]["normalised_event_count"] == 1
+    assert quality["field_recovery_summary"]["inferred_event_count"] == 0
     assert quality["ambiguity_count"] == 0
     assert "manual_review_required_for_ambiguous_lineage" not in quality["review_requirements"]
+
+
+def test_build_canonical_analysis_exposes_field_recovery_provenance_for_inferred_failures():
+    event = CanonicalEvent(
+        id=uuid4(),
+        session_id="canonical-5",
+        timestamp=datetime.now(timezone.utc),
+        event_type=EventType.TOOL_CALL,
+        agent_id="claude",
+        action="Read",
+        inputs={"file_path": "README.md"},
+        outputs={"result": "permission denied while reading README.md"},
+        source_refs=[{"kind": "message_id", "value": "tool-call-2"}],
+        artifact_refs=[{"kind": "file_path", "value": "README.md"}],
+        failure_context={
+            "status": "warning",
+            "error": None,
+            "signals": ["failure_language"],
+            "declared_failure": True,
+        },
+        ambiguities=["failure_inferred_from_text"],
+        summary="Read reported a warning on README.md",
+    )
+    result = AnalysisResult(
+        events=[event],
+        graph=LineageGraph(session_id=event.session_id),
+        inflection_node=None,
+        total_events=1,
+        flagged_events=0,
+    )
+
+    payload = build_canonical_analysis(
+        session=Session(
+            id=uuid4(),
+            agent_id="claude",
+            started_at=datetime.now(timezone.utc),
+            status=SessionStatus.COMPLETED,
+        ),
+        result=result,
+        provenance=None,
+    )
+
+    event_payload = payload["normalized_events"][0]
+    quality = payload["extraction_quality_summary"]
+
+    assert event_payload["recovery_mode"] == "inferred"
+    assert "structured_payload" not in event_payload["field_recovery"]["direct_fields"]
+    assert "structured_payload.failure_context" in event_payload["field_recovery"]["inferred_fields"]
+    assert "recovery_mode" in event_payload["field_recovery"]["inferred_fields"]
+    assert quality["field_recovery_summary"]["inferred_event_count"] == 1
+    assert quality["field_recovery_summary"]["inferred_field_count"] >= 1
