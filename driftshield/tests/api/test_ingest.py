@@ -142,6 +142,14 @@ def test_ingest_persists_provenance_fields(client, auth_headers, sample_transcri
     assert isinstance(quality["parser_warnings"], list)
     assert quality["review_requirements"] == []
 
+    signature_match = session.metadata_json["signature_match"]
+    assert signature_match["status"] == "unclassified"
+    assert signature_match["primary_mechanism_id"] is None
+    assert signature_match["matched_mechanism_ids"] == []
+    assert signature_match["match_count"] == 0
+    assert signature_match["raw"]["matching_schema_version"] == "phase-3g-deterministic-v1"
+    assert signature_match["raw"]["candidate_signatures"] == []
+
 
 def test_ingest_stabilizes_normalized_parent_refs(db_session):
     transcript = "\n".join(
