@@ -73,6 +73,46 @@ def test_deterministic_matching_surfaces_verification_failure_candidates():
     assert summary["matches"][0]["signature_id"] == "mechanism:verification_failure"
 
 
+def test_deterministic_matching_does_not_flag_verification_failure_without_requirement():
+    canonical_analysis = {
+        "analysis_session": {"integrity_status": "complete", "source_provenance": {"source_type": "claude_code"}},
+        "normalized_events": [
+            {
+                "event_id": "evt-tool",
+                "sequence_index": 0,
+                "event_family": "tool_call",
+                "structured_payload": {"safety_relevant_flags": ["mutates_state"], "tool_category": "filesystem"},
+            },
+            {
+                "event_id": "evt-out",
+                "sequence_index": 1,
+                "event_family": "output_emission",
+                "structured_payload": {},
+            },
+        ],
+        "run_context": {},
+        "policy_and_instruction_context": {
+            "system_constraints": [],
+            "developer_constraints": [],
+            "user_constraints": [],
+            "derived_operational_constraints": [],
+            "conflict_or_shadowing_notes": [],
+        },
+        "expected_vs_actual_delta": {"delta_types": [], "supporting_event_ids": ["evt-tool"]},
+        "extraction_quality_summary": {"overall_quality_band": "usable", "ordering_confidence": 1.0, "ambiguity_count": 0},
+    }
+
+    payload = build_deterministic_match(canonical_analysis=canonical_analysis, result=_analysis_result())
+
+    assert payload["status"] == "unclassified"
+    assert payload["matched_rules"] == []
+    assert payload["matched_sequence_patterns"] == []
+    assert payload["candidate_signatures"] == []
+    assert payload["extracted_features"]["safeguard_requirement_present"] is False
+    assert payload["extracted_features"]["safeguard_omitted"] is False
+
+
+
 def test_deterministic_matching_marks_ambiguity_and_degraded_quality():
     canonical_analysis = {
         "analysis_session": {"integrity_status": "complete", "source_provenance": {"source_type": "claude_code"}},
