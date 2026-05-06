@@ -27,11 +27,7 @@ case "$MODE" in
       exit 1
     fi
 
-    exec curl -sS -X POST \
-      -H "X-API-Key: $API_KEY" \
-      -F "format=claude_code" \
-      -F "file=@$TRANSCRIPT_PATH;type=application/jsonl" \
-      "${API_URL%/}/api/ingest"
+    exec driftshield ingest --path "$TRANSCRIPT_PATH" --parser claude_code
     ;;
   *)
     echo "Usage: $0 [local|remote]" >&2
