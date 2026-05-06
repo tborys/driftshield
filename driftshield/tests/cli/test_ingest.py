@@ -1,24 +1,26 @@
-"""Tests for ingest command and Dealer hook wrapper."""
+"""Tests for ingest command."""
 
 from __future__ import annotations
 
 import json
 import os
-import stat
-import subprocess
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from driftshield.cli.main import app
 from driftshield.cli.discovery import path_to_project_key
-from driftshield.cli.commands.ingest import _build_multipart_body
+from driftshield.cli.commands.ingest import (
+    SourceConnectorMetadata,
+    SubmissionContext,
+    _build_multipart_body,
+    build_submission_context,
+)
 
 
 runner = CliRunner()
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures" / "transcripts"
-REPO_ROOT = Path(__file__).resolve().parents[3]
-HOOK_SCRIPT = REPO_ROOT / "scripts" / "dealer-hook.sh"
 
 
 class DummyResponse:
@@ -67,13 +69,14 @@ def _write_project_sessions(tmp_path: Path) -> tuple[Path, Path, Path]:
 def test_ingest_with_path_posts_selected_file(monkeypatch):
     captured: dict[str, object] = {}
 
-    def fake_post_ingest(*, target_url: str, api_key: str, file_path: Path, parser: str):
+    def fake_post_ingest(*, target_url: str, api_key: str, file_path: Path, parser: str, submission_context: SubmissionContext):
         captured.update(
             {
                 "target_url": target_url,
                 "api_key": api_key,
                 "file_path": file_path,
                 "parser": parser,
+                "submission_context": submission_context,
             }
         )
         return DummyResponse()._payload
@@ -91,6 +94,7 @@ def test_ingest_with_path_posts_selected_file(monkeypatch):
         "api_key": "test-key",
         "file_path": transcript,
         "parser": "claude_code",
+        "submission_context": SubmissionContext(submission_tier="oss"),
     }
     assert "created" in result.output.lower()
 
@@ -100,7 +104,7 @@ def test_ingest_with_project_uses_most_recent_project_session(tmp_path, monkeypa
 
     captured: dict[str, object] = {}
 
-    def fake_post_ingest(*, target_url: str, api_key: str, file_path: Path, parser: str):
+    def fake_post_ingest(*, target_url: str, api_key: str, file_path: Path, parser: str, submission_context: SubmissionContext):
         captured["file_path"] = file_path
         return DummyResponse()._payload
 
@@ -121,7 +125,7 @@ def test_ingest_with_latest_uses_existing_discovery_logic(tmp_path, monkeypatch)
 
     captured: dict[str, object] = {}
 
-    def fake_post_ingest(*, target_url: str, api_key: str, file_path: Path, parser: str):
+    def fake_post_ingest(*, target_url: str, api_key: str, file_path: Path, parser: str, submission_context: SubmissionContext):
         captured["file_path"] = file_path
         return DummyResponse()._payload
 
@@ -147,7 +151,7 @@ def test_ingest_surfaces_deduplicated_response(monkeypatch):
         "deduplicated": True,
     }
 
-    def fake_post_ingest(*, target_url: str, api_key: str, file_path: Path, parser: str):
+    def fake_post_ingest(*, target_url: str, api_key: str, file_path: Path, parser: str, submission_context: SubmissionContext):
         return deduped
 
     monkeypatch.setenv("DRIFTSHIELD_API_URL", "http://localhost:8000")
@@ -165,7 +169,7 @@ def test_ingest_surfaces_deduplicated_response(monkeypatch):
 def test_ingest_with_explicit_crewai_parser(monkeypatch):
     captured: dict[str, object] = {}
 
-    def fake_post_ingest(*, target_url: str, api_key: str, file_path: Path, parser: str):
+    def fake_post_ingest(*, target_url: str, api_key: str, file_path: Path, parser: str, submission_context: SubmissionContext):
         captured["parser"] = parser
         return DummyResponse()._payload
 
@@ -187,6 +191,7 @@ def test_build_multipart_body_uses_basename_for_uploaded_filename():
         boundary="test-boundary",
         file_path=transcript,
         parser="claude_code",
+        submission_context=SubmissionContext(submission_tier="oss"),
     )
 
     decoded = body.decode("utf-8", errors="ignore")
@@ -194,61 +199,162 @@ def test_build_multipart_body_uses_basename_for_uploaded_filename():
     assert str(transcript) not in decoded
 
 
-def test_dealer_hook_wrapper_targets_local_ingest(tmp_path):
-    assert HOOK_SCRIPT.exists(), "dealer hook wrapper should exist"
-
-    fake_driftshield = tmp_path / "driftshield"
-    fake_driftshield.write_text(
-        "#!/bin/sh\n"
-        "printf '%s\n' \"$@\" > \"$HOOK_CAPTURE\"\n"
-    )
-    fake_driftshield.chmod(fake_driftshield.stat().st_mode | stat.S_IEXEC)
-
-    capture = tmp_path / "hook-local.txt"
+def test_build_multipart_body_includes_teams_context_and_source_connector_metadata():
     transcript = FIXTURES_DIR / "sample_claude_code_session.jsonl"
-    env = os.environ.copy()
-    env.update(
-        {
-            "PATH": f"{tmp_path}:{env['PATH']}",
-            "HOOK_CAPTURE": str(capture),
-            "CLAUDE_TRANSCRIPT_PATH": str(transcript),
+
+    body = _build_multipart_body(
+        boundary="test-boundary",
+        file_path=transcript,
+        parser="claude_code",
+        submission_context=SubmissionContext(
+            submission_tier="teams",
+            tenant_id="tenant-acme",
+            workspace_id="workspace-core",
+            workflow_reference="wf-triage",
+            project_reference="proj-risk",
+            source_connector=SourceConnectorMetadata(
+                connector_id="connector-1",
+                source_type="claude_code",
+                display_name="Core Claude",
+                parser_name="claude_code",
+            ),
+        ),
+    )
+
+    decoded = body.decode("utf-8", errors="ignore")
+    assert 'name="submission_tier"' in decoded
+    assert "teams" in decoded
+    assert 'name="tenant_id"' in decoded
+    assert "tenant-acme" in decoded
+    assert 'name="workspace_id"' in decoded
+    assert "workspace-core" in decoded
+    assert 'name="workflow_reference"' in decoded
+    assert "wf-triage" in decoded
+    assert 'name="project_reference"' in decoded
+    assert "proj-risk" in decoded
+    assert 'name="source_connector_metadata"' in decoded
+    assert '"connector_id": "connector-1"' in decoded
+    assert '"display_name": "Core Claude"' in decoded
+
+
+def test_build_submission_context_rejects_teams_without_tenant_id():
+    with pytest.raises(ValueError, match="tenant_id is required"):
+        build_submission_context(
+            api_url="https://driftshield.example",
+            api_key="secret-key",
+            submission_tier="teams",
+            tenant_id=None,
+            workspace_id=None,
+            workflow_reference=None,
+            project_reference=None,
+            source_connector=SourceConnectorMetadata(),
+        )
+
+
+def test_build_submission_context_uses_server_resolved_tenant_values(monkeypatch):
+    def fake_resolve(*, api_url: str, api_key: str, tenant_id: str, workspace_id: str | None):
+        assert api_url == "https://driftshield.example"
+        assert api_key == "secret-key"
+        assert tenant_id == "tenant-claimed"
+        assert workspace_id == "workspace-claimed"
+        return {
+            "tenant_id": "tenant-resolved",
+            "workspace_id": "workspace-resolved",
+            "service_identity_id": "svc_123",
         }
+
+    monkeypatch.setattr(
+        "driftshield.cli.commands.ingest.resolve_teams_submission_context",
+        fake_resolve,
     )
 
-    result = subprocess.run([str(HOOK_SCRIPT), "local"], env=env, capture_output=True, text=True)
-
-    assert result.returncode == 0, result.stderr
-    assert capture.read_text().splitlines() == ["ingest", "--path", str(transcript)]
-
-
-def test_dealer_hook_wrapper_targets_remote_ingest(tmp_path):
-    assert HOOK_SCRIPT.exists(), "dealer hook wrapper should exist"
-
-    fake_curl = tmp_path / "curl"
-    fake_curl.write_text(
-        "#!/bin/sh\n"
-        "printf '%s\n' \"$@\" > \"$HOOK_CAPTURE\"\n"
+    context = build_submission_context(
+        api_url="https://driftshield.example",
+        api_key="secret-key",
+        submission_tier="teams",
+        tenant_id="tenant-claimed",
+        workspace_id="workspace-claimed",
+        workflow_reference="wf-1",
+        project_reference="proj-1",
+        source_connector=SourceConnectorMetadata(connector_id="connector-1"),
     )
-    fake_curl.chmod(fake_curl.stat().st_mode | stat.S_IEXEC)
 
-    capture = tmp_path / "hook-remote.txt"
+    assert context == SubmissionContext(
+        submission_tier="teams",
+        tenant_id="tenant-resolved",
+        workspace_id="workspace-resolved",
+        workflow_reference="wf-1",
+        project_reference="proj-1",
+        source_connector=SourceConnectorMetadata(connector_id="connector-1"),
+    )
+
+
+def test_ingest_teams_submission_uses_server_resolved_context(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def fake_build_submission_context(**kwargs):
+        captured["build_kwargs"] = kwargs
+        return SubmissionContext(
+            submission_tier="teams",
+            tenant_id="tenant-resolved",
+            workspace_id="workspace-resolved",
+        )
+
+    def fake_post_ingest(*, target_url: str, api_key: str, file_path: Path, parser: str, submission_context: SubmissionContext):
+        captured["post"] = {
+            "target_url": target_url,
+            "api_key": api_key,
+            "file_path": file_path,
+            "parser": parser,
+            "submission_context": submission_context,
+        }
+        return DummyResponse()._payload
+
+    monkeypatch.setenv("DRIFTSHIELD_API_URL", "https://driftshield.example")
+    monkeypatch.setenv("DRIFTSHIELD_API_KEY", "secret-key")
+    monkeypatch.setattr("driftshield.cli.commands.ingest.build_submission_context", fake_build_submission_context)
+    monkeypatch.setattr("driftshield.cli.commands.ingest.post_ingest", fake_post_ingest)
+
     transcript = FIXTURES_DIR / "sample_claude_code_session.jsonl"
-    env = os.environ.copy()
-    env.update(
-        {
-            "PATH": f"{tmp_path}:{env['PATH']}",
-            "HOOK_CAPTURE": str(capture),
-            "CLAUDE_TRANSCRIPT_PATH": str(transcript),
-            "DRIFTSHIELD_API_URL": "https://driftshield.example",
-            "DRIFTSHIELD_API_KEY": "test-key",
-        }
+    result = runner.invoke(
+        app,
+        [
+            "ingest",
+            "--path",
+            str(transcript),
+            "--submission-tier",
+            "teams",
+            "--tenant-id",
+            "tenant-claimed",
+            "--workspace-id",
+            "workspace-claimed",
+        ],
     )
 
-    result = subprocess.run([str(HOOK_SCRIPT), "remote"], env=env, capture_output=True, text=True)
-
-    assert result.returncode == 0, result.stderr
-    args = capture.read_text().splitlines()
-    assert "-X" in args and "POST" in args
-    assert "https://driftshield.example/api/ingest" in args
-    assert any(part == "X-API-Key: test-key" for part in args)
-    assert any(str(transcript) in part for part in args)
+    assert result.exit_code == 0
+    assert captured["build_kwargs"] == {
+        "api_url": "https://driftshield.example",
+        "api_key": "secret-key",
+        "submission_tier": "teams",
+        "tenant_id": "tenant-claimed",
+        "workspace_id": "workspace-claimed",
+        "workflow_reference": None,
+        "project_reference": None,
+        "source_connector": SourceConnectorMetadata(
+            connector_id=None,
+            source_type=None,
+            display_name=None,
+            parser_name=None,
+        ),
+    }
+    assert captured["post"] == {
+        "target_url": "https://driftshield.example/api/ingest",
+        "api_key": "secret-key",
+        "file_path": transcript,
+        "parser": "claude_code",
+        "submission_context": SubmissionContext(
+            submission_tier="teams",
+            tenant_id="tenant-resolved",
+            workspace_id="workspace-resolved",
+        ),
+    }
