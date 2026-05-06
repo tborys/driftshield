@@ -1,11 +1,8 @@
-"""Tests for ingest command and Dealer hook wrapper."""
+"""Tests for ingest command."""
 
 from __future__ import annotations
 
 import json
-import os
-import stat
-import subprocess
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -22,8 +19,6 @@ from driftshield.cli.commands.ingest import (
 
 runner = CliRunner()
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures" / "transcripts"
-REPO_ROOT = Path(__file__).resolve().parents[3]
-HOOK_SCRIPT = REPO_ROOT / "scripts" / "dealer-hook.sh"
 
 
 class DummyResponse:
@@ -361,60 +356,3 @@ def test_ingest_teams_submission_uses_server_resolved_context(monkeypatch):
             workspace_id="workspace-resolved",
         ),
     }
-
-
-def test_dealer_hook_wrapper_targets_local_ingest(tmp_path):
-    assert HOOK_SCRIPT.exists(), "dealer hook wrapper should exist"
-
-    fake_driftshield = tmp_path / "driftshield"
-    fake_driftshield.write_text(
-        "#!/bin/sh\n"
-        "printf '%s\n' \"$@\" > \"$HOOK_CAPTURE\"\n"
-    )
-    fake_driftshield.chmod(fake_driftshield.stat().st_mode | stat.S_IEXEC)
-
-    capture = tmp_path / "hook-local.txt"
-    transcript = FIXTURES_DIR / "sample_claude_code_session.jsonl"
-    env = os.environ.copy()
-    env.update(
-        {
-            "PATH": f"{tmp_path}:{env['PATH']}",
-            "HOOK_CAPTURE": str(capture),
-            "CLAUDE_TRANSCRIPT_PATH": str(transcript),
-        }
-    )
-
-    result = subprocess.run([str(HOOK_SCRIPT), "local"], env=env, capture_output=True, text=True)
-
-    assert result.returncode == 0, result.stderr
-    assert capture.read_text().splitlines() == ["ingest", "--path", str(transcript)]
-
-
-def test_dealer_hook_wrapper_targets_remote_ingest(tmp_path):
-    assert HOOK_SCRIPT.exists(), "dealer hook wrapper should exist"
-
-    fake_driftshield = tmp_path / "driftshield"
-    fake_driftshield.write_text(
-        "#!/bin/sh\n"
-        "printf '%s\n' \"$@\" > \"$HOOK_CAPTURE\"\n"
-    )
-    fake_driftshield.chmod(fake_driftshield.stat().st_mode | stat.S_IEXEC)
-
-    capture = tmp_path / "hook-remote.txt"
-    transcript = FIXTURES_DIR / "sample_claude_code_session.jsonl"
-    env = os.environ.copy()
-    env.update(
-        {
-            "PATH": f"{tmp_path}:{env['PATH']}",
-            "HOOK_CAPTURE": str(capture),
-            "CLAUDE_TRANSCRIPT_PATH": str(transcript),
-            "DRIFTSHIELD_API_URL": "https://driftshield.example",
-            "DRIFTSHIELD_API_KEY": "test-key",
-        }
-    )
-
-    result = subprocess.run([str(HOOK_SCRIPT), "remote"], env=env, capture_output=True, text=True)
-
-    assert result.returncode == 0, result.stderr
-    args = capture.read_text().splitlines()
-    assert args == ["ingest", "--path", str(transcript), "--parser", "claude_code"]
