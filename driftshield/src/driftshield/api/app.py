@@ -36,7 +36,7 @@ def create_app() -> FastAPI:
         app.mount("/assets", StaticFiles(directory=str(static_dir / "assets")), name="assets")
 
         @app.get("/{path:path}")
-        async def serve_spa(path: str):
+        async def serve_spa(path: str) -> FileResponse:
             """Serve React SPA. All non-API routes fall through to index.html."""
             file_path = static_dir / path
             if file_path.exists() and file_path.is_file():

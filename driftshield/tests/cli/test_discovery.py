@@ -1,12 +1,8 @@
 """Tests for session discovery."""
 
 from pathlib import Path
-from datetime import datetime, timezone
-
-import pytest
 
 from driftshield.cli.discovery import (
-    get_claude_projects_dir,
     path_to_project_key,
     discover_sessions,
     discover_sessions_in_path,

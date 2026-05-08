@@ -2,8 +2,6 @@
 
 from pathlib import Path
 
-import pytest
-
 from driftshield.parsers.claude_code import ClaudeCodeParser
 from driftshield.core.graph.builder import build_graph
 from driftshield.core.analysis.inflection import find_inflection_node

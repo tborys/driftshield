@@ -108,7 +108,7 @@ def _as_tuple(values: Sequence[str]) -> tuple[str, ...]:
     return tuple(values)
 
 
-from driftshield.signatures.community import (
+from driftshield.signatures.community import (  # noqa: E402
     CommunityPack,
     CommunityPackManifest,
     load_builtin_community_pack,
