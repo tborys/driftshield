@@ -61,7 +61,7 @@ def _connector_response(connector: ConnectorModel) -> ConnectorResponse:
 def list_connectors(
     api_key: str = Depends(require_api_key),
     db: DBSession = Depends(get_db),
-):
+) -> ConnectorListResponse:
     del api_key
     service = ConnectorService(db)
     return ConnectorListResponse(
@@ -74,7 +74,7 @@ def discover_connectors(
     payload: ConnectorDiscoverRequest,
     api_key: str = Depends(require_api_key),
     db: DBSession = Depends(get_db),
-):
+) -> ConnectorListResponse:
     del api_key
     service = ConnectorService(db)
     project_dir = Path(payload.project_dir).expanduser().resolve() if payload.project_dir else Path.cwd()
@@ -91,7 +91,7 @@ def get_connector(
     connector_id: uuid.UUID,
     api_key: str = Depends(require_api_key),
     db: DBSession = Depends(get_db),
-):
+) -> ConnectorResponse:
     del api_key
     service = ConnectorService(db)
     connector = service.get_connector(connector_id)
@@ -106,7 +106,7 @@ def approve_connector(
     payload: ConnectorApproveRequest,
     api_key: str = Depends(require_api_key),
     db: DBSession = Depends(get_db),
-):
+) -> ConnectorResponse:
     del api_key
     service = ConnectorService(db)
     try:
@@ -124,7 +124,7 @@ def deny_connector(
     connector_id: uuid.UUID,
     api_key: str = Depends(require_api_key),
     db: DBSession = Depends(get_db),
-):
+) -> ConnectorResponse:
     del api_key
     service = ConnectorService(db)
     try:
@@ -140,7 +140,7 @@ def pause_connector(
     connector_id: uuid.UUID,
     api_key: str = Depends(require_api_key),
     db: DBSession = Depends(get_db),
-):
+) -> ConnectorResponse:
     del api_key
     service = ConnectorService(db)
     try:
@@ -156,7 +156,7 @@ def resume_connector(
     connector_id: uuid.UUID,
     api_key: str = Depends(require_api_key),
     db: DBSession = Depends(get_db),
-):
+) -> ConnectorResponse:
     del api_key
     service = ConnectorService(db)
     try:
@@ -174,7 +174,7 @@ def disconnect_connector(
     connector_id: uuid.UUID,
     api_key: str = Depends(require_api_key),
     db: DBSession = Depends(get_db),
-):
+) -> ConnectorResponse:
     del api_key
     service = ConnectorService(db)
     try:
@@ -190,7 +190,7 @@ def rescan_connector(
     connector_id: uuid.UUID,
     api_key: str = Depends(require_api_key),
     db: DBSession = Depends(get_db),
-):
+) -> ConnectorScanResponse:
     del api_key
     service = ConnectorService(db)
     try:

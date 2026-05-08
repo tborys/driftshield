@@ -5,7 +5,7 @@ from driftshield.api.app import create_app
 app = create_app()
 
 
-def main():
+def main() -> None:
     uvicorn.run(
         "driftshield.api.server:app",
         host="0.0.0.0",
