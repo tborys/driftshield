@@ -12,7 +12,7 @@ from driftshield.api.schemas import (
     BehaviourSubjectCreateRequest,
     BehaviourSubjectResponse,
 )
-from driftshield.db.behaviour_service import BehaviourEventService
+from driftshield.db.behaviour_service import BehaviourEventService, BehaviourSubjectSnapshot
 from driftshield.db.models import SessionModel
 
 router = APIRouter()
@@ -43,7 +43,7 @@ def create_behaviour_subject(
     payload: BehaviourSubjectCreateRequest,
     api_key: str = Depends(require_api_key),
     db: DBSession = Depends(get_db),
-):
+) -> BehaviourSubjectResponse:
     del api_key
     _validate_subject_payload(payload)
     _require_session_exists(db, payload.session_id, detail="Behaviour subject session not found")
@@ -69,7 +69,7 @@ def get_behaviour_subject(
     subject_id: uuid.UUID,
     api_key: str = Depends(require_api_key),
     db: DBSession = Depends(get_db),
-):
+) -> BehaviourSubjectResponse:
     del api_key
     snapshot = BehaviourEventService(db).get_subject_snapshot(subject_id)
     if snapshot is None:
@@ -82,7 +82,7 @@ def create_behaviour_event(
     payload: BehaviourEventCreateRequest,
     api_key: str = Depends(require_api_key),
     db: DBSession = Depends(get_db),
-):
+) -> BehaviourEventResponse:
     del api_key
     if payload.event_type not in _ALLOWED_EVENT_TYPES:
         raise HTTPException(status_code=422, detail="Unsupported behaviour event type")
@@ -143,7 +143,7 @@ def _require_session_exists(
         raise HTTPException(status_code=404, detail=detail)
 
 
-def _subject_response(snapshot) -> BehaviourSubjectResponse:
+def _subject_response(snapshot: BehaviourSubjectSnapshot) -> BehaviourSubjectResponse:
     subject = snapshot.subject
     return BehaviourSubjectResponse(
         id=subject.id,

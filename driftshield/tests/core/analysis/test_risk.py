@@ -3,8 +3,6 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-import pytest
-
 from driftshield.core.models import CanonicalEvent, EventType, RiskClassification
 from driftshield.core.analysis.risk import RiskHeuristic, RiskAnalyzer
 from driftshield.core.analysis.heuristics import (

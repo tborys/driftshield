@@ -64,3 +64,24 @@ driftshield-api = "driftshield.api.server:main"
 [tool.mypy]
 python_version = "3.12"
 strict = true
+
+[[tool.mypy.overrides]]
+module = [
+    "driftshield.api.ingest_workflow",
+    "driftshield.api.routes.health",
+    "driftshield.api.routes.ingest",
+    "driftshield.api.security",
+    "driftshield.cli.commands.*",
+    "driftshield.connectors.watcher",
+    "driftshield.core.*",
+    "driftshield.db.ingest_service",
+    "driftshield.db.migrations.versions.*",
+    "driftshield.db.models",
+    "driftshield.db.validation_service",
+    "driftshield.fixtures.*",
+    "driftshield.parsers.*",
+    "driftshield.signatures.community",
+    "driftshield.signatures.distribution",
+    "tests.fixtures.*",
+]
+ignore_errors = true

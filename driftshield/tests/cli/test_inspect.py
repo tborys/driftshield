@@ -3,7 +3,6 @@
 import re
 from pathlib import Path
 
-import pytest
 from typer.testing import CliRunner
 
 from driftshield.cli.main import app

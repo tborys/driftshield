@@ -1,4 +1,3 @@
-import pytest
 from sqlalchemy import text
 from driftshield.db.engine import get_engine, get_session_factory, get_db_url
 
