@@ -25,12 +25,14 @@ import logging
 import os
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from alembic import command
 from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine
+from sqlalchemy.engine import URL, make_url
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -104,7 +106,19 @@ def _build_url_from_secret(secret_arn: str) -> str:
     host = payload["host"]
     port = payload["port"]
 
-    return f"postgresql+psycopg2://{username}:{password}@{host}:{port}/{dbname}"
+    try:
+        parsed_port = int(port)
+    except (TypeError, ValueError) as exc:
+        raise MigrationRunnerError("Secret JSON field 'port' must be an integer.") from exc
+
+    return URL.create(
+        "postgresql+psycopg2",
+        username=str(username),
+        password=str(password),
+        host=str(host),
+        port=parsed_port,
+        database=str(dbname),
+    ).render_as_string(hide_password=False)
 
 
 def _build_alembic_config(database_url: str) -> Config:
@@ -186,14 +200,21 @@ def _redact(message: str, database_url: str) -> str:
 
     if not database_url:
         return message
+
     redacted = message.replace(database_url, "<redacted-database-url>")
-    if "://" in database_url:
-        scheme, rest = database_url.split("://", 1)
-        if "@" in rest:
-            credentials, host_part = rest.rsplit("@", 1)
-            redacted = redacted.replace(f"{scheme}://{credentials}@", f"{scheme}://<redacted>@")
-            if ":" in credentials:
-                password = credentials.split(":", 1)[1]
-                if password:
-                    redacted = redacted.replace(password, "<redacted>")
+
+    try:
+        parsed = make_url(database_url)
+    except Exception:  # noqa: BLE001 - best-effort redaction only
+        return redacted
+
+    password = parsed.password
+    if password:
+        redacted = redacted.replace(password, "<redacted>")
+        redacted = redacted.replace(quote(password, safe=""), "<redacted>")
+
+    rendered = parsed.render_as_string(hide_password=False)
+    rendered_redacted = parsed.render_as_string(hide_password=True)
+    redacted = redacted.replace(rendered, "<redacted-database-url>")
+    redacted = redacted.replace(rendered_redacted, "<redacted-database-url>")
     return redacted

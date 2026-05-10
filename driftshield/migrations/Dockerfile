@@ -20,7 +20,7 @@ COPY alembic.ini ./
 # Install the package and the runtime dependencies the handler needs.
 # boto3 is a hard dependency of the runner image so secret resolution does
 # not silently rely on the Lambda runtime copy.
-RUN pip install --no-cache-dir . boto3>=1.34.0
+RUN pip install --no-cache-dir . 'boto3>=1.34.0'
 
 # The handler module lives next to the Alembic config.
 COPY migrations/lambda_handler.py ./lambda_handler.py
