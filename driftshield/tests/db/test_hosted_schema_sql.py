@@ -70,6 +70,7 @@ def test_phase3h_team_recurrence_sql_creates_expected_view_shape() -> None:
     assert "tenants.tenant_id" in sql
     assert "signature_matches.recurrence_group_key" in sql
     assert "workflow_diversity_count" in sql
+    assert "Treat null final_learning_weight as zero so non-weighted rows stay out of recurrence summaries." in sql
     assert "jsonb_object_agg" in sql
     assert "ix_signature_matches_recurrence_group_signature" in sql
     assert "ix_trust_evaluations_submission_created_at_write_order" in sql
@@ -84,6 +85,7 @@ def test_phase3h_team_pattern_sql_creates_expected_view_shape() -> None:
     assert "workflow_distribution" in sql
     assert "trend_direction" in sql
     assert "jsonb_build_object" in sql
+    assert "Treat null final_learning_weight as zero so non-weighted rows stay out of pattern summaries." in sql
     assert "recent_count" in sql
     assert "previous_count" in sql
     assert "split_part(signature_matches.signature_id, '.', 1)" in sql
