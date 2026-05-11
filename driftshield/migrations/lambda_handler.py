@@ -31,7 +31,7 @@ from alembic import command
 from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.engine import URL, make_url
 
 logger = logging.getLogger(__name__)
@@ -40,6 +40,22 @@ logger.setLevel(logging.INFO)
 ALEMBIC_INI_PATH = Path(__file__).resolve().parent / "alembic.ini"
 
 REQUIRED_SECRET_KEYS = ("username", "password", "host", "port")
+PHASE3H_REQUIRED_OBJECTS = (
+    "entitlements",
+    "service_identities",
+    "team_pattern_summary",
+    "team_recurrence_summary",
+    "tenants",
+    "workspaces",
+)
+PHASE3H_REQUIRED_SUBMISSIONS_COLUMNS = (
+    "evidence_artifact_prefix",
+    "project_reference",
+    "service_identity_id",
+    "tenant_id",
+    "workflow_reference",
+    "workspace_id",
+)
 
 
 class MigrationRunnerError(RuntimeError):
@@ -146,16 +162,82 @@ def _script_head(config: Config) -> str | None:
     return head
 
 
+def _verify_phase3h_objects(database_url: str) -> dict[str, Any]:
+    engine = create_engine(database_url, poolclass=None)
+    try:
+        with engine.connect() as connection:
+            current_revision = MigrationContext.configure(connection).get_current_revision()
+            object_rows = connection.execute(
+                text(
+                    """
+                    select table_name, table_type
+                    from information_schema.tables
+                    where table_schema = 'public'
+                      and table_name in :required_objects
+                    order by table_name
+                    """
+                ).bindparams(required_objects=PHASE3H_REQUIRED_OBJECTS, expanding=True)
+            ).all()
+            column_rows = connection.execute(
+                text(
+                    """
+                    select column_name, data_type
+                    from information_schema.columns
+                    where table_schema = 'public'
+                      and table_name = 'submissions'
+                      and column_name in :required_columns
+                    order by column_name
+                    """
+                ).bindparams(required_columns=PHASE3H_REQUIRED_SUBMISSIONS_COLUMNS, expanding=True)
+            ).all()
+    finally:
+        engine.dispose()
+
+    found_objects = {row.table_name for row in object_rows}
+    found_columns = {row.column_name for row in column_rows}
+
+    return {
+        "status": "ok",
+        "mode": "verify_phase3h_objects",
+        "head_revision": current_revision,
+        "objects": [
+            {"name": row.table_name, "type": row.table_type}
+            for row in object_rows
+        ],
+        "submissions_columns": [
+            {"name": row.column_name, "type": row.data_type}
+            for row in column_rows
+        ],
+        "missing_objects": [
+            name for name in PHASE3H_REQUIRED_OBJECTS if name not in found_objects
+        ],
+        "missing_submission_columns": [
+            name
+            for name in PHASE3H_REQUIRED_SUBMISSIONS_COLUMNS
+            if name not in found_columns
+        ],
+    }
+
+
 def handler(event: Any, context: Any) -> dict[str, Any]:
     """Lambda entrypoint. Applies all pending migrations to the target DB."""
 
-    del event, context  # The runner ignores the invocation payload.
+    del context
 
     try:
         database_url = _resolve_database_url()
     except MigrationRunnerError as exc:
         logger.error("configuration error: %s", exc)
         raise
+
+    if isinstance(event, dict) and event.get("mode") == "verify_phase3h_objects":
+        try:
+            result = _verify_phase3h_objects(database_url)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("phase 3h object verification failed: %s", _redact(str(exc), database_url))
+            raise MigrationRunnerError("Could not verify Phase 3h Aurora objects.") from exc
+        logger.info("phase 3h object verification complete: %s", result)
+        return result
 
     alembic_config = _build_alembic_config(database_url)
 
