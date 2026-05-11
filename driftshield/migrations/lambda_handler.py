@@ -31,7 +31,7 @@ from alembic import command
 from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
-from sqlalchemy import create_engine, text
+from sqlalchemy import bindparam, create_engine, text
 from sqlalchemy.engine import URL, make_url
 
 logger = logging.getLogger(__name__)
@@ -176,7 +176,8 @@ def _verify_phase3h_objects(database_url: str) -> dict[str, Any]:
                       and table_name in :required_objects
                     order by table_name
                     """
-                ).bindparams(required_objects=PHASE3H_REQUIRED_OBJECTS, expanding=True)
+                ).bindparams(bindparam("required_objects", expanding=True)),
+                {"required_objects": PHASE3H_REQUIRED_OBJECTS},
             ).all()
             column_rows = connection.execute(
                 text(
@@ -188,7 +189,8 @@ def _verify_phase3h_objects(database_url: str) -> dict[str, Any]:
                       and column_name in :required_columns
                     order by column_name
                     """
-                ).bindparams(required_columns=PHASE3H_REQUIRED_SUBMISSIONS_COLUMNS, expanding=True)
+                ).bindparams(bindparam("required_columns", expanding=True)),
+                {"required_columns": PHASE3H_REQUIRED_SUBMISSIONS_COLUMNS},
             ).all()
     finally:
         engine.dispose()
