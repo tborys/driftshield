@@ -309,6 +309,7 @@ def build_phase3h_team_recurrence_sql() -> tuple[str, ...]:
             from latest_trust_evaluations
             where latest_trust_evaluations.learning_eligible is true
               and latest_trust_evaluations.trust_band in ('trusted', 'provisional')
+              -- Treat null final_learning_weight as zero so non-weighted rows stay out of recurrence summaries.
               and latest_trust_evaluations.learning_weight > 0
         ),
         recurrence_base as (
@@ -448,6 +449,7 @@ def build_phase3h_team_pattern_sql() -> tuple[str, ...]:
             from latest_trust_evaluations
             where latest_trust_evaluations.learning_eligible is true
               and latest_trust_evaluations.trust_band in ('trusted', 'provisional')
+              -- Treat null final_learning_weight as zero so non-weighted rows stay out of pattern summaries.
               and latest_trust_evaluations.learning_weight > 0
         ),
         pattern_base as (
