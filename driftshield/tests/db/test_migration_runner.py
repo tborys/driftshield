@@ -64,3 +64,32 @@ def test_resolve_database_url_rejects_both_envs(monkeypatch, migration_runner_mo
 
     with pytest.raises(migration_runner_module.MigrationRunnerError):
         migration_runner_module._resolve_database_url()
+
+
+def test_verify_phase3h_handler_mode_bypasses_upgrade(monkeypatch, migration_runner_module):
+    monkeypatch.setattr(
+        migration_runner_module,
+        "_resolve_database_url",
+        lambda: "postgresql+psycopg2://runner:secret@db.example.internal:5432/driftshield",
+    )
+    monkeypatch.setattr(
+        migration_runner_module,
+        "_verify_phase3h_objects",
+        lambda database_url: {
+            "status": "ok",
+            "mode": "verify_phase3h_objects",
+            "head_revision": "20260511_03",
+            "objects": [{"name": "tenants", "type": "BASE TABLE"}],
+            "submissions_columns": [{"name": "tenant_id", "type": "uuid"}],
+            "missing_objects": [],
+            "missing_submission_columns": [],
+        },
+    )
+
+    result = migration_runner_module.handler({"mode": "verify_phase3h_objects"}, None)
+
+    assert result["status"] == "ok"
+    assert result["mode"] == "verify_phase3h_objects"
+    assert result["head_revision"] == "20260511_03"
+    assert result["missing_objects"] == []
+    assert result["missing_submission_columns"] == []
