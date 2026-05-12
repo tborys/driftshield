@@ -717,3 +717,56 @@ def build_phase3h_tenant_oss_seed_sql() -> tuple[str, str]:
         """,
         "select id from tenants where tenant_id = 'tenant-oss'",
     )
+
+
+def build_phase3h_oss_fallback_installation_seed_sql() -> tuple[str, str, str]:
+    return (
+        """
+        insert into installations (
+            id,
+            installation_id,
+            client_name,
+            platform,
+            metadata
+        )
+        values (
+            '00000000-0000-0000-0000-000000000551',
+            'oss-fallback-installation',
+            'OSS fallback installation',
+            'aws-lambda',
+            jsonb_build_object(
+                'seed_source', 'alembic',
+                'persona', 'oss-fallback'
+            )
+        )
+        on conflict (installation_id) do nothing
+        """,
+        """
+        insert into consent_records (
+            id,
+            installation_id,
+            consent_version,
+            consent_granted,
+            captured_at,
+            revoked_at
+        )
+        values (
+            '00000000-0000-0000-0000-000000000c51',
+            (select id from installations where installation_id = 'oss-fallback-installation'),
+            'phase3f-consent.v1',
+            true,
+            '2026-05-12T00:00:00+00:00'::timestamptz,
+            null
+        )
+        on conflict (id) do nothing
+        """,
+        """
+        select
+            installations.id as installation_row_id,
+            consent_records.id as consent_record_id
+        from installations
+        inner join consent_records on consent_records.installation_id = installations.id
+        where installations.installation_id = 'oss-fallback-installation'
+          and consent_records.id = '00000000-0000-0000-0000-000000000c51'
+        """,
+    )
