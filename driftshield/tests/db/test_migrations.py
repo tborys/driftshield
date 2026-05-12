@@ -8,7 +8,10 @@ from alembic.operations import Operations
 from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
 
-from driftshield.db.hosted_schema_sql import build_phase3h_tenant_oss_seed_sql
+from driftshield.db.hosted_schema_sql import (
+    build_phase3h_oss_fallback_installation_seed_sql,
+    build_phase3h_tenant_oss_seed_sql,
+)
 
 
 def test_alembic_has_single_head():
@@ -80,3 +83,34 @@ def test_phase3h_tenant_oss_seed_sql_is_idempotent_and_resolves_uuid() -> None:
     assert "on conflict (tenant_id) do nothing" in statements[0].lower()
     assert "seed_revision" not in statements[0]
     assert statements[1].strip().lower() == "select id from tenants where tenant_id = 'tenant-oss'"
+
+
+def test_phase3h_oss_fallback_installation_seed_downgrade_is_forward_only() -> None:
+    migration_path = (
+        Path(__file__).resolve().parents[2]
+        / "src/driftshield/db/migrations/versions/20260512_02_seed_oss_fallback_installation.py"
+    )
+    spec = spec_from_file_location("migration_20260512_02", migration_path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    with pytest.raises(NotImplementedError, match="forward-only; restore from snapshot per #163 AC5"):
+        module.downgrade()
+
+
+def test_phase3h_oss_fallback_installation_seed_sql_is_idempotent_and_resolves_ids() -> None:
+    statements = build_phase3h_oss_fallback_installation_seed_sql()
+
+    assert len(statements) == 3
+    assert "insert into installations" in statements[0].lower()
+    assert "'oss-fallback-installation'" in statements[0]
+    assert "'00000000-0000-0000-0000-000000000551'" in statements[0]
+    assert "on conflict (installation_id) do nothing" in statements[0].lower()
+    assert "insert into consent_records" in statements[1].lower()
+    assert "'00000000-0000-0000-0000-000000000c51'" in statements[1]
+    assert "on conflict (id) do nothing" in statements[1].lower()
+    assert "select" in statements[2].lower()
+    assert "installation_row_id" in statements[2]
+    assert "consent_record_id" in statements[2]
