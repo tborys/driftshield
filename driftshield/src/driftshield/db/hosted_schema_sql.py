@@ -691,7 +691,7 @@ def build_phase3h_team_views_drop_sql() -> tuple[str, ...]:
     )
 
 
-def build_phase3h_tenant_oss_seed_sql() -> tuple[str, ...]:
+def build_phase3h_tenant_oss_seed_sql() -> tuple[str, str]:
     return (
         """
         insert into tenants (
@@ -710,17 +710,10 @@ def build_phase3h_tenant_oss_seed_sql() -> tuple[str, ...]:
             'aurora-postgresql-serverless-v2',
             jsonb_build_object(
                 'seed_source', 'alembic',
-                'seed_revision', '20260512_01',
                 'persona', 'oss'
             )
         )
         on conflict (tenant_id) do nothing
         """,
         "select id from tenants where tenant_id = 'tenant-oss'",
-    )
-
-
-def build_phase3h_tenant_oss_seed_delete_sql() -> tuple[str, ...]:
-    return (
-        "delete from tenants where tenant_id = 'tenant-oss'",
     )
