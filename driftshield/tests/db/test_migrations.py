@@ -1,11 +1,14 @@
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
+import pytest
 import sqlalchemy as sa
 from alembic.config import Config
 from alembic.operations import Operations
 from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
+
+from driftshield.db.hosted_schema_sql import build_phase3h_tenant_oss_seed_sql
 
 
 def test_alembic_has_single_head():
@@ -51,3 +54,29 @@ def test_recurrence_cleanup_downgrade_uses_sqlite_safe_types():
         assert isinstance(recurrence_columns["id"]["type"], sa.String)
         assert isinstance(session_columns["session_id"]["type"], sa.String)
         assert isinstance(session_columns["signature_id"]["type"], sa.String)
+
+
+def test_phase3h_tenant_oss_seed_downgrade_is_forward_only() -> None:
+    migration_path = (
+        Path(__file__).resolve().parents[2]
+        / "src/driftshield/db/migrations/versions/20260512_01_seed_tenant_oss.py"
+    )
+    spec = spec_from_file_location("migration_20260512_01", migration_path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    with pytest.raises(NotImplementedError, match="forward-only"):
+        module.downgrade()
+
+
+def test_phase3h_tenant_oss_seed_sql_is_idempotent_and_resolves_uuid() -> None:
+    statements = build_phase3h_tenant_oss_seed_sql()
+
+    assert len(statements) == 2
+    assert "insert into tenants" in statements[0]
+    assert "'tenant-oss'" in statements[0]
+    assert "on conflict (tenant_id) do nothing" in statements[0].lower()
+    assert "seed_revision" not in statements[0]
+    assert statements[1].strip().lower() == "select id from tenants where tenant_id = 'tenant-oss'"
