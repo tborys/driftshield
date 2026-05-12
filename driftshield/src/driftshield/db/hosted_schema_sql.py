@@ -689,3 +689,31 @@ def build_phase3h_team_views_drop_sql() -> tuple[str, ...]:
         "drop index if exists ix_trust_evaluations_submission_created_at_write_order",
         "drop index if exists ix_signature_matches_recurrence_group_signature",
     )
+
+
+def build_phase3h_tenant_oss_seed_sql() -> tuple[str, str]:
+    return (
+        """
+        insert into tenants (
+            tenant_id,
+            display_name,
+            tenancy_state,
+            home_region,
+            deployment_target,
+            metadata
+        )
+        values (
+            'tenant-oss',
+            'OSS fallback tenant',
+            'active',
+            'eu-west-2',
+            'aurora-postgresql-serverless-v2',
+            jsonb_build_object(
+                'seed_source', 'alembic',
+                'persona', 'oss'
+            )
+        )
+        on conflict (tenant_id) do nothing
+        """,
+        "select id from tenants where tenant_id = 'tenant-oss'",
+    )
