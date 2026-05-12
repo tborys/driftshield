@@ -7,6 +7,8 @@ from alembic.operations import Operations
 from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
 
+from driftshield.db.hosted_schema_sql import build_phase3h_tenant_oss_seed_sql
+
 
 def test_alembic_has_single_head():
     config = Config(str(Path(__file__).resolve().parents[2] / "alembic.ini"))
@@ -51,3 +53,13 @@ def test_recurrence_cleanup_downgrade_uses_sqlite_safe_types():
         assert isinstance(recurrence_columns["id"]["type"], sa.String)
         assert isinstance(session_columns["session_id"]["type"], sa.String)
         assert isinstance(session_columns["signature_id"]["type"], sa.String)
+
+
+def test_phase3h_tenant_oss_seed_sql_is_idempotent_and_resolves_uuid() -> None:
+    statements = build_phase3h_tenant_oss_seed_sql()
+
+    assert len(statements) == 2
+    assert "insert into tenants" in statements[0]
+    assert "'tenant-oss'" in statements[0]
+    assert "on conflict (tenant_id) do nothing" in statements[0].lower()
+    assert statements[1].strip().lower() == "select id from tenants where tenant_id = 'tenant-oss'"
