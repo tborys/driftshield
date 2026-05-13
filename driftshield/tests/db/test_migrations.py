@@ -10,6 +10,7 @@ from alembic.script import ScriptDirectory
 
 from driftshield.db.hosted_schema_sql import (
     build_phase3h_oss_fallback_installation_seed_sql,
+    build_phase3h_teams_ab_fixture_seed_sql,
     build_phase3h_tenant_oss_seed_sql,
 )
 
@@ -114,3 +115,46 @@ def test_phase3h_oss_fallback_installation_seed_sql_is_idempotent_and_resolves_i
     assert "select" in statements[2].lower()
     assert "installation_row_id" in statements[2]
     assert "consent_record_id" in statements[2]
+
+
+def test_phase3h_teams_ab_fixture_seed_downgrade_is_forward_only() -> None:
+    migration_path = (
+        Path(__file__).resolve().parents[2]
+        / "src/driftshield/db/migrations/versions/20260513_01_seed_teams_ab_fixtures.py"
+    )
+    spec = spec_from_file_location("migration_20260513_01", migration_path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    with pytest.raises(NotImplementedError, match="forward-only; restore from snapshot per #26 AC5"):
+        module.downgrade()
+
+
+def test_phase3h_teams_ab_fixture_seed_sql_is_idempotent_and_resolves_summary_rows() -> None:
+    statements = build_phase3h_teams_ab_fixture_seed_sql()
+
+    assert len(statements) == 10
+    assert "insert into tenants" in statements[0].lower()
+    assert "'tenant-alpha'" in statements[0]
+    assert "'00000000-0000-0000-0000-000000000101'" in statements[0]
+    assert "'tenant-beta'" in statements[0]
+    assert "insert into workspaces" in statements[1].lower()
+    assert "'workspace-alpha'" in statements[1]
+    assert "'workspace-beta'" in statements[1]
+    assert "insert into service_identities" in statements[2].lower()
+    assert "'svc-alpha'" in statements[2]
+    assert "'svc-beta'" in statements[2]
+    assert "insert into entitlements" in statements[3].lower()
+    assert "[\"teams:read\"]'::jsonb" in statements[3]
+    assert "insert into submissions" in statements[6].lower()
+    assert "'sub-alpha-4'" in statements[6]
+    assert "'sub-beta-1'" in statements[6]
+    assert "insert into trust_evaluations" in statements[7].lower()
+    assert "'quarantined'" in statements[7]
+    assert "insert into signature_matches" in statements[8].lower()
+    assert "'grp:retry-loop'" in statements[8]
+    assert "select" in statements[9].lower()
+    assert "tenant_alpha_recurrence_summary_rows" in statements[9]
+    assert "tenant_beta_pattern_summary_rows" in statements[9]
