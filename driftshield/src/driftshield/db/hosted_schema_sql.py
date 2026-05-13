@@ -770,3 +770,287 @@ def build_phase3h_oss_fallback_installation_seed_sql() -> tuple[str, str, str]:
           and consent_records.id = '00000000-0000-0000-0000-000000000c51'
         """,
     )
+
+
+def build_phase3h_teams_ab_fixture_seed_sql() -> tuple[str, ...]:
+    return (
+        # Keep these row UUIDs aligned with the public Teams API fixture contract.
+        """
+        insert into tenants (
+            id,
+            tenant_id,
+            display_name,
+            tenancy_state,
+            home_region,
+            deployment_target,
+            metadata
+        )
+        values
+            (
+                '00000000-0000-0000-0000-000000000101',
+                'tenant-alpha',
+                'Teams Alpha tenant',
+                'active',
+                'eu-west-2',
+                'aurora-postgresql-serverless-v2',
+                jsonb_build_object('seed_source', 'alembic', 'persona', 'teams', 'fixture_key', 'tenant-alpha')
+            ),
+            (
+                '00000000-0000-0000-0000-000000000201',
+                'tenant-beta',
+                'Teams Beta tenant',
+                'active',
+                'eu-west-2',
+                'aurora-postgresql-serverless-v2',
+                jsonb_build_object('seed_source', 'alembic', 'persona', 'teams', 'fixture_key', 'tenant-beta')
+            )
+        on conflict (tenant_id) do nothing
+        """,
+        """
+        insert into workspaces (
+            id,
+            tenant_id,
+            workspace_id,
+            display_name,
+            project_reference,
+            metadata
+        )
+        values
+            (
+                '00000000-0000-0000-0000-000000000102',
+                '00000000-0000-0000-0000-000000000101',
+                'workspace-alpha',
+                'Teams Alpha workspace',
+                'project-gateway',
+                jsonb_build_object('seed_source', 'alembic', 'fixture_key', 'workspace-alpha')
+            ),
+            (
+                '00000000-0000-0000-0000-000000000202',
+                '00000000-0000-0000-0000-000000000201',
+                'workspace-beta',
+                'Teams Beta workspace',
+                'project-fulfilment',
+                jsonb_build_object('seed_source', 'alembic', 'fixture_key', 'workspace-beta')
+            )
+        on conflict (tenant_id, workspace_id) do nothing
+        """,
+        """
+        insert into service_identities (
+            id,
+            tenant_id,
+            workspace_id,
+            service_identity_id,
+            display_name,
+            auth_method,
+            secret_reference,
+            status,
+            metadata
+        )
+        values
+            (
+                '00000000-0000-0000-0000-000000000103',
+                '00000000-0000-0000-0000-000000000101',
+                '00000000-0000-0000-0000-000000000102',
+                'svc-alpha',
+                'Teams Alpha service identity',
+                'api_key',
+                'phase3h/teams/api-keys/tenant-alpha',
+                'active',
+                jsonb_build_object('seed_source', 'alembic', 'fixture_key', 'svc-alpha')
+            ),
+            (
+                '00000000-0000-0000-0000-000000000203',
+                '00000000-0000-0000-0000-000000000201',
+                '00000000-0000-0000-0000-000000000202',
+                'svc-beta',
+                'Teams Beta service identity',
+                'api_key',
+                'phase3h/teams/api-keys/tenant-beta',
+                'active',
+                jsonb_build_object('seed_source', 'alembic', 'fixture_key', 'svc-beta')
+            )
+        on conflict (tenant_id, service_identity_id) do nothing
+        """,
+        """
+        insert into entitlements (
+            id,
+            tenant_id,
+            workspace_id,
+            service_identity_id,
+            access_tier,
+            subject_scope,
+            capabilities,
+            metadata,
+            effective_from
+        )
+        values
+            (
+                '00000000-0000-0000-0000-000000000104',
+                '00000000-0000-0000-0000-000000000101',
+                '00000000-0000-0000-0000-000000000102',
+                '00000000-0000-0000-0000-000000000103',
+                'teams',
+                'workspace',
+                '["teams:read"]'::jsonb,
+                jsonb_build_object('seed_source', 'alembic'),
+                '2026-05-07T00:00:00+00:00'::timestamptz
+            ),
+            (
+                '00000000-0000-0000-0000-000000000204',
+                '00000000-0000-0000-0000-000000000201',
+                '00000000-0000-0000-0000-000000000202',
+                '00000000-0000-0000-0000-000000000203',
+                'teams',
+                'workspace',
+                '["teams:read"]'::jsonb,
+                jsonb_build_object('seed_source', 'alembic'),
+                '2026-05-07T00:00:00+00:00'::timestamptz
+            )
+        on conflict (id) do nothing
+        """,
+        """
+        insert into installations (
+            id,
+            installation_id,
+            client_name,
+            platform,
+            metadata
+        )
+        values
+            (
+                '00000000-0000-0000-0000-000000000151',
+                'teams-fixture-installation-alpha',
+                'Teams Alpha installation',
+                'aws-lambda',
+                jsonb_build_object('seed_source', 'alembic', 'tenant_id', 'tenant-alpha')
+            ),
+            (
+                '00000000-0000-0000-0000-000000000251',
+                'teams-fixture-installation-beta',
+                'Teams Beta installation',
+                'aws-lambda',
+                jsonb_build_object('seed_source', 'alembic', 'tenant_id', 'tenant-beta')
+            )
+        on conflict (installation_id) do nothing
+        """,
+        """
+        insert into consent_records (
+            id,
+            installation_id,
+            consent_version,
+            consent_granted,
+            consent_scope,
+            captured_at,
+            revoked_at
+        )
+        values
+            (
+                '00000000-0000-0000-0000-000000000161',
+                '00000000-0000-0000-0000-000000000151',
+                'phase3f-consent.v1',
+                true,
+                jsonb_build_object('persona', 'teams', 'tenant_id', 'tenant-alpha'),
+                '2026-05-07T19:55:00+00:00'::timestamptz,
+                null
+            ),
+            (
+                '00000000-0000-0000-0000-000000000261',
+                '00000000-0000-0000-0000-000000000251',
+                'phase3f-consent.v1',
+                true,
+                jsonb_build_object('persona', 'teams', 'tenant_id', 'tenant-beta'),
+                '2026-05-07T19:55:00+00:00'::timestamptz,
+                null
+            )
+        on conflict (id) do nothing
+        """,
+        """
+        insert into submissions (
+            id,
+            installation_id,
+            consent_record_id,
+            submission_id,
+            source_system,
+            source_session_id,
+            source_report_id,
+            envelope_contract_version,
+            envelope,
+            envelope_checksum,
+            state,
+            received_at,
+            processed_at,
+            tenant_id,
+            workspace_id,
+            service_identity_id,
+            workflow_reference,
+            project_reference,
+            evidence_artifact_prefix
+        )
+        values
+            ('00000000-0000-0000-0000-000000000111', '00000000-0000-0000-0000-000000000151', '00000000-0000-0000-0000-000000000161', 'sub-alpha-1', 'teams-e2e', 'teams-alpha-session', 'teams-alpha-report-1', 'phase3h-envelope.v1', jsonb_build_object('environment', 'prod'), 'sha256:sub-alpha-1', 'processed', '2026-05-07T20:00:00+00:00'::timestamptz, '2026-05-07T20:00:00+00:00'::timestamptz, '00000000-0000-0000-0000-000000000101', '00000000-0000-0000-0000-000000000102', '00000000-0000-0000-0000-000000000103', 'workflow-build', 'project-gateway', 's3://driftshield-phase3h/teams/sub-alpha-1/'),
+            ('00000000-0000-0000-0000-000000000112', '00000000-0000-0000-0000-000000000151', '00000000-0000-0000-0000-000000000161', 'sub-alpha-2', 'teams-e2e', 'teams-alpha-session', 'teams-alpha-report-2', 'phase3h-envelope.v1', jsonb_build_object('environment', 'prod'), 'sha256:sub-alpha-2', 'processed', '2026-05-07T20:05:00+00:00'::timestamptz, '2026-05-07T20:05:00+00:00'::timestamptz, '00000000-0000-0000-0000-000000000101', '00000000-0000-0000-0000-000000000102', '00000000-0000-0000-0000-000000000103', 'workflow-build', 'project-gateway', 's3://driftshield-phase3h/teams/sub-alpha-2/'),
+            ('00000000-0000-0000-0000-000000000113', '00000000-0000-0000-0000-000000000151', '00000000-0000-0000-0000-000000000161', 'sub-alpha-3', 'teams-e2e', 'teams-alpha-session', 'teams-alpha-report-3', 'phase3h-envelope.v1', jsonb_build_object('environment', 'staging'), 'sha256:sub-alpha-3', 'processed', '2026-05-07T20:10:00+00:00'::timestamptz, '2026-05-07T20:10:00+00:00'::timestamptz, '00000000-0000-0000-0000-000000000101', '00000000-0000-0000-0000-000000000102', '00000000-0000-0000-0000-000000000103', 'workflow-review', 'project-gateway', 's3://driftshield-phase3h/teams/sub-alpha-3/'),
+            ('00000000-0000-0000-0000-000000000114', '00000000-0000-0000-0000-000000000151', '00000000-0000-0000-0000-000000000161', 'sub-alpha-4', 'teams-e2e', 'teams-alpha-session', 'teams-alpha-report-4', 'phase3h-envelope.v1', jsonb_build_object('environment', 'prod'), 'sha256:sub-alpha-4', 'processed', '2026-05-07T20:15:00+00:00'::timestamptz, '2026-05-07T20:15:00+00:00'::timestamptz, '00000000-0000-0000-0000-000000000101', '00000000-0000-0000-0000-000000000102', '00000000-0000-0000-0000-000000000103', 'workflow-corrected', 'project-gateway', 's3://driftshield-phase3h/teams/sub-alpha-4/'),
+            ('00000000-0000-0000-0000-000000000211', '00000000-0000-0000-0000-000000000251', '00000000-0000-0000-0000-000000000261', 'sub-beta-1', 'teams-e2e', 'teams-beta-session', 'teams-beta-report-1', 'phase3h-envelope.v1', jsonb_build_object('environment', 'prod'), 'sha256:sub-beta-1', 'processed', '2026-05-07T20:03:00+00:00'::timestamptz, '2026-05-07T20:03:00+00:00'::timestamptz, '00000000-0000-0000-0000-000000000201', '00000000-0000-0000-0000-000000000202', '00000000-0000-0000-0000-000000000203', 'workflow-build', 'project-fulfilment', 's3://driftshield-phase3h/teams/sub-beta-1/')
+        on conflict (submission_id) do nothing
+        """,
+        """
+        insert into trust_evaluations (
+            id,
+            submission_id,
+            trust_band,
+            confidence_band,
+            final_learning_weight,
+            learning_eligible,
+            requires_review,
+            provenance,
+            evaluation_metadata,
+            created_at
+        )
+        values
+            ('00000000-0000-0000-0000-000000000121', '00000000-0000-0000-0000-000000000111', 'trusted', 'high', 1.0, true, false, jsonb_build_object('seed_source', 'alembic'), jsonb_build_object('fixture_key', 'sub-alpha-1'), '2026-05-07T20:00:00+00:00'::timestamptz),
+            ('00000000-0000-0000-0000-000000000122', '00000000-0000-0000-0000-000000000112', 'provisional', 'high', 0.5, true, false, jsonb_build_object('seed_source', 'alembic'), jsonb_build_object('fixture_key', 'sub-alpha-2'), '2026-05-07T20:05:00+00:00'::timestamptz),
+            ('00000000-0000-0000-0000-000000000123', '00000000-0000-0000-0000-000000000113', 'trusted', 'high', 1.0, true, false, jsonb_build_object('seed_source', 'alembic'), jsonb_build_object('fixture_key', 'sub-alpha-3'), '2026-05-07T20:10:00+00:00'::timestamptz),
+            ('00000000-0000-0000-0000-000000000124', '00000000-0000-0000-0000-000000000114', 'trusted', 'high', 1.0, true, false, jsonb_build_object('seed_source', 'alembic'), jsonb_build_object('fixture_key', 'sub-alpha-4'), '2026-05-07T20:15:00+00:00'::timestamptz),
+            ('00000000-0000-0000-0000-000000000125', '00000000-0000-0000-0000-000000000114', 'quarantined', 'high', 0.0, false, true, jsonb_build_object('seed_source', 'alembic'), jsonb_build_object('fixture_key', 'sub-alpha-4-corrected'), '2026-05-07T20:20:00+00:00'::timestamptz),
+            ('00000000-0000-0000-0000-000000000221', '00000000-0000-0000-0000-000000000211', 'trusted', 'high', 1.0, true, false, jsonb_build_object('seed_source', 'alembic'), jsonb_build_object('fixture_key', 'sub-beta-1'), '2026-05-07T20:03:00+00:00'::timestamptz)
+        on conflict (id) do nothing
+        """,
+        """
+        insert into signature_matches (
+            id,
+            submission_id,
+            signature_id,
+            signature_version,
+            match_status,
+            confidence,
+            mechanism_id,
+            evidence,
+            confidence_breakdown,
+            review_needed,
+            visibility_class,
+            recurrence_group_key,
+            created_at
+        )
+        values
+            ('00000000-0000-0000-0000-000000000131', '00000000-0000-0000-0000-000000000111', 'sig.retry-loop', 'v1', 'matched', 0.98, 'phase3h-seed', '{}'::jsonb, '{}'::jsonb, false, 'internal_only', 'grp:retry-loop', '2026-05-07T20:00:00+00:00'::timestamptz),
+            ('00000000-0000-0000-0000-000000000132', '00000000-0000-0000-0000-000000000112', 'sig.retry-loop', 'v1', 'matched', 0.91, 'phase3h-seed', '{}'::jsonb, '{}'::jsonb, false, 'internal_only', 'grp:retry-loop', '2026-05-07T20:05:00+00:00'::timestamptz),
+            ('00000000-0000-0000-0000-000000000133', '00000000-0000-0000-0000-000000000113', 'sig.timeout', 'v1', 'matched', 0.96, 'phase3h-seed', '{}'::jsonb, '{}'::jsonb, false, 'internal_only', 'grp:timeout', '2026-05-07T20:10:00+00:00'::timestamptz),
+            ('00000000-0000-0000-0000-000000000134', '00000000-0000-0000-0000-000000000114', 'sig.corrected', 'v1', 'matched', 0.95, 'phase3h-seed', '{}'::jsonb, '{}'::jsonb, false, 'internal_only', 'grp:corrected', '2026-05-07T20:15:00+00:00'::timestamptz),
+            ('00000000-0000-0000-0000-000000000231', '00000000-0000-0000-0000-000000000211', 'sig.retry-loop', 'v1', 'matched', 0.97, 'phase3h-seed', '{}'::jsonb, '{}'::jsonb, false, 'internal_only', 'grp:retry-loop', '2026-05-07T20:03:00+00:00'::timestamptz)
+        on conflict (id) do nothing
+        """,
+        """
+        select
+            (select id from tenants where tenant_id = 'tenant-alpha') as tenant_alpha_row_id,
+            (select id from workspaces where workspace_id = 'workspace-alpha' and tenant_id = '00000000-0000-0000-0000-000000000101'::uuid) as workspace_alpha_row_id,
+            (select id from service_identities where service_identity_id = 'svc-alpha' and tenant_id = '00000000-0000-0000-0000-000000000101'::uuid) as service_identity_alpha_row_id,
+            (select id from tenants where tenant_id = 'tenant-beta') as tenant_beta_row_id,
+            (select id from workspaces where workspace_id = 'workspace-beta' and tenant_id = '00000000-0000-0000-0000-000000000201'::uuid) as workspace_beta_row_id,
+            (select id from service_identities where service_identity_id = 'svc-beta' and tenant_id = '00000000-0000-0000-0000-000000000201'::uuid) as service_identity_beta_row_id,
+            (select count(*) from team_recurrence_summary where tenant_id = 'tenant-alpha') as tenant_alpha_recurrence_summary_rows,
+            (select count(*) from team_recurrence_summary where tenant_id = 'tenant-beta') as tenant_beta_recurrence_summary_rows,
+            (select count(*) from team_pattern_summary where tenant_id = 'tenant-alpha') as tenant_alpha_pattern_summary_rows,
+            (select count(*) from team_pattern_summary where tenant_id = 'tenant-beta') as tenant_beta_pattern_summary_rows
+        """,
+    )
