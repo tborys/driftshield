@@ -56,6 +56,10 @@ PHASE3H_REQUIRED_SUBMISSIONS_COLUMNS = (
     "workflow_reference",
     "workspace_id",
 )
+VERIFY_ROW_EXISTS_ALLOWED_TABLES = (
+    "installations",
+    "consent_records",
+)
 
 
 class MigrationRunnerError(RuntimeError):
@@ -221,6 +225,37 @@ def _verify_phase3h_objects(database_url: str) -> dict[str, Any]:
     }
 
 
+def _verify_row_exists(database_url: str, table: str, row_id: str) -> dict[str, Any]:
+    if table not in VERIFY_ROW_EXISTS_ALLOWED_TABLES:
+        return {
+            "status": "error",
+            "mode": "verify_row_exists",
+            "reason": f"unsupported table for row verification: {table}",
+            "table": table,
+            "row_id": row_id,
+        }
+
+    engine = create_engine(database_url, poolclass=None)
+    try:
+        with engine.connect() as connection:
+            exists = bool(
+                connection.execute(
+                    text(f"select exists(select 1 from {table} where id = cast(:row_id as uuid))"),
+                    {"row_id": row_id},
+                ).scalar()
+            )
+    finally:
+        engine.dispose()
+
+    return {
+        "status": "ok",
+        "mode": "verify_row_exists",
+        "exists": exists,
+        "table": table,
+        "row_id": row_id,
+    }
+
+
 def handler(event: Any, context: Any) -> dict[str, Any]:
     """Lambda entrypoint. Applies all pending migrations to the target DB."""
 
@@ -231,6 +266,24 @@ def handler(event: Any, context: Any) -> dict[str, Any]:
     except MigrationRunnerError as exc:
         logger.error("configuration error: %s", exc)
         raise
+
+    if isinstance(event, dict) and event.get("mode") == "verify_row_exists":
+        table = event.get("table")
+        row_id = event.get("row_id")
+        if not isinstance(table, str) or not isinstance(row_id, str):
+            return {
+                "status": "error",
+                "mode": "verify_row_exists",
+                "reason": "verify_row_exists requires string table and row_id fields",
+            }
+
+        try:
+            result = _verify_row_exists(database_url, table, row_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("row existence verification failed: %s", _redact(str(exc), database_url))
+            raise MigrationRunnerError("Could not verify Aurora row existence.") from exc
+        logger.info("row existence verification complete: %s", result)
+        return result
 
     if isinstance(event, dict) and event.get("mode") == "verify_phase3h_objects":
         try:
