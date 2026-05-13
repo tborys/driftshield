@@ -66,10 +66,11 @@ def test_resolve_database_url_rejects_both_envs(monkeypatch, migration_runner_mo
         migration_runner_module._resolve_database_url()
 
 
-def test_verify_row_exists_returns_expected_payload(monkeypatch, migration_runner_module):
+@pytest.mark.parametrize("exists", [True, False])
+def test_verify_row_exists_returns_expected_payload(monkeypatch, migration_runner_module, exists):
     class FakeResult:
         def scalar(self):
-            return True
+            return exists
 
     class FakeConnection:
         def execute(self, statement, params):
@@ -101,7 +102,7 @@ def test_verify_row_exists_returns_expected_payload(monkeypatch, migration_runne
     assert result == {
         "status": "ok",
         "mode": "verify_row_exists",
-        "exists": True,
+        "exists": exists,
         "table": "installations",
         "row_id": "00000000-0000-0000-0000-000000000551",
     }
@@ -120,6 +121,22 @@ def test_verify_row_exists_rejects_unsupported_table(migration_runner_module):
         "reason": "unsupported table for row verification: bogus_table",
         "table": "bogus_table",
         "row_id": "00000000-0000-0000-0000-000000000000",
+    }
+
+
+def test_verify_row_exists_handler_rejects_missing_fields(monkeypatch, migration_runner_module):
+    monkeypatch.setattr(
+        migration_runner_module,
+        "_resolve_database_url",
+        lambda: "postgresql+psycopg2://runner:secret@db.example.internal:5432/driftshield",
+    )
+
+    result = migration_runner_module.handler({"mode": "verify_row_exists"}, None)
+
+    assert result == {
+        "status": "error",
+        "mode": "verify_row_exists",
+        "reason": "verify_row_exists requires string table and row_id fields",
     }
 
 
