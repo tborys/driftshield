@@ -67,6 +67,7 @@ VERIFY_ROW_EXISTS_ALLOWED_TABLES = (
 )
 VERIFY_TABLE_COLUMNS_ALLOWED_TABLES = (
     "submissions",
+    "recurrence_observations",
 )
 VERIFY_QUERY_ALLOWED_TABLES = (
     "signature_matches",

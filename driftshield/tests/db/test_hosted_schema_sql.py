@@ -35,6 +35,15 @@ def test_hosted_base_sql_covers_phase3f_and_phase3g_tables() -> None:
     assert "review_needed boolean not null default false" in sql
     assert "visibility_class text not null default 'internal_only'" in sql
     assert "recurrence_group_key text" in sql
+    assert "workflow_id text" in sql
+    assert "mechanism_id text" in sql
+    assert "trust_band text" in sql
+    assert "confidence_band text" in sql
+    assert "learning_weight double precision" in sql
+    assert "contributes_to_recurrence boolean" in sql
+    assert "supports_maturation boolean" in sql
+    assert "quarantine_reason_codes text[]" in sql
+    assert "signature_ids text[]" in sql
 
 
 def test_phase3h_teams_sql_covers_identity_tables_and_submission_scope_columns() -> None:
@@ -57,6 +66,15 @@ def test_phase3h_teams_sql_covers_identity_tables_and_submission_scope_columns()
     assert "evidence_artifact_prefix text" in sql
     assert "attempt_count integer not null default 0" in sql
     assert "claimed_by text" in sql
+    assert "alter table recurrence_observations add column if not exists workflow_id text" in sql
+    assert "alter table recurrence_observations add column if not exists mechanism_id text" in sql
+    assert "alter table recurrence_observations add column if not exists trust_band text" in sql
+    assert "alter table recurrence_observations add column if not exists confidence_band text" in sql
+    assert "alter table recurrence_observations add column if not exists learning_weight double precision" in sql
+    assert "alter table recurrence_observations add column if not exists contributes_to_recurrence boolean" in sql
+    assert "alter table recurrence_observations add column if not exists supports_maturation boolean" in sql
+    assert "alter table recurrence_observations add column if not exists quarantine_reason_codes text[]" in sql
+    assert "alter table recurrence_observations add column if not exists signature_ids text[]" in sql
     assert "ix_submissions_tenant_workspace_received_at" in sql
     assert "tenant_public_id text" in sql
     assert "service_identity_public_id text" in sql
