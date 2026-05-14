@@ -55,6 +55,8 @@ def test_phase3h_teams_sql_covers_identity_tables_and_submission_scope_columns()
     assert "workflow_reference text" in sql
     assert "project_reference text" in sql
     assert "evidence_artifact_prefix text" in sql
+    assert "attempt_count integer not null default 0" in sql
+    assert "claimed_by text" in sql
     assert "ix_submissions_tenant_workspace_received_at" in sql
     assert "tenant_public_id text" in sql
     assert "service_identity_public_id text" in sql
