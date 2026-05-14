@@ -60,11 +60,13 @@ def build_hosted_base_sql() -> tuple[str, ...]:
             envelope_checksum text not null,
             state submission_state not null default 'received',
             duplicate_of_submission_id uuid references submissions(id) on delete set null,
+            attempt_count integer not null default 0,
             received_at timestamptz not null default timezone('utc', now()),
             processing_started_at timestamptz,
             processed_at timestamptz,
             quarantined_at timestamptz,
             failed_at timestamptz,
+            claimed_by text,
             last_error_code text,
             last_error_detail text,
             created_at timestamptz not null default timezone('utc', now()),
@@ -235,6 +237,8 @@ def build_phase3h_teams_sql() -> tuple[str, ...]:
         "alter table submissions add column if not exists workflow_reference text",
         "alter table submissions add column if not exists project_reference text",
         "alter table submissions add column if not exists evidence_artifact_prefix text",
+        "alter table submissions add column if not exists attempt_count integer not null default 0",
+        "alter table submissions add column if not exists claimed_by text",
         "create index if not exists ix_submissions_tenant_workspace_received_at on submissions (tenant_id, workspace_id, received_at)",
         """
         create table if not exists team_api_access_audit (

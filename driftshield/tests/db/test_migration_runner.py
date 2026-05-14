@@ -203,3 +203,121 @@ def test_verify_phase3h_handler_mode_bypasses_upgrade(monkeypatch, migration_run
     assert result["head_revision"] == "20260511_03"
     assert result["missing_objects"] == []
     assert result["missing_submission_columns"] == []
+
+
+def test_verify_table_columns_returns_expected_payload(monkeypatch, migration_runner_module):
+    class FakeResult:
+        def all(self):
+            return [
+                SimpleNamespace(column_name="attempt_count", data_type="integer"),
+                SimpleNamespace(column_name="claimed_by", data_type="text"),
+            ]
+
+    class FakeConnection:
+        def execute(self, statement, params):
+            assert "information_schema.columns" in str(statement)
+            assert params == {
+                "table": "submissions",
+                "columns": ("attempt_count", "claimed_by"),
+            }
+            return FakeResult()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class FakeEngine:
+        def connect(self):
+            return FakeConnection()
+
+        def dispose(self):
+            return None
+
+    monkeypatch.setattr(migration_runner_module, "create_engine", lambda *args, **kwargs: FakeEngine())
+
+    result = migration_runner_module._verify_table_columns(
+        "postgresql+psycopg2://runner:secret@db.example.internal:5432/driftshield",
+        "submissions",
+        ("attempt_count", "claimed_by"),
+    )
+
+    assert result == {
+        "status": "ok",
+        "mode": "verify_table_columns",
+        "table": "submissions",
+        "columns": [
+            {"name": "attempt_count", "type": "integer"},
+            {"name": "claimed_by", "type": "text"},
+        ],
+        "missing_columns": [],
+    }
+
+
+def test_verify_table_columns_rejects_unsupported_table(migration_runner_module):
+    result = migration_runner_module._verify_table_columns(
+        "postgresql+psycopg2://runner:secret@db.example.internal:5432/driftshield",
+        "bogus_table",
+        ("attempt_count",),
+    )
+
+    assert result == {
+        "status": "error",
+        "mode": "verify_table_columns",
+        "reason": "unsupported table for column verification: bogus_table",
+        "table": "bogus_table",
+        "columns": ["attempt_count"],
+    }
+
+
+def test_verify_table_columns_handler_rejects_missing_fields(monkeypatch, migration_runner_module):
+    monkeypatch.setattr(
+        migration_runner_module,
+        "_resolve_database_url",
+        lambda: "postgresql+psycopg2://runner:secret@db.example.internal:5432/driftshield",
+    )
+
+    result = migration_runner_module.handler({"mode": "verify_table_columns", "table": "submissions"}, None)
+
+    assert result == {
+        "status": "error",
+        "mode": "verify_table_columns",
+        "reason": "verify_table_columns requires string table and non-empty string columns fields",
+    }
+
+
+def test_verify_table_columns_handler_mode_bypasses_upgrade(monkeypatch, migration_runner_module):
+    monkeypatch.setattr(
+        migration_runner_module,
+        "_resolve_database_url",
+        lambda: "postgresql+psycopg2://runner:secret@db.example.internal:5432/driftshield",
+    )
+    monkeypatch.setattr(
+        migration_runner_module,
+        "_verify_table_columns",
+        lambda database_url, table, columns: {
+            "status": "ok",
+            "mode": "verify_table_columns",
+            "table": table,
+            "columns": [{"name": "attempt_count", "type": "integer"}],
+            "missing_columns": [column_name for column_name in columns if column_name != "attempt_count"],
+        },
+    )
+
+    result = migration_runner_module.handler(
+        {
+            "mode": "verify_table_columns",
+            "table": "submissions",
+            "columns": ["attempt_count", "claimed_by"],
+        },
+        None,
+    )
+
+    assert result == {
+        "status": "ok",
+        "mode": "verify_table_columns",
+        "table": "submissions",
+        "columns": [{"name": "attempt_count", "type": "integer"}],
+        "missing_columns": ["claimed_by"],
+    }
