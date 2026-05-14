@@ -49,6 +49,8 @@ PHASE3H_REQUIRED_OBJECTS = (
     "workspaces",
 )
 PHASE3H_REQUIRED_SUBMISSIONS_COLUMNS = (
+    "attempt_count",
+    "claimed_by",
     "evidence_artifact_prefix",
     "project_reference",
     "service_identity_id",
@@ -59,6 +61,9 @@ PHASE3H_REQUIRED_SUBMISSIONS_COLUMNS = (
 VERIFY_ROW_EXISTS_ALLOWED_TABLES = (
     "installations",
     "consent_records",
+)
+VERIFY_TABLE_COLUMNS_ALLOWED_TABLES = (
+    "submissions",
 )
 
 
@@ -88,7 +93,7 @@ def _resolve_database_url() -> str:
 
 def _build_url_from_secret(secret_arn: str) -> str:
     try:
-        import boto3
+        import boto3  # type: ignore[import-not-found]
     except ImportError as exc:
         raise MigrationRunnerError(
             "DB_SECRET_ARN is set but boto3 is not installed. "
@@ -256,6 +261,54 @@ def _verify_row_exists(database_url: str, table: str, row_id: str) -> dict[str, 
     }
 
 
+def _verify_table_columns(
+    database_url: str,
+    table: str,
+    columns: tuple[str, ...],
+) -> dict[str, Any]:
+    if table not in VERIFY_TABLE_COLUMNS_ALLOWED_TABLES:
+        return {
+            "status": "error",
+            "mode": "verify_table_columns",
+            "reason": f"unsupported table for column verification: {table}",
+            "table": table,
+            "columns": list(columns),
+        }
+
+    engine = create_engine(database_url, poolclass=None)
+    try:
+        with engine.connect() as connection:
+            rows = connection.execute(
+                text(
+                    """
+                    select column_name, data_type
+                    from information_schema.columns
+                    where table_schema = 'public'
+                      and table_name = :table
+                      and column_name in :columns
+                    order by column_name
+                    """
+                ).bindparams(bindparam("columns", expanding=True)),
+                {"table": table, "columns": columns},
+            ).all()
+    finally:
+        engine.dispose()
+
+    found_columns = {row.column_name for row in rows}
+    return {
+        "status": "ok",
+        "mode": "verify_table_columns",
+        "table": table,
+        "columns": [
+            {"name": row.column_name, "type": row.data_type}
+            for row in rows
+        ],
+        "missing_columns": [
+            column_name for column_name in columns if column_name not in found_columns
+        ],
+    }
+
+
 def handler(event: Any, context: Any) -> dict[str, Any]:
     """Lambda entrypoint. Applies all pending migrations to the target DB."""
 
@@ -292,6 +345,29 @@ def handler(event: Any, context: Any) -> dict[str, Any]:
             logger.error("phase 3h object verification failed: %s", _redact(str(exc), database_url))
             raise MigrationRunnerError("Could not verify Phase 3h Aurora objects.") from exc
         logger.info("phase 3h object verification complete: %s", result)
+        return result
+
+    if isinstance(event, dict) and event.get("mode") == "verify_table_columns":
+        table = event.get("table")
+        columns = event.get("columns")
+        if (
+            not isinstance(table, str)
+            or not isinstance(columns, list)
+            or not columns
+            or any(not isinstance(column_name, str) for column_name in columns)
+        ):
+            return {
+                "status": "error",
+                "mode": "verify_table_columns",
+                "reason": "verify_table_columns requires string table and non-empty string columns fields",
+            }
+
+        try:
+            result = _verify_table_columns(database_url, table, tuple(columns))
+        except Exception as exc:  # noqa: BLE001
+            logger.error("table column verification failed: %s", _redact(str(exc), database_url))
+            raise MigrationRunnerError("Could not verify Aurora table columns.") from exc
+        logger.info("table column verification complete: %s", result)
         return result
 
     alembic_config = _build_alembic_config(database_url)
