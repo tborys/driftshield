@@ -257,6 +257,56 @@ def test_verify_table_columns_returns_expected_payload(monkeypatch, migration_ru
     }
 
 
+def test_verify_table_columns_supports_recurrence_observations(monkeypatch, migration_runner_module):
+    class FakeResult:
+        def all(self):
+            return [
+                SimpleNamespace(column_name="workflow_id", data_type="text"),
+                SimpleNamespace(column_name="signature_ids", data_type="ARRAY"),
+            ]
+
+    class FakeConnection:
+        def execute(self, statement, params):
+            assert "information_schema.columns" in str(statement)
+            assert params == {
+                "table": "recurrence_observations",
+                "columns": ("workflow_id", "signature_ids"),
+            }
+            return FakeResult()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class FakeEngine:
+        def connect(self):
+            return FakeConnection()
+
+        def dispose(self):
+            return None
+
+    monkeypatch.setattr(migration_runner_module, "create_engine", lambda *args, **kwargs: FakeEngine())
+
+    result = migration_runner_module._verify_table_columns(
+        "postgresql+psycopg2://runner:secret@db.example.internal:5432/driftshield",
+        "recurrence_observations",
+        ("workflow_id", "signature_ids"),
+    )
+
+    assert result == {
+        "status": "ok",
+        "mode": "verify_table_columns",
+        "table": "recurrence_observations",
+        "columns": [
+            {"name": "workflow_id", "type": "text"},
+            {"name": "signature_ids", "type": "ARRAY"},
+        ],
+        "missing_columns": [],
+    }
+
+
 def test_verify_table_columns_rejects_unsupported_table(migration_runner_module):
     result = migration_runner_module._verify_table_columns(
         "postgresql+psycopg2://runner:secret@db.example.internal:5432/driftshield",

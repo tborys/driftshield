@@ -203,3 +203,67 @@ def test_submission_worker_columns_revision_applies_and_rolls_back_cleanly() -> 
         }
         assert "attempt_count" not in columns_after_downgrade
         assert "claimed_by" not in columns_after_downgrade
+
+
+def test_recurrence_observation_columns_revision_applies_and_rolls_back_cleanly() -> None:
+    migration_path = (
+        Path(__file__).resolve().parents[2]
+        / "src/driftshield/db/migrations/versions/20260514_02_add_recurrence_observation_columns.py"
+    )
+    spec = spec_from_file_location("migration_20260514_02", migration_path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    engine = sa.create_engine("sqlite:///:memory:")
+    metadata = sa.MetaData()
+    sa.Table(
+        "submissions",
+        metadata,
+        sa.Column("id", sa.String(length=36), primary_key=True),
+    )
+    sa.Table(
+        "recurrence_observations",
+        metadata,
+        sa.Column("id", sa.String(length=36), primary_key=True),
+        sa.Column("submission_id", sa.String(length=36), nullable=False),
+        sa.Column("observation_key", sa.Text(), nullable=False),
+        sa.Column("recurrence_group_key", sa.Text(), nullable=True),
+        sa.Column("observed_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("observation_payload", sa.JSON(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+    )
+
+    expected_columns = {
+        "workflow_id",
+        "mechanism_id",
+        "trust_band",
+        "confidence_band",
+        "learning_weight",
+        "contributes_to_recurrence",
+        "supports_maturation",
+        "quarantine_reason_codes",
+        "signature_ids",
+    }
+
+    with engine.begin() as connection:
+        metadata.create_all(connection)
+
+        context = MigrationContext.configure(connection)
+        with Operations.context(context):
+            module.upgrade()
+
+        columns_after_upgrade = {
+            column["name"]: column for column in sa.inspect(connection).get_columns("recurrence_observations")
+        }
+        assert expected_columns <= set(columns_after_upgrade)
+
+        context = MigrationContext.configure(connection)
+        with Operations.context(context):
+            module.downgrade()
+
+        columns_after_downgrade = {
+            column["name"]: column for column in sa.inspect(connection).get_columns("recurrence_observations")
+        }
+        assert expected_columns.isdisjoint(columns_after_downgrade)
