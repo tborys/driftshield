@@ -1,6 +1,8 @@
+from datetime import UTC, datetime
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 from types import SimpleNamespace
+from uuid import UUID
 
 import pytest
 from sqlalchemy.engine import make_url
@@ -320,4 +322,111 @@ def test_verify_table_columns_handler_mode_bypasses_upgrade(monkeypatch, migrati
         "table": "submissions",
         "columns": [{"name": "attempt_count", "type": "integer"}],
         "missing_columns": ["claimed_by"],
+    }
+
+
+def test_verify_query_returns_expected_payload(monkeypatch, migration_runner_module):
+    class FakeResult:
+        def mappings(self):
+            return self
+
+        def all(self):
+            return [
+                {
+                    "id": UUID("11111111-1111-1111-1111-111111111111"),
+                    "submission_id": "sub_demo",
+                    "received_at": datetime(2026, 5, 14, 10, 0, tzinfo=UTC),
+                    "envelope": {"summary": "safe"},
+                }
+            ]
+
+    class FakeConnection:
+        def execute(self, statement, params):
+            assert "select * from submissions where submission_id = 'sub_demo' limit :limit" in str(statement)
+            assert params == {"limit": 5}
+            return FakeResult()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class FakeEngine:
+        def connect(self):
+            return FakeConnection()
+
+        def dispose(self):
+            return None
+
+    monkeypatch.setattr(migration_runner_module, "create_engine", lambda *args, **kwargs: FakeEngine())
+
+    result = migration_runner_module._verify_query(
+        "postgresql+psycopg2://runner:secret@db.example.internal:5432/driftshield",
+        "submissions",
+        "submission_id = 'sub_demo'",
+        5,
+    )
+
+    assert result == {
+        "status": "ok",
+        "mode": "verify_query",
+        "table": "submissions",
+        "rows": [
+            {
+                "id": "11111111-1111-1111-1111-111111111111",
+                "submission_id": "sub_demo",
+                "received_at": "2026-05-14T10:00:00+00:00",
+                "envelope": {"summary": "safe"},
+            }
+        ],
+        "count": 1,
+    }
+
+
+def test_verify_query_rejects_unsupported_table(migration_runner_module):
+    result = migration_runner_module._verify_query(
+        "postgresql+psycopg2://runner:secret@db.example.internal:5432/driftshield",
+        "bogus_table",
+        "1 = 1",
+        1,
+    )
+
+    assert result == {
+        "status": "error",
+        "mode": "verify_query",
+        "reason": "unsupported table for query verification: bogus_table",
+        "table": "bogus_table",
+    }
+
+
+def test_verify_query_rejects_non_select_fragments(migration_runner_module):
+    result = migration_runner_module._verify_query(
+        "postgresql+psycopg2://runner:secret@db.example.internal:5432/driftshield",
+        "submissions",
+        "1 = 1; delete from submissions",
+        1,
+    )
+
+    assert result == {
+        "status": "error",
+        "mode": "verify_query",
+        "reason": "verify_query accepts read-only SELECT filters only",
+        "table": "submissions",
+    }
+
+
+def test_verify_query_handler_rejects_missing_fields(monkeypatch, migration_runner_module):
+    monkeypatch.setattr(
+        migration_runner_module,
+        "_resolve_database_url",
+        lambda: "postgresql+psycopg2://runner:secret@db.example.internal:5432/driftshield",
+    )
+
+    result = migration_runner_module.handler({"mode": "verify_query", "table": "submissions"}, None)
+
+    assert result == {
+        "status": "error",
+        "mode": "verify_query",
+        "reason": "verify_query requires string table, string where, and integer limit fields",
     }

@@ -23,9 +23,12 @@ from __future__ import annotations
 import json
 import logging
 import os
+from datetime import date, datetime, time
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
+from uuid import UUID
 
 from alembic import command
 from alembic.config import Config
@@ -65,6 +68,24 @@ VERIFY_ROW_EXISTS_ALLOWED_TABLES = (
 VERIFY_TABLE_COLUMNS_ALLOWED_TABLES = (
     "submissions",
 )
+VERIFY_QUERY_ALLOWED_TABLES = (
+    "signature_matches",
+    "trust_evaluations",
+    "recurrence_observations",
+    "submissions",
+)
+VERIFY_QUERY_FORBIDDEN_TOKENS = (
+    "insert",
+    "update",
+    "delete",
+    "alter",
+    "drop",
+    "truncate",
+    "create",
+    "grant",
+    "revoke",
+)
+VERIFY_QUERY_MAX_LIMIT = 50
 
 
 class MigrationRunnerError(RuntimeError):
@@ -309,6 +330,82 @@ def _verify_table_columns(
     }
 
 
+def _verify_query(database_url: str, table: str, where: str, limit: int) -> dict[str, Any]:
+    if table not in VERIFY_QUERY_ALLOWED_TABLES:
+        return {
+            "status": "error",
+            "mode": "verify_query",
+            "reason": f"unsupported table for query verification: {table}",
+            "table": table,
+        }
+
+    if limit < 1 or limit > VERIFY_QUERY_MAX_LIMIT:
+        return {
+            "status": "error",
+            "mode": "verify_query",
+            "reason": f"verify_query limit must be between 1 and {VERIFY_QUERY_MAX_LIMIT}",
+            "table": table,
+            "limit": limit,
+        }
+
+    if not where.strip():
+        return {
+            "status": "error",
+            "mode": "verify_query",
+            "reason": "verify_query requires a non-empty where clause",
+            "table": table,
+        }
+
+    lowered_where = where.casefold()
+    if any(token in lowered_where for token in VERIFY_QUERY_FORBIDDEN_TOKENS) or ";" in where:
+        return {
+            "status": "error",
+            "mode": "verify_query",
+            "reason": "verify_query accepts read-only SELECT filters only",
+            "table": table,
+        }
+
+    sql = f"select * from {table} where {where} limit :limit"
+    if not sql.lstrip().casefold().startswith("select "):
+        return {
+            "status": "error",
+            "mode": "verify_query",
+            "reason": "verify_query accepts read-only SELECT filters only",
+            "table": table,
+        }
+
+    engine = create_engine(database_url, poolclass=None)
+    try:
+        with engine.connect() as connection:
+            rows = connection.execute(
+                text(sql).bindparams(bindparam("limit")),
+                {"limit": limit},
+            ).mappings().all()
+    finally:
+        engine.dispose()
+
+    serialised_rows = [_json_safe(dict(row)) for row in rows]
+    return {
+        "status": "ok",
+        "mode": "verify_query",
+        "table": table,
+        "rows": serialised_rows,
+        "count": len(serialised_rows),
+    }
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, (datetime, date, time)):
+        return value.isoformat()
+    if isinstance(value, (UUID, Decimal)):
+        return str(value)
+    return value
+
+
 def handler(event: Any, context: Any) -> dict[str, Any]:
     """Lambda entrypoint. Applies all pending migrations to the target DB."""
 
@@ -368,6 +465,25 @@ def handler(event: Any, context: Any) -> dict[str, Any]:
             logger.error("table column verification failed: %s", _redact(str(exc), database_url))
             raise MigrationRunnerError("Could not verify Aurora table columns.") from exc
         logger.info("table column verification complete: %s", result)
+        return result
+
+    if isinstance(event, dict) and event.get("mode") == "verify_query":
+        table = event.get("table")
+        where = event.get("where")
+        limit = event.get("limit")
+        if not isinstance(table, str) or not isinstance(where, str) or not isinstance(limit, int):
+            return {
+                "status": "error",
+                "mode": "verify_query",
+                "reason": "verify_query requires string table, string where, and integer limit fields",
+            }
+
+        try:
+            result = _verify_query(database_url, table, where, limit)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("query verification failed: %s", _redact(str(exc), database_url))
+            raise MigrationRunnerError("Could not verify Aurora query output.") from exc
+        logger.info("query verification complete: %s", result)
         return result
 
     alembic_config = _build_alembic_config(database_url)
