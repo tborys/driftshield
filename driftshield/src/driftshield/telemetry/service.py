@@ -21,6 +21,8 @@ class TelemetryConfig:
     registered_at: str | None = None
     last_heartbeat_at: str | None = None
     event_stream_path: str | None = None
+    remote_intake_url: str | None = None
+    remote_api_key: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,6 +53,8 @@ class TelemetryService:
             last_heartbeat_at=_optional_string(data.get("last_heartbeat_at")),
             event_stream_path=_optional_string(data.get("event_stream_path"))
             or str(self._default_stream_path),
+            remote_intake_url=_optional_string(data.get("remote_intake_url")),
+            remote_api_key=_optional_string(data.get("remote_api_key")),
         )
 
     def enable(self) -> TelemetryConfig:
@@ -88,6 +92,30 @@ class TelemetryService:
     def disable(self) -> TelemetryConfig:
         config = self.load_config()
         config.enabled = False
+        if not config.event_stream_path:
+            config.event_stream_path = str(self._default_stream_path)
+        self._save_config(config)
+        return config
+
+    def remote_enable(self, *, intake_url: str, api_key: str) -> TelemetryConfig:
+        intake_url_clean = intake_url.strip()
+        api_key_clean = api_key.strip()
+        if not intake_url_clean:
+            raise ValueError("intake_url must not be empty")
+        if not api_key_clean:
+            raise ValueError("api_key must not be empty")
+        config = self.load_config()
+        config.remote_intake_url = intake_url_clean
+        config.remote_api_key = api_key_clean
+        if not config.event_stream_path:
+            config.event_stream_path = str(self._default_stream_path)
+        self._save_config(config)
+        return config
+
+    def remote_disable(self) -> TelemetryConfig:
+        config = self.load_config()
+        config.remote_intake_url = None
+        config.remote_api_key = None
         if not config.event_stream_path:
             config.event_stream_path = str(self._default_stream_path)
         self._save_config(config)
