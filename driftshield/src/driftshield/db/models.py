@@ -2,8 +2,16 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+
+# Use Postgres JSONB on Postgres (supports DISTINCT, equality, GIN indexing)
+# and fall back to generic JSON elsewhere (SQLite for tests, future SQLite
+# fallback for first-run UX). Bare JSON on Postgres rejects equality
+# comparisons and breaks SELECT DISTINCT, which crashed live ingest on
+# behaviour_event_subjects (see driftshield#103-adjacent bug).
+JSON_FIELD = JSON().with_variant(JSONB(), "postgresql")
 
 
 class Base(DeclarativeBase):
@@ -29,7 +37,7 @@ class SessionModel(Base):
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str] = mapped_column(String, nullable=False)
-    metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    metadata_json: Mapped[dict | None] = mapped_column(JSON_FIELD, nullable=True)
     transcript_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     source_session_id: Mapped[str | None] = mapped_column(String, nullable=True)
     source_path: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -55,7 +63,7 @@ class ConnectorModel(Base):
     consent_state: Mapped[str] = mapped_column(String, nullable=False, default="pending")
     status: Mapped[str] = mapped_column(String, nullable=False, default="proposed")
     watchable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
-    metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    metadata_json: Mapped[dict | None] = mapped_column(JSON_FIELD, nullable=True)
     last_scanned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_seen_activity_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -136,19 +144,19 @@ class DecisionNodeModel(Base):
     timestamp: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     event_type: Mapped[str] = mapped_column(String, nullable=False)
     action: Mapped[str | None] = mapped_column(String, nullable=True)
-    inputs: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    outputs: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    inputs: Mapped[dict | None] = mapped_column(JSON_FIELD, nullable=True)
+    outputs: Mapped[dict | None] = mapped_column(JSON_FIELD, nullable=True)
+    metadata_json: Mapped[dict | None] = mapped_column(JSON_FIELD, nullable=True)
 
     assumption_mutation: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     policy_divergence: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     constraint_violation: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     context_contamination: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     coverage_gap: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
-    risk_explanations: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    risk_explanations: Mapped[dict | None] = mapped_column(JSON_FIELD, nullable=True)
 
     is_inflection_node: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
-    inflection_explanation: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    inflection_explanation: Mapped[dict | None] = mapped_column(JSON_FIELD, nullable=True)
 
 
 class ReportModel(Base):
@@ -163,7 +171,7 @@ class ReportModel(Base):
     generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     report_type: Mapped[str] = mapped_column(String, nullable=False)
     content_markdown: Mapped[str | None] = mapped_column(Text, nullable=True)
-    content_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    content_json: Mapped[dict | None] = mapped_column(JSON_FIELD, nullable=True)
     generated_by: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
@@ -184,9 +192,9 @@ class ForensicCaseModel(Base):
         PG_UUID(as_uuid=True), ForeignKey("reports.id"), nullable=True, index=True
     )
     state: Mapped[str] = mapped_column(String, nullable=False)
-    artifact_refs: Mapped[list[dict]] = mapped_column(JSON, nullable=False, default=list)
-    review_refs: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
-    audit_refs: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    artifact_refs: Mapped[list[dict]] = mapped_column(JSON_FIELD, nullable=False, default=list)
+    review_refs: Mapped[list[str]] = mapped_column(JSON_FIELD, nullable=False, default=list)
+    audit_refs: Mapped[list[str]] = mapped_column(JSON_FIELD, nullable=False, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
@@ -206,7 +214,7 @@ class AnalystValidationModel(Base):
     confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     reviewer: Mapped[str] = mapped_column(String, nullable=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
-    metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    metadata_json: Mapped[dict | None] = mapped_column(JSON_FIELD, nullable=True)
     shareable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
@@ -229,7 +237,7 @@ class BehaviourEventSubjectModel(Base):
     trust_band: Mapped[str] = mapped_column(String, nullable=False)
     surface: Mapped[str] = mapped_column(String, nullable=False)
     first_exposed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    metadata_json: Mapped[dict | None] = mapped_column(JSON_FIELD, nullable=True)
 
 
 class BehaviourEventModel(Base):
@@ -256,4 +264,4 @@ class BehaviourEventModel(Base):
     linked_session_id: Mapped[uuid.UUID | None] = mapped_column(
         PG_UUID(as_uuid=True), ForeignKey("sessions.id"), nullable=True
     )
-    metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    metadata_json: Mapped[dict | None] = mapped_column(JSON_FIELD, nullable=True)
