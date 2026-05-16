@@ -23,6 +23,7 @@ class TelemetryConfig:
     event_stream_path: str | None = None
     remote_intake_url: str | None = None
     remote_api_key: str | None = None
+    remote_installation_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,6 +56,7 @@ class TelemetryService:
             or str(self._default_stream_path),
             remote_intake_url=_optional_string(data.get("remote_intake_url")),
             remote_api_key=_optional_string(data.get("remote_api_key")),
+            remote_installation_id=_optional_string(data.get("remote_installation_id")),
         )
 
     def enable(self) -> TelemetryConfig:
@@ -97,16 +99,26 @@ class TelemetryService:
         self._save_config(config)
         return config
 
-    def remote_enable(self, *, intake_url: str, api_key: str) -> TelemetryConfig:
+    def remote_enable(
+        self,
+        *,
+        intake_url: str,
+        api_key: str,
+        installation_id: str,
+    ) -> TelemetryConfig:
         intake_url_clean = intake_url.strip()
         api_key_clean = api_key.strip()
+        installation_id_clean = installation_id.strip()
         if not intake_url_clean:
             raise ValueError("intake_url must not be empty")
         if not api_key_clean:
             raise ValueError("api_key must not be empty")
+        if not installation_id_clean:
+            raise ValueError("installation_id must not be empty")
         config = self.load_config()
         config.remote_intake_url = intake_url_clean
         config.remote_api_key = api_key_clean
+        config.remote_installation_id = installation_id_clean
         if not config.event_stream_path:
             config.event_stream_path = str(self._default_stream_path)
         self._save_config(config)
@@ -116,6 +128,7 @@ class TelemetryService:
         config = self.load_config()
         config.remote_intake_url = None
         config.remote_api_key = None
+        config.remote_installation_id = None
         if not config.event_stream_path:
             config.event_stream_path = str(self._default_stream_path)
         self._save_config(config)
