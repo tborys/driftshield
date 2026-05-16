@@ -25,6 +25,9 @@ def telemetry_status(
         "registered_at": config.registered_at,
         "last_heartbeat_at": config.last_heartbeat_at,
         "event_stream_path": config.event_stream_path,
+        "remote_enabled": config.remote_intake_url is not None and config.remote_api_key is not None,
+        "remote_intake_url": config.remote_intake_url,
+        "remote_api_key_configured": config.remote_api_key is not None,
     }
     if json_output:
         typer.echo(json.dumps(payload))
@@ -49,6 +52,30 @@ def telemetry_disable() -> None:
     console.print(
         f"Telemetry disabled. Existing install id remains {config.install_id or 'unset'}."
     )
+
+
+@app.command("remote-enable")
+def telemetry_remote_enable(
+    intake_url: str = typer.Option(..., "--intake-url", help="Intake API URL the OSS submission envelope will POST to."),
+    api_key: str = typer.Option(..., "--api-key", help="API key for the configured intake URL."),
+) -> None:
+    """Persist remote intake configuration for OSS submission. Does not send anything."""
+    try:
+        config = TelemetryService().remote_enable(intake_url=intake_url, api_key=api_key)
+    except ValueError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1) from exc
+    console.print(
+        f"Remote submission configured. Intake URL: {config.remote_intake_url}. "
+        "API key stored locally; not displayed."
+    )
+
+
+@app.command("remote-disable")
+def telemetry_remote_disable() -> None:
+    """Clear remote intake configuration. Local telemetry capture is unaffected."""
+    TelemetryService().remote_disable()
+    console.print("Remote submission configuration cleared.")
 
 
 @app.command("heartbeat")
