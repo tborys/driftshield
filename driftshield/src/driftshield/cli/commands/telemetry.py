@@ -3,10 +3,17 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import typer
 from rich.console import Console
 
+from driftshield.remote_submission import (
+    RemoteSubmissionConfig,
+    RemoteSubmissionError,
+    build_intake_request,
+    post_submission,
+)
 from driftshield.telemetry import TelemetryService, validate_outcome_status
 
 console = Console(force_terminal=True)
@@ -25,8 +32,13 @@ def telemetry_status(
         "registered_at": config.registered_at,
         "last_heartbeat_at": config.last_heartbeat_at,
         "event_stream_path": config.event_stream_path,
-        "remote_enabled": config.remote_intake_url is not None and config.remote_api_key is not None,
+        "remote_enabled": (
+            config.remote_intake_url is not None
+            and config.remote_api_key is not None
+            and config.remote_installation_id is not None
+        ),
         "remote_intake_url": config.remote_intake_url,
+        "remote_installation_id": config.remote_installation_id,
         "remote_api_key_configured": config.remote_api_key is not None,
     }
     if json_output:
@@ -58,15 +70,21 @@ def telemetry_disable() -> None:
 def telemetry_remote_enable(
     intake_url: str = typer.Option(..., "--intake-url", help="Intake API URL the OSS submission envelope will POST to."),
     api_key: str = typer.Option(..., "--api-key", help="API key for the configured intake URL."),
+    installation_id: str = typer.Option(..., "--installation-id", help="Installation identifier registered with the intake server."),
 ) -> None:
     """Persist remote intake configuration for OSS submission. Does not send anything."""
     try:
-        config = TelemetryService().remote_enable(intake_url=intake_url, api_key=api_key)
+        config = TelemetryService().remote_enable(
+            intake_url=intake_url,
+            api_key=api_key,
+            installation_id=installation_id,
+        )
     except ValueError as exc:
         console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1) from exc
     console.print(
         f"Remote submission configured. Intake URL: {config.remote_intake_url}. "
+        f"Installation: {config.remote_installation_id}. "
         "API key stored locally; not displayed."
     )
 
@@ -76,6 +94,72 @@ def telemetry_remote_disable() -> None:
     """Clear remote intake configuration. Local telemetry capture is unaffected."""
     TelemetryService().remote_disable()
     console.print("Remote submission configuration cleared.")
+
+
+@app.command("submit-session")
+def telemetry_submit_session(
+    path: Path = typer.Option(..., "--path", help="JSON file with the finished session payload."),
+    source_session_id: str | None = typer.Option(
+        None,
+        "--source-session-id",
+        help="Override the source_session_id field. Defaults to the JSON file stem.",
+    ),
+    workflow_reference: str | None = typer.Option(
+        None, "--workflow-reference", help="Optional workflow identifier."
+    ),
+    project_reference: str | None = typer.Option(
+        None, "--project-reference", help="Optional project identifier."
+    ),
+    source_report_id: str | None = typer.Option(
+        None, "--source-report-id", help="Optional source report identifier."
+    ),
+) -> None:
+    """Build a phase3f.v1 envelope from a finished session JSON and POST once to the configured intake URL."""
+    config = TelemetryService().load_config()
+    if not config.remote_intake_url or not config.remote_api_key or not config.remote_installation_id:
+        console.print(
+            "[red]Error:[/red] Remote submission is not configured. "
+            "Run `driftshield telemetry remote-enable` first."
+        )
+        raise typer.Exit(1)
+
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        console.print(f"[red]Error:[/red] Could not read session file: {exc}")
+        raise typer.Exit(1) from exc
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        console.print(f"[red]Error:[/red] Session file is not valid JSON: {exc}")
+        raise typer.Exit(1) from exc
+    if not isinstance(payload, dict):
+        console.print("[red]Error:[/red] Session file must contain a JSON object at top level.")
+        raise typer.Exit(1)
+
+    submission = build_intake_request(
+        installation_id=config.remote_installation_id,
+        source_session_id=source_session_id or path.stem,
+        payload=payload,
+        workflow_reference=workflow_reference,
+        project_reference=project_reference,
+        source_report_id=source_report_id,
+    )
+
+    submission_config = RemoteSubmissionConfig(
+        intake_url=config.remote_intake_url,
+        api_key=config.remote_api_key,
+        installation_id=config.remote_installation_id,
+    )
+    try:
+        response = post_submission(config=submission_config, submission=submission)
+    except RemoteSubmissionError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1) from exc
+
+    console.print(
+        f"Submitted. submission_id={response.submission_id} status={response.processing_status}"
+    )
 
 
 @app.command("heartbeat")
