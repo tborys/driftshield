@@ -1,9 +1,14 @@
-"""OSS-side submission envelope builder, redaction, and intake POST."""
+"""OSS-side submission envelope builder, redaction, and unauthenticated POST.
+
+Per Phase 3h D19 (operator decision 2026-05-16): OSS submissions go on a
+dedicated unauthenticated lane. No installation_id, no api_key header, no
+consent_state echo. The server binds the persisted row to the in-stack OSS
+fallback installation + consent.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
 import json
 from typing import Any
 from urllib import error, request
@@ -12,9 +17,8 @@ from driftshield.intake_contract import (
     REDACTION_MANIFEST_VERSION,
     REQUIRED_REDACTION_FIELDS,
     SUPPORTED_CONTRACT_VERSION,
-    ConsentState,
-    IntakeSubmissionRequest,
     IntakeSubmissionResponse,
+    OssSubmissionRequest,
     RedactionManifest,
     SubmissionEnvelope,
 )
@@ -24,10 +28,10 @@ _DEFAULT_SOURCE_SYSTEM = "driftshield-oss"
 
 
 @dataclass(frozen=True, slots=True)
-class RemoteSubmissionConfig:
+class OssRemoteSubmissionConfig:
+    """Minimal config for the unauthenticated OSS submission lane."""
+
     intake_url: str
-    api_key: str
-    installation_id: str
 
 
 class RemoteSubmissionError(RuntimeError):
@@ -56,18 +60,21 @@ def _encode_payload(payload: dict[str, Any]) -> tuple[bytes, int]:
     return encoded, len(encoded)
 
 
-def build_intake_request(
+def build_oss_submission_request(
     *,
-    installation_id: str,
     source_session_id: str,
     payload: dict[str, Any],
-    consent_version: str = SUPPORTED_CONTRACT_VERSION,
     source_system: str = _DEFAULT_SOURCE_SYSTEM,
     workflow_reference: str | None = None,
     project_reference: str | None = None,
     source_report_id: str | None = None,
-    captured_at: datetime | None = None,
-) -> IntakeSubmissionRequest:
+) -> OssSubmissionRequest:
+    """Build an unauthenticated OSS submission request.
+
+    No installation_id, no consent_state. The envelope still carries
+    redaction_manifest + payload_size_bytes + schema_version, all enforced
+    server-side by OssSubmissionService.
+    """
     redacted_payload, redacted_fields = redact_payload(payload)
     _, payload_size = _encode_payload(redacted_payload)
 
@@ -86,34 +93,29 @@ def build_intake_request(
             redacted_fields=redacted_fields,
         ),
     )
-    consent = ConsentState(
-        consent_version=consent_version,
-        consent_granted=True,
-        captured_at=captured_at or datetime.now(UTC),
-        revoked_at=None,
-    )
-    return IntakeSubmissionRequest(
-        installation_id=installation_id,
+    return OssSubmissionRequest(
         envelope_contract_version=SUPPORTED_CONTRACT_VERSION,
-        consent_state=consent,
         envelope=envelope,
     )
 
 
-def post_submission(
+def post_oss_submission(
     *,
-    config: RemoteSubmissionConfig,
-    submission: IntakeSubmissionRequest,
+    config: OssRemoteSubmissionConfig,
+    submission: OssSubmissionRequest,
     opener: Any = None,
 ) -> IntakeSubmissionResponse:
-    """Single POST to the configured intake URL. No retry on failure."""
+    """Single unauthenticated POST to /v1/oss/submissions. No retry on failure.
+
+    No X-API-Key header. No Authorization header. The intake URL is taken
+    verbatim from TelemetryConfig.remote_intake_url.
+    """
     body = submission.model_dump_json().encode("utf-8")
     req = request.Request(
         config.intake_url,
         data=body,
         method="POST",
         headers={
-            "X-API-Key": config.api_key,
             "Content-Type": "application/json",
             "Accept": "application/json",
         },

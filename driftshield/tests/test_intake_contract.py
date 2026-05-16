@@ -24,6 +24,7 @@ from driftshield.intake_contract import (
     SUPPORTED_CONTRACT_VERSION,
     ConsentState,
     IntakeSubmissionRequest,
+    OssSubmissionRequest,
     RedactionManifest,
     SubmissionEnvelope,
 )
@@ -66,6 +67,11 @@ _REFERENCE_FIELDS = {
         "consent_state",
         "envelope",
     },
+    # D19: OSS unauthenticated submission request. No installation_id, no consent_state.
+    "OssSubmissionRequest": {
+        "envelope_contract_version",
+        "envelope",
+    },
 }
 
 
@@ -83,10 +89,44 @@ def test_contract_constants_match_canonical_snapshot():
         (ConsentState, _REFERENCE_FIELDS["ConsentState"]),
         (SubmissionEnvelope, _REFERENCE_FIELDS["SubmissionEnvelope"]),
         (IntakeSubmissionRequest, _REFERENCE_FIELDS["IntakeSubmissionRequest"]),
+        (OssSubmissionRequest, _REFERENCE_FIELDS["OssSubmissionRequest"]),
     ],
 )
 def test_contract_field_set_matches_canonical_snapshot(model, expected_fields):
     assert set(model.model_fields.keys()) == expected_fields
+
+
+def test_oss_submission_request_rejects_legacy_authenticated_fields():
+    """D19 contract: OssSubmissionRequest must reject installation_id and consent_state."""
+    base = {
+        "envelope_contract_version": SUPPORTED_CONTRACT_VERSION,
+        "envelope": {
+            "source_system": "oss",
+            "source_session_id": "sess-1",
+            "schema_version": SUPPORTED_CONTRACT_VERSION,
+            "payload": {"foo": "bar"},
+            "payload_size_bytes": 13,
+            "redaction_manifest": {
+                "manifest_version": REDACTION_MANIFEST_VERSION,
+                "redaction_applied": True,
+                "redacted_fields": ["prompts", "responses", "user_identifiers"],
+            },
+        },
+    }
+    OssSubmissionRequest.model_validate(base)  # baseline must accept
+
+    with pytest.raises(ValidationError):
+        OssSubmissionRequest.model_validate({**base, "installation_id": "should-not-be-here"})
+
+    with pytest.raises(ValidationError):
+        OssSubmissionRequest.model_validate({
+            **base,
+            "consent_state": {
+                "consent_version": SUPPORTED_CONTRACT_VERSION,
+                "consent_granted": True,
+                "captured_at": "2026-05-16T00:00:00+00:00",
+            },
+        })
 
 
 def test_contract_rejects_extra_fields():

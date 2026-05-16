@@ -99,26 +99,22 @@ class TelemetryService:
         self._save_config(config)
         return config
 
-    def remote_enable(
-        self,
-        *,
-        intake_url: str,
-        api_key: str,
-        installation_id: str,
-    ) -> TelemetryConfig:
+    def remote_enable(self, *, intake_url: str) -> TelemetryConfig:
+        """Persist the OSS intake URL.
+
+        Per Phase 3h D19 (2026-05-16): the OSS lane is unauthenticated.
+        No api_key, no installation_id. If a config file from a previous D7/D8
+        install still carries those legacy fields, they are cleared here so
+        the on-disk state stays consistent with the live contract.
+        """
         intake_url_clean = intake_url.strip()
-        api_key_clean = api_key.strip()
-        installation_id_clean = installation_id.strip()
         if not intake_url_clean:
             raise ValueError("intake_url must not be empty")
-        if not api_key_clean:
-            raise ValueError("api_key must not be empty")
-        if not installation_id_clean:
-            raise ValueError("installation_id must not be empty")
         config = self.load_config()
         config.remote_intake_url = intake_url_clean
-        config.remote_api_key = api_key_clean
-        config.remote_installation_id = installation_id_clean
+        # Migrate D7/D8 legacy fields out of the on-disk config on first use.
+        config.remote_api_key = None
+        config.remote_installation_id = None
         if not config.event_stream_path:
             config.event_stream_path = str(self._default_stream_path)
         self._save_config(config)
