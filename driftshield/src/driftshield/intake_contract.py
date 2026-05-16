@@ -55,11 +55,31 @@ class SubmissionEnvelope(BaseModel):
 
 
 class IntakeSubmissionRequest(BaseModel):
+    """Authenticated POST /v1/intake request body.
+
+    Kept here for contract-pin reasons (mirrors intel-side authenticated path).
+    The OSS CLI does NOT use this shape; OSS uses OssSubmissionRequest.
+    """
+
     model_config = ConfigDict(extra="forbid")
 
     installation_id: str = Field(min_length=1)
     envelope_contract_version: str = Field(min_length=1)
     consent_state: ConsentState
+    envelope: SubmissionEnvelope
+
+
+class OssSubmissionRequest(BaseModel):
+    """Unauthenticated POST /v1/oss/submissions request body (D19).
+
+    No installation_id, no consent_state. The server binds the persisted row
+    to the in-stack OSS fallback installation + consent. The client never
+    sees these identifiers.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    envelope_contract_version: str = Field(min_length=1)
     envelope: SubmissionEnvelope
 
 

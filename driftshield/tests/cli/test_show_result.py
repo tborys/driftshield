@@ -16,9 +16,7 @@ from driftshield.cli.main import app
 runner = CliRunner()
 
 
-_OSS_TEST_INTAKE_URL = "https://example.test/v1/intake"
-_OSS_TEST_API_KEY = "test-d9-not-real"
-_OSS_TEST_INSTALLATION_ID = "oss-fallback-installation"
+_OSS_TEST_INTAKE_URL = "https://example.test/v1/oss/submissions"
 
 
 class _FakeHttpResponse:
@@ -39,16 +37,7 @@ def _seed_remote_config(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
     runner.invoke(
         app,
-        [
-            "telemetry",
-            "remote-enable",
-            "--intake-url",
-            _OSS_TEST_INTAKE_URL,
-            "--api-key",
-            _OSS_TEST_API_KEY,
-            "--installation-id",
-            _OSS_TEST_INSTALLATION_ID,
-        ],
+        ["telemetry", "remote-enable", "--intake-url", _OSS_TEST_INTAKE_URL],
     )
 
 

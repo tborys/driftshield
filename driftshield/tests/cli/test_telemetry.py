@@ -136,27 +136,11 @@ def test_emit_analysis_normalizes_outcome_status_before_classifiable_check(tmp_p
     assert analysis_event["payload"]["classifiable"] is True
 
 
-_OSS_TEST_INTAKE_URL = "https://snidz3uiv5.execute-api.eu-west-2.amazonaws.com/v1/intake"
-_OSS_TEST_API_KEY = "test-d7-api-key-not-real"
-_OSS_TEST_INSTALLATION_ID = "oss-fallback-installation"
+_OSS_TEST_INTAKE_URL = "https://snidz3uiv5.execute-api.eu-west-2.amazonaws.com/v1/oss/submissions"
 
 
-def _remote_enable_argv(
-    *,
-    intake_url: str = _OSS_TEST_INTAKE_URL,
-    api_key: str = _OSS_TEST_API_KEY,
-    installation_id: str = _OSS_TEST_INSTALLATION_ID,
-) -> list[str]:
-    return [
-        "telemetry",
-        "remote-enable",
-        "--intake-url",
-        intake_url,
-        "--api-key",
-        api_key,
-        "--installation-id",
-        installation_id,
-    ]
+def _remote_enable_argv(*, intake_url: str = _OSS_TEST_INTAKE_URL) -> list[str]:
+    return ["telemetry", "remote-enable", "--intake-url", intake_url]
 
 
 def test_status_default_shows_remote_disabled(tmp_path, monkeypatch):
@@ -168,35 +152,83 @@ def test_status_default_shows_remote_disabled(tmp_path, monkeypatch):
     payload = json.loads(status.stdout)
     assert payload["remote_enabled"] is False
     assert payload["remote_intake_url"] is None
-    assert payload["remote_installation_id"] is None
-    assert payload["remote_api_key_configured"] is False
 
 
-def test_remote_enable_persists_config_and_redacts_key_in_status(tmp_path, monkeypatch):
+def test_remote_enable_persists_intake_url_only(tmp_path, monkeypatch):
     monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
 
     enabled = runner.invoke(app, _remote_enable_argv())
     assert enabled.exit_code == 0
-    assert _OSS_TEST_API_KEY not in enabled.stdout
-    assert _OSS_TEST_INSTALLATION_ID in enabled.stdout
+    assert _OSS_TEST_INTAKE_URL in enabled.stdout
 
     config = TelemetryService().load_config()
     assert config.remote_intake_url == _OSS_TEST_INTAKE_URL
-    assert config.remote_api_key == _OSS_TEST_API_KEY
-    assert config.remote_installation_id == _OSS_TEST_INSTALLATION_ID
+    # D19 contract: no legacy auth fields persisted.
+    assert config.remote_api_key is None
+    assert config.remote_installation_id is None
 
     status = runner.invoke(app, ["telemetry", "status", "--json"])
     assert status.exit_code == 0
     payload = json.loads(status.stdout)
     assert payload["remote_enabled"] is True
     assert payload["remote_intake_url"] == _OSS_TEST_INTAKE_URL
-    assert payload["remote_installation_id"] == _OSS_TEST_INSTALLATION_ID
-    assert payload["remote_api_key_configured"] is True
+    # D19 status surface dropped the legacy fields.
+    assert "remote_installation_id" not in payload
+    assert "remote_api_key_configured" not in payload
     assert "remote_api_key" not in payload
-    assert _OSS_TEST_API_KEY not in status.stdout
 
 
-def test_remote_disable_clears_config(tmp_path, monkeypatch):
+def test_remote_enable_rejects_only_unknown_flags(tmp_path, monkeypatch):
+    """D19 contract: --api-key and --installation-id are no longer accepted as flags."""
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+
+    result = runner.invoke(
+        app,
+        [
+            "telemetry",
+            "remote-enable",
+            "--intake-url",
+            _OSS_TEST_INTAKE_URL,
+            "--api-key",
+            "should-be-rejected",
+        ],
+    )
+    assert result.exit_code != 0
+
+
+def test_remote_enable_migrates_away_from_d7_d8_legacy_fields(tmp_path, monkeypatch):
+    """A config file from a prior D7/D8 install has remote_api_key + remote_installation_id.
+    First D19 remote-enable run must clear them.
+    """
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    home = tmp_path / "telemetry"
+    home.mkdir(parents=True)
+    (home / "config.json").write_text(
+        json.dumps(
+            {
+                "enabled": True,
+                "install_id": "uuid-old",
+                "remote_intake_url": "https://example.test/v1/intake",
+                "remote_api_key": "legacy-key",
+                "remote_installation_id": "oss-fallback-installation",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, _remote_enable_argv())
+    assert result.exit_code == 0
+
+    config = TelemetryService().load_config()
+    assert config.remote_intake_url == _OSS_TEST_INTAKE_URL
+    assert config.remote_api_key is None
+    assert config.remote_installation_id is None
+    # Local state preserved.
+    assert config.enabled is True
+    assert config.install_id == "uuid-old"
+
+
+def test_remote_disable_clears_remote_state(tmp_path, monkeypatch):
     monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
     runner.invoke(app, _remote_enable_argv())
 
@@ -209,25 +241,15 @@ def test_remote_disable_clears_config(tmp_path, monkeypatch):
     assert config.remote_installation_id is None
 
 
-def test_remote_enable_rejects_empty_inputs(tmp_path, monkeypatch):
+def test_remote_enable_rejects_empty_intake_url(tmp_path, monkeypatch):
     monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
 
     blank_url = runner.invoke(app, _remote_enable_argv(intake_url="   "))
     assert blank_url.exit_code == 1
     assert "intake_url" in blank_url.stdout
 
-    blank_key = runner.invoke(app, _remote_enable_argv(api_key="   "))
-    assert blank_key.exit_code == 1
-    assert "api_key" in blank_key.stdout
-
-    blank_install = runner.invoke(app, _remote_enable_argv(installation_id="   "))
-    assert blank_install.exit_code == 1
-    assert "installation_id" in blank_install.stdout
-
     config = TelemetryService().load_config()
     assert config.remote_intake_url is None
-    assert config.remote_api_key is None
-    assert config.remote_installation_id is None
 
 
 def test_local_capture_unchanged_when_remote_enabled(tmp_path, monkeypatch):
@@ -269,7 +291,6 @@ def test_remote_disable_does_not_clear_local_state(tmp_path, monkeypatch):
     assert config.enabled is True
     assert config.install_id == install_id_before
     assert config.remote_intake_url is None
-    assert config.remote_installation_id is None
 
 
 def _write_session(tmp_path, contents):
@@ -295,15 +316,15 @@ def test_submit_session_happy_path(tmp_path, monkeypatch):
     captured = {}
 
     def fake_post(*, config, submission, opener=None):  # noqa: ARG001
-        captured["installation_id"] = submission.installation_id
-        captured["payload_keys"] = sorted(submission.envelope.payload.keys())
         captured["intake_url"] = config.intake_url
+        captured["payload_keys"] = sorted(submission.envelope.payload.keys())
+        captured["request_keys"] = set(json.loads(submission.model_dump_json()).keys())
         from driftshield.intake_contract import IntakeSubmissionResponse
 
         return IntakeSubmissionResponse(submission_id="sub_xyz", processing_status="received")
 
     monkeypatch.setattr(
-        "driftshield.cli.commands.telemetry.post_submission",
+        "driftshield.cli.commands.telemetry.post_oss_submission",
         fake_post,
     )
 
@@ -314,12 +335,13 @@ def test_submit_session_happy_path(tmp_path, monkeypatch):
     assert result.exit_code == 0
     assert "sub_xyz" in result.stdout
     assert "received" in result.stdout
-    assert captured["installation_id"] == _OSS_TEST_INSTALLATION_ID
     assert captured["intake_url"] == _OSS_TEST_INTAKE_URL
     assert "prompts" not in captured["payload_keys"]
     assert "responses" not in captured["payload_keys"]
     assert "user_identifiers" not in captured["payload_keys"]
     assert "metadata" in captured["payload_keys"]
+    # D19 contract: request body has no installation_id, no consent_state.
+    assert captured["request_keys"] == {"envelope_contract_version", "envelope"}
 
 
 def test_submit_session_fails_when_remote_not_configured(tmp_path, monkeypatch):
@@ -370,10 +392,10 @@ def test_submit_session_surfaces_remote_error(tmp_path, monkeypatch):
     from driftshield.remote_submission import RemoteSubmissionError
 
     def fake_post(*, config, submission, opener=None):  # noqa: ARG001
-        raise RemoteSubmissionError("intake HTTP 401: invalid_installation_credentials")
+        raise RemoteSubmissionError("intake HTTP 422: invalid_redaction_manifest")
 
     monkeypatch.setattr(
-        "driftshield.cli.commands.telemetry.post_submission",
+        "driftshield.cli.commands.telemetry.post_oss_submission",
         fake_post,
     )
 
@@ -382,5 +404,5 @@ def test_submit_session_surfaces_remote_error(tmp_path, monkeypatch):
     )
 
     assert result.exit_code == 1
-    assert "401" in result.stdout
-    assert "invalid_installation_credentials" in result.stdout
+    assert "422" in result.stdout
+    assert "invalid_redaction_manifest" in result.stdout

@@ -9,10 +9,10 @@ import typer
 from rich.console import Console
 
 from driftshield.remote_submission import (
-    RemoteSubmissionConfig,
+    OssRemoteSubmissionConfig,
     RemoteSubmissionError,
-    build_intake_request,
-    post_submission,
+    build_oss_submission_request,
+    post_oss_submission,
 )
 from driftshield.telemetry import TelemetryService, validate_outcome_status
 
@@ -32,14 +32,8 @@ def telemetry_status(
         "registered_at": config.registered_at,
         "last_heartbeat_at": config.last_heartbeat_at,
         "event_stream_path": config.event_stream_path,
-        "remote_enabled": (
-            config.remote_intake_url is not None
-            and config.remote_api_key is not None
-            and config.remote_installation_id is not None
-        ),
+        "remote_enabled": config.remote_intake_url is not None,
         "remote_intake_url": config.remote_intake_url,
-        "remote_installation_id": config.remote_installation_id,
-        "remote_api_key_configured": config.remote_api_key is not None,
     }
     if json_output:
         typer.echo(json.dumps(payload))
@@ -69,23 +63,15 @@ def telemetry_disable() -> None:
 @app.command("remote-enable")
 def telemetry_remote_enable(
     intake_url: str = typer.Option(..., "--intake-url", help="Intake API URL the OSS submission envelope will POST to."),
-    api_key: str = typer.Option(..., "--api-key", help="API key for the configured intake URL."),
-    installation_id: str = typer.Option(..., "--installation-id", help="Installation identifier registered with the intake server."),
 ) -> None:
-    """Persist remote intake configuration for OSS submission. Does not send anything."""
+    """Persist the OSS intake URL. No keys needed; the OSS lane is unauthenticated."""
     try:
-        config = TelemetryService().remote_enable(
-            intake_url=intake_url,
-            api_key=api_key,
-            installation_id=installation_id,
-        )
+        config = TelemetryService().remote_enable(intake_url=intake_url)
     except ValueError as exc:
         console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1) from exc
     console.print(
-        f"Remote submission configured. Intake URL: {config.remote_intake_url}. "
-        f"Installation: {config.remote_installation_id}. "
-        "API key stored locally; not displayed."
+        f"Remote submission configured. Intake URL: {config.remote_intake_url}."
     )
 
 
@@ -114,12 +100,17 @@ def telemetry_submit_session(
         None, "--source-report-id", help="Optional source report identifier."
     ),
 ) -> None:
-    """Build a phase3f.v1 envelope from a finished session JSON and POST once to the configured intake URL."""
+    """Build a phase3f.v1 envelope from a finished session JSON and POST once to the OSS intake URL.
+
+    The OSS lane is unauthenticated. No X-API-Key header is sent, no installation_id
+    or consent_state is included in the request. The server binds the persisted row
+    to the in-stack OSS fallback installation + consent.
+    """
     config = TelemetryService().load_config()
-    if not config.remote_intake_url or not config.remote_api_key or not config.remote_installation_id:
+    if not config.remote_intake_url:
         console.print(
             "[red]Error:[/red] Remote submission is not configured. "
-            "Run `driftshield telemetry remote-enable` first."
+            "Run `driftshield telemetry remote-enable --intake-url URL` first."
         )
         raise typer.Exit(1)
 
@@ -137,8 +128,7 @@ def telemetry_submit_session(
         console.print("[red]Error:[/red] Session file must contain a JSON object at top level.")
         raise typer.Exit(1)
 
-    submission = build_intake_request(
-        installation_id=config.remote_installation_id,
+    submission = build_oss_submission_request(
         source_session_id=source_session_id or path.stem,
         payload=payload,
         workflow_reference=workflow_reference,
@@ -146,13 +136,9 @@ def telemetry_submit_session(
         source_report_id=source_report_id,
     )
 
-    submission_config = RemoteSubmissionConfig(
-        intake_url=config.remote_intake_url,
-        api_key=config.remote_api_key,
-        installation_id=config.remote_installation_id,
-    )
+    submission_config = OssRemoteSubmissionConfig(intake_url=config.remote_intake_url)
     try:
-        response = post_submission(config=submission_config, submission=submission)
+        response = post_oss_submission(config=submission_config, submission=submission)
     except RemoteSubmissionError as exc:
         console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1) from exc
