@@ -209,6 +209,24 @@ def test_build_oss_submission_request_phase3f_v1_shape():
     assert set(envelope.redaction_manifest.redacted_fields) == REQUIRED_REDACTION_FIELDS
 
 
+def test_build_oss_submission_request_emits_manifest_v2_with_provenance():
+    """Manifest v2 carries redactor + ruleset versions for server-side provenance."""
+    from driftshield.recursive_redactor import (
+        REDACTION_RULESET_VERSION,
+        REDACTOR_VERSION,
+    )
+
+    request = build_oss_submission_request(
+        source_session_id="sess-1",
+        payload={"session_id": "sess-1", "metadata": {"foo": "bar"}},
+    )
+
+    manifest = request.envelope.redaction_manifest
+    assert manifest.manifest_version == "redaction-manifest.v2"
+    assert manifest.redactor_version == REDACTOR_VERSION
+    assert manifest.redaction_ruleset_version == REDACTION_RULESET_VERSION
+
+
 def test_build_oss_submission_request_has_no_installation_id_or_consent_state():
     """D19 contract: request must NOT carry installation_id or consent_state."""
     request = build_oss_submission_request(

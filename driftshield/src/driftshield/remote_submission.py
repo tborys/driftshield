@@ -168,6 +168,8 @@ def build_oss_submission_request(
             manifest_version=REDACTION_MANIFEST_VERSION,
             redaction_applied=True,
             redacted_fields=redacted_fields,
+            redactor_version=REDACTOR_VERSION,
+            redaction_ruleset_version=REDACTION_RULESET_VERSION,
         ),
     )
     return OssSubmissionRequest(

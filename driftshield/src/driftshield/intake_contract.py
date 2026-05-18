@@ -17,7 +17,15 @@ from pydantic import BaseModel, ConfigDict, Field
 
 SUPPORTED_CONTRACT_VERSION = "phase3f.v1"
 MAX_ENVELOPE_BYTES = 256_000
-REDACTION_MANIFEST_VERSION = "redaction-manifest.v1"
+REDACTION_MANIFEST_VERSION_V1 = "redaction-manifest.v1"
+REDACTION_MANIFEST_VERSION_V2 = "redaction-manifest.v2"
+# Current OSS builders emit v2 manifests. Server side accepts both v1 and v2
+# during the deprecation window: ship manifest provenance fields without
+# waiting on an unrelated envelope-bump release.
+REDACTION_MANIFEST_VERSION = REDACTION_MANIFEST_VERSION_V2
+ACCEPTED_REDACTION_MANIFEST_VERSIONS: frozenset[str] = frozenset(
+    {REDACTION_MANIFEST_VERSION_V1, REDACTION_MANIFEST_VERSION_V2}
+)
 REQUIRED_REDACTION_FIELDS: frozenset[str] = frozenset(
     {"prompts", "responses", "user_identifiers"}
 )
@@ -29,6 +37,8 @@ class RedactionManifest(BaseModel):
     manifest_version: str = Field(default=REDACTION_MANIFEST_VERSION)
     redaction_applied: bool
     redacted_fields: list[str] = Field(min_length=1)
+    redactor_version: str | None = Field(default=None, min_length=1)
+    redaction_ruleset_version: str | None = Field(default=None, min_length=1)
 
 
 class ConsentState(BaseModel):

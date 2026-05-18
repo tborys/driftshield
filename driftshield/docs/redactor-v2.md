@@ -67,19 +67,26 @@ not the client.
 
 ## Public manifest claim
 
-The redaction manifest accompanying every envelope advertises only the v1
-public superset (`prompts`, `responses`, `user_identifiers`). The v2 internal
-ruleset is implementation-only and intentionally not surfaced on the public
-contract. A future `redaction-manifest.v2` contract bump will add
-`redactor_version` and `redaction_ruleset_version` fields so server-side can
-identify which redactor produced a given payload.
+The redaction manifest accompanying every envelope advertises the public
+superset (`prompts`, `responses`, `user_identifiers`). The v2 internal ruleset
+is implementation-only and intentionally not surfaced on the public contract.
 
-The redactor pins both values as module-level constants:
+### Manifest provenance (`redaction-manifest.v2`)
+
+OSS builders now emit `redaction-manifest.v2` envelopes carrying two
+provenance fields:
 
 ```python
 REDACTOR_VERSION = "recursive-redactor.v2.0.0"
 REDACTION_RULESET_VERSION = "ruleset.v1"
 ```
+
+Both are module-level constants in `recursive_redactor.py` so callers and
+tests can import the same source of truth. The server side accepts both v1
+and v2 manifests during the deprecation window. v2 manifests must carry
+non-empty `redactor_version` and `redaction_ruleset_version`; v1 manifests
+continue to validate as before. Bump the version constants whenever the
+public detection surface or the rule-evaluation order changes.
 
 ## CLI inspection
 
