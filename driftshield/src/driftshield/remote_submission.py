@@ -4,6 +4,12 @@ Per Phase 3h D19 (operator decision 2026-05-16): OSS submissions go on a
 dedicated unauthenticated lane. No installation_id, no api_key header, no
 consent_state echo. The server binds the persisted row to the in-stack OSS
 fallback installation + consent.
+
+Phase 3i (driftshield#109) replaces the v1 field-name-only redactor with a
+recursive ruleset implemented in :mod:`driftshield.recursive_redactor`. The
+public manifest contract still advertises ``REQUIRED_REDACTION_FIELDS``; the
+internal v2 ruleset (tool-IO keys, regex secrets, path-shape, email) is
+implementation-only.
 """
 
 from __future__ import annotations
@@ -22,16 +28,35 @@ from driftshield.intake_contract import (
     RedactionManifest,
     SubmissionEnvelope,
 )
+from driftshield.recursive_redactor import (
+    REDACTION_RULESET_VERSION,
+    REDACTOR_VERSION,
+    RedactionResult,
+    redact,
+)
 
 
 _DEFAULT_SOURCE_SYSTEM = "driftshield-oss"
 
-# Nested keys that carry prompt/response text inside real session transcripts
-# (Claude Code events[].content, message.content, etc.). Stripped at every
-# depth alongside REQUIRED_REDACTION_FIELDS. Implementation-only: the public
-# redaction_manifest contract still advertises REQUIRED_REDACTION_FIELDS.
-_NESTED_SENSITIVE_KEYS: frozenset[str] = frozenset({"content", "text"})
-_REDACTED_KEYS: frozenset[str] = REQUIRED_REDACTION_FIELDS | _NESTED_SENSITIVE_KEYS
+
+_KNOWN_SHAPE_HINTS: dict[str, frozenset[str]] = {
+    "claude_code": frozenset({"events"}),
+    "claude_desktop": frozenset({"conversation", "messages"}),
+    "codex": frozenset({"session", "turns"}),
+    "openai_chat": frozenset({"choices", "model"}),
+    "langchain": frozenset({"runs", "trace"}),
+    "crewai": frozenset({"crew", "tasks"}),
+    "generic_session": frozenset({"session_id"}),
+}
+
+
+class UnknownTranscriptShapeError(ValueError):
+    """Raised when the input transcript does not match a known shape.
+
+    Silent under-redaction on unrecognised shapes is the failure mode
+    driftshield#109 exists to close. The caller must either map the payload
+    into a known shape or pass ``force_unknown_shape=True`` to override.
+    """
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,30 +70,46 @@ class RemoteSubmissionError(RuntimeError):
     """Raised when the remote submission cannot be assembled or accepted."""
 
 
-def _redact_value(value: Any) -> Any:
-    if isinstance(value, dict):
-        return {k: _redact_value(v) for k, v in value.items() if k not in _REDACTED_KEYS}
-    if isinstance(value, list):
-        return [_redact_value(item) for item in value]
-    return value
+def detect_shape(payload: dict[str, Any]) -> str | None:
+    """Return the matching known-shape name or ``None`` if unrecognised.
+
+    Detection is best-effort and heuristic. It exists so the CLI can refuse
+    to submit payloads the recursive redactor was not designed against,
+    rather than silently under-redacting them.
+    """
+    if not isinstance(payload, dict):
+        return None
+    keys = set(payload.keys())
+    for shape, required in _KNOWN_SHAPE_HINTS.items():
+        if required.issubset(keys):
+            return shape
+    return None
+
+
+def redact_payload_with_manifest(payload: dict[str, Any]) -> RedactionResult:
+    """Recursive redaction returning the rewritten payload + redaction entries.
+
+    Consumed by ``--show-manifest`` and ``--dry-run-redaction`` in the CLI so
+    callers can inspect what the redactor stripped without submitting.
+    """
+    return redact(payload)
 
 
 def redact_payload(payload: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
-    """Recursively strip sensitive keys from the payload.
+    """Recursively strip sensitive content from the payload.
 
-    Drops REQUIRED_REDACTION_FIELDS plus nested prompt/response-bearing keys
-    (`content`, `text`) at every depth. Real Claude Code session JSON keeps
-    prompts and responses inside events[].content, message.content and similar
-    nested structures, which top-level-only redaction missed (driftshield#107).
-
-    Returns (redacted_payload, redacted_fields). The manifest always advertises
-    the full REQUIRED_REDACTION_FIELDS superset so the intake validator
-    (incomplete_redaction_manifest) is satisfied without lying about it. The
-    nested key set is implementation-only and intentionally not advertised
-    on the public contract.
+    Returns ``(redacted_payload, redacted_fields)``. The advertised
+    ``redacted_fields`` list is the public ``REQUIRED_REDACTION_FIELDS``
+    superset so the intel-side validator (``incomplete_redaction_manifest``)
+    stays satisfied. The deeper v2 ruleset is implementation-only.
     """
-    redacted = _redact_value(payload)
-    return redacted, sorted(REQUIRED_REDACTION_FIELDS)
+    result = redact_payload_with_manifest(payload)
+    redacted_payload = result.payload
+    if not isinstance(redacted_payload, dict):
+        raise RemoteSubmissionError(
+            "redacted payload must remain a JSON object at top level"
+        )
+    return redacted_payload, sorted(REQUIRED_REDACTION_FIELDS)
 
 
 def _encode_payload(payload: dict[str, Any]) -> tuple[bytes, int]:
@@ -89,13 +130,28 @@ def build_oss_submission_request(
     workflow_reference: str | None = None,
     project_reference: str | None = None,
     source_report_id: str | None = None,
+    force_unknown_shape: bool = False,
 ) -> OssSubmissionRequest:
     """Build an unauthenticated OSS submission request.
+
+    ``force_unknown_shape`` defaults to False. The recursive redactor was
+    designed against the six known transcript shapes listed in
+    :data:`_KNOWN_SHAPE_HINTS`; an unrecognised top-level shape raises
+    :class:`UnknownTranscriptShapeError` unless the caller passes
+    ``force_unknown_shape=True``.
 
     No installation_id, no consent_state. The envelope still carries
     redaction_manifest + payload_size_bytes + schema_version, all enforced
     server-side by OssSubmissionService.
     """
+    shape = detect_shape(payload)
+    if shape is None and not force_unknown_shape:
+        raise UnknownTranscriptShapeError(
+            "Unrecognised transcript shape. Map the payload into a known "
+            "shape or pass force_unknown_shape=True (CLI: "
+            "--force-unknown-shape) to override."
+        )
+
     redacted_payload, redacted_fields = redact_payload(payload)
     _, payload_size = _encode_payload(redacted_payload)
 
@@ -156,3 +212,17 @@ def post_oss_submission(
     except json.JSONDecodeError as exc:
         raise RemoteSubmissionError(f"intake returned non-JSON body: {raw!r}") from exc
     return IntakeSubmissionResponse.model_validate(decoded)
+
+
+__all__ = [
+    "REDACTION_RULESET_VERSION",
+    "REDACTOR_VERSION",
+    "OssRemoteSubmissionConfig",
+    "RemoteSubmissionError",
+    "UnknownTranscriptShapeError",
+    "build_oss_submission_request",
+    "detect_shape",
+    "post_oss_submission",
+    "redact_payload",
+    "redact_payload_with_manifest",
+]

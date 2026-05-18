@@ -384,6 +384,114 @@ def test_submit_session_fails_on_non_object_json(tmp_path, monkeypatch):
     assert "json object" in result.stdout.lower()
 
 
+def test_submit_session_dry_run_redaction_prints_entries_and_does_not_submit(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    runner.invoke(app, _remote_enable_argv())
+    session_path = _write_session(
+        tmp_path,
+        {
+            "session_id": "sess-1",
+            "events": [{"type": "user", "note": "ssn 123-45-6789"}],
+        },
+    )
+    called = {"posted": False}
+
+    def fake_post(*, config, submission, opener=None):  # noqa: ARG001
+        called["posted"] = True
+
+    monkeypatch.setattr(
+        "driftshield.cli.commands.telemetry.post_oss_submission", fake_post
+    )
+
+    result = runner.invoke(
+        app,
+        ["telemetry", "submit-session", "--path", str(session_path), "--dry-run-redaction"],
+    )
+
+    assert result.exit_code == 0
+    assert called["posted"] is False
+    body = json.loads(result.stdout)
+    assert body["detected_shape"] == "claude_code"
+    assert any(entry["category"] == "ssn" for entry in body["entries"])
+
+
+def test_submit_session_show_manifest_prints_manifest_and_does_not_submit(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    runner.invoke(app, _remote_enable_argv())
+    session_path = _write_session(
+        tmp_path,
+        {"session_id": "sess-1", "events": []},
+    )
+    called = {"posted": False}
+
+    def fake_post(*, config, submission, opener=None):  # noqa: ARG001
+        called["posted"] = True
+
+    monkeypatch.setattr(
+        "driftshield.cli.commands.telemetry.post_oss_submission", fake_post
+    )
+
+    result = runner.invoke(
+        app,
+        ["telemetry", "submit-session", "--path", str(session_path), "--show-manifest"],
+    )
+
+    assert result.exit_code == 0
+    assert called["posted"] is False
+    manifest = json.loads(result.stdout)
+    assert manifest["manifest_version"] == "redaction-manifest.v1"
+    assert manifest["redaction_applied"] is True
+    assert sorted(manifest["redacted_fields"]) == sorted(
+        ["prompts", "responses", "user_identifiers"]
+    )
+
+
+def test_submit_session_refuses_unknown_shape_without_force(tmp_path, monkeypatch):
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    runner.invoke(app, _remote_enable_argv())
+    session_path = _write_session(tmp_path, {"unrelated_top_key": True})
+
+    result = runner.invoke(
+        app, ["telemetry", "submit-session", "--path", str(session_path)]
+    )
+
+    assert result.exit_code == 1
+    assert "shape" in result.stdout.lower()
+
+
+def test_submit_session_accepts_unknown_shape_when_forced(tmp_path, monkeypatch):
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    runner.invoke(app, _remote_enable_argv())
+    session_path = _write_session(tmp_path, {"unrelated_top_key": True})
+
+    def fake_post(*, config, submission, opener=None):  # noqa: ARG001
+        from driftshield.intake_contract import IntakeSubmissionResponse
+
+        return IntakeSubmissionResponse(submission_id="sub_forced", processing_status="received")
+
+    monkeypatch.setattr(
+        "driftshield.cli.commands.telemetry.post_oss_submission", fake_post
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "telemetry",
+            "submit-session",
+            "--path",
+            str(session_path),
+            "--force-unknown-shape",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "sub_forced" in result.stdout
+
+
 def test_submit_session_surfaces_remote_error(tmp_path, monkeypatch):
     monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
     runner.invoke(app, _remote_enable_argv())

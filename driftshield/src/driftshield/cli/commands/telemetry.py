@@ -11,8 +11,11 @@ from rich.console import Console
 from driftshield.remote_submission import (
     OssRemoteSubmissionConfig,
     RemoteSubmissionError,
+    UnknownTranscriptShapeError,
     build_oss_submission_request,
+    detect_shape,
     post_oss_submission,
+    redact_payload_with_manifest,
 )
 from driftshield.telemetry import TelemetryService, validate_outcome_status
 
@@ -99,6 +102,21 @@ def telemetry_submit_session(
     source_report_id: str | None = typer.Option(
         None, "--source-report-id", help="Optional source report identifier."
     ),
+    dry_run_redaction: bool = typer.Option(
+        False,
+        "--dry-run-redaction",
+        help="Run the recursive redactor, print the redaction entries, exit without submitting.",
+    ),
+    show_manifest: bool = typer.Option(
+        False,
+        "--show-manifest",
+        help="Print the redaction manifest that would accompany the submission, exit without submitting.",
+    ),
+    force_unknown_shape: bool = typer.Option(
+        False,
+        "--force-unknown-shape",
+        help="Submit even if the transcript top-level shape is not recognised by the redactor.",
+    ),
 ) -> None:
     """Build a phase3f.v1 envelope from a finished session JSON and POST once to the OSS intake URL.
 
@@ -106,14 +124,6 @@ def telemetry_submit_session(
     or consent_state is included in the request. The server binds the persisted row
     to the in-stack OSS fallback installation + consent.
     """
-    config = TelemetryService().load_config()
-    if not config.remote_intake_url:
-        console.print(
-            "[red]Error:[/red] Remote submission is not configured. "
-            "Run `driftshield telemetry remote-enable --intake-url URL` first."
-        )
-        raise typer.Exit(1)
-
     try:
         raw = path.read_text(encoding="utf-8")
     except OSError as exc:
@@ -128,13 +138,62 @@ def telemetry_submit_session(
         console.print("[red]Error:[/red] Session file must contain a JSON object at top level.")
         raise typer.Exit(1)
 
-    submission = build_oss_submission_request(
-        source_session_id=source_session_id or path.stem,
-        payload=payload,
-        workflow_reference=workflow_reference,
-        project_reference=project_reference,
-        source_report_id=source_report_id,
-    )
+    if dry_run_redaction or show_manifest:
+        result = redact_payload_with_manifest(payload)
+        shape = detect_shape(payload) or "unknown"
+        if dry_run_redaction:
+            entries = [
+                {
+                    "path": entry.path,
+                    "category": entry.category,
+                    "sample_hash": entry.sample_hash,
+                }
+                for entry in result.entries
+            ]
+            typer.echo(
+                json.dumps(
+                    {"detected_shape": shape, "entries": entries},
+                    indent=2,
+                )
+            )
+        if show_manifest:
+            typer.echo(
+                json.dumps(
+                    {
+                        "manifest_version": "redaction-manifest.v1",
+                        "redaction_applied": True,
+                        "redacted_fields": sorted(["prompts", "responses", "user_identifiers"]),
+                        "detected_shape": shape,
+                        "ruleset_entry_count": len(result.entries),
+                    },
+                    indent=2,
+                )
+            )
+        return
+
+    config = TelemetryService().load_config()
+    if not config.remote_intake_url:
+        console.print(
+            "[red]Error:[/red] Remote submission is not configured. "
+            "Run `driftshield telemetry remote-enable --intake-url URL` first."
+        )
+        raise typer.Exit(1)
+
+    try:
+        submission = build_oss_submission_request(
+            source_session_id=source_session_id or path.stem,
+            payload=payload,
+            workflow_reference=workflow_reference,
+            project_reference=project_reference,
+            source_report_id=source_report_id,
+            force_unknown_shape=force_unknown_shape,
+        )
+    except UnknownTranscriptShapeError as exc:
+        console.print(
+            f"[red]Error:[/red] {exc} "
+            "Inspect the payload with --dry-run-redaction first."
+        )
+        raise typer.Exit(1) from exc
 
     submission_config = OssRemoteSubmissionConfig(intake_url=config.remote_intake_url)
     try:

@@ -1,0 +1,31 @@
+{
+  "crew": {
+    "crew_id": "crew-canary-001",
+    "name": "Acme Workspace research crew"
+  },
+  "tasks": [
+    {
+      "task_id": "task-1",
+      "agent": "researcher",
+      "description": "research /home/example-user/notes",
+      "content": "DRIFTSHIELD_REDACTION_CANARY_CREWAI_DESC research goals",
+      "output": {
+        "content": "DRIFTSHIELD_REDACTION_CANARY_CREWAI_OUTPUT_CONTENT findings drafted",
+        "tool_output": {
+          "result": "DRIFTSHIELD_REDACTION_CANARY_CREWAI_TOOL_RESULT contents AKIA0EXAMPLE0CANARY00"
+        }
+      }
+    },
+    {
+      "task_id": "task-2",
+      "agent": "writer",
+      "description": "write summary",
+      "text": "DRIFTSHIELD_REDACTION_CANARY_CREWAI_DESC2 user-provided draft hint",
+      "tool_input": {
+        "draft": "DRIFTSHIELD_REDACTION_CANARY_CREWAI_TOOL_INPUT"
+      }
+    }
+  ],
+  "session_id": "crewai-sess-001",
+  "user_identifiers": ["DRIFTSHIELD_REDACTION_CANARY_CREWAI_UI bob@example.test"]
+}
