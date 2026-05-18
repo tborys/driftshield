@@ -34,7 +34,7 @@ from driftshield.intake_contract import (
 _REFERENCE_CONSTANTS = {
     "SUPPORTED_CONTRACT_VERSION": "phase3f.v1",
     "MAX_ENVELOPE_BYTES": 256_000,
-    "REDACTION_MANIFEST_VERSION": "redaction-manifest.v1",
+    "REDACTION_MANIFEST_VERSION": "redaction-manifest.v2",
     "REQUIRED_REDACTION_FIELDS": frozenset({"prompts", "responses", "user_identifiers"}),
 }
 
@@ -43,6 +43,8 @@ _REFERENCE_FIELDS = {
         "manifest_version",
         "redaction_applied",
         "redacted_fields",
+        "redactor_version",
+        "redaction_ruleset_version",
     },
     "ConsentState": {
         "consent_version",
