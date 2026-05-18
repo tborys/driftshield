@@ -1,0 +1,29 @@
+{
+  "session": {
+    "session_id": "codex-sess-001",
+    "host_path": "/home/example-user/work/repo"
+  },
+  "turns": [
+    {
+      "turn_id": 1,
+      "user": {
+        "content": "DRIFTSHIELD_REDACTION_CANARY_CODEX_USER refactor /home/example-user/work/repo/lib.py"
+      },
+      "assistant": {
+        "text": "DRIFTSHIELD_REDACTION_CANARY_CODEX_ASSIST openai key sk-AAAAAAAAAAAAAAAAAAAAAA"
+      },
+      "tool_calls": [
+        {
+          "name": "apply_patch",
+          "input": {
+            "diff": "DRIFTSHIELD_REDACTION_CANARY_CODEX_TOOL_INPUT"
+          },
+          "result": {
+            "stdout": "DRIFTSHIELD_REDACTION_CANARY_CODEX_TOOL_RESULT applied to /home/example-user/work/repo/lib.py"
+          }
+        }
+      ]
+    }
+  ],
+  "prompts": ["DRIFTSHIELD_REDACTION_CANARY_CODEX_PROMPTS_TOP"]
+}

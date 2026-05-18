@@ -1,0 +1,26 @@
+{
+  "id": "chatcmpl-canary-001",
+  "object": "chat.completion",
+  "model": "gpt-canary",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "DRIFTSHIELD_REDACTION_CANARY_OPENAI_ASSIST ping alice@example.test",
+        "tool_calls": [
+          {
+            "id": "call_canary_1",
+            "type": "function",
+            "function": {
+              "name": "get_file",
+              "arguments": "{\"path\": \"/Users/example-user/notes.txt\", \"canary\": \"DRIFTSHIELD_REDACTION_CANARY_OPENAI_FN_ARGS\"}"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "session_id": "openai-canary-sess",
+  "responses": ["DRIFTSHIELD_REDACTION_CANARY_OPENAI_RESPONSES_TOP"]
+}

@@ -1,0 +1,49 @@
+{
+  "session_id": "claude-code-sess-001",
+  "events": [
+    {
+      "type": "user",
+      "ts": 1700000000,
+      "content": "DRIFTSHIELD_REDACTION_CANARY_PROMPT_TOP read /home/example-user/secrets.txt"
+    },
+    {
+      "type": "assistant",
+      "ts": 1700000001,
+      "text": "DRIFTSHIELD_REDACTION_CANARY_RESPONSE_TOP I will read /home/example-user/secrets.txt for ExampleCorp.",
+      "tool_use": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "/home/example-user/repo/file.txt",
+            "note": "DRIFTSHIELD_REDACTION_CANARY_TOOL_INPUT_NESTED"
+          }
+        }
+      ]
+    },
+    {
+      "type": "tool_result",
+      "ts": 1700000002,
+      "tool_output": {
+        "stdout": "DRIFTSHIELD_REDACTION_CANARY_TOOL_OUTPUT contents include AKIAEXAMPLE12345CANARY",
+        "stderr": ""
+      }
+    },
+    {
+      "type": "assistant",
+      "ts": 1700000003,
+      "content": "DRIFTSHIELD_REDACTION_CANARY_NESTED_ASSISTANT email me at alice@example.test"
+    }
+  ],
+  "user_identifiers": ["DRIFTSHIELD_REDACTION_CANARY_USER_IDS user@example.test"],
+  "metadata": {
+    "workspace": "Acme Workspace",
+    "session_note": "ssn 123-45-6789",
+    "deep": {
+      "deeper": {
+        "deepest": {
+          "content": "DRIFTSHIELD_REDACTION_CANARY_DEEP_CONTENT very deep prompt"
+        }
+      }
+    }
+  }
+}

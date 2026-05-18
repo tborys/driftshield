@@ -1,0 +1,30 @@
+{
+  "conversation": {
+    "id": "cdsktp-conv-001",
+    "title": "Acme Workspace deploy chat"
+  },
+  "messages": [
+    {
+      "role": "user",
+      "content": "DRIFTSHIELD_REDACTION_CANARY_DESKTOP_USER ping support at user@example.test"
+    },
+    {
+      "role": "assistant",
+      "content": "DRIFTSHIELD_REDACTION_CANARY_DESKTOP_ASSIST here is a token ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "attachments": [
+        {
+          "type": "code",
+          "file_content": "DRIFTSHIELD_REDACTION_CANARY_FILE_CONTENT print('hi')",
+          "path": "/Users/example-user/project/main.py"
+        }
+      ]
+    },
+    {
+      "role": "system",
+      "text": "DRIFTSHIELD_REDACTION_CANARY_SYSTEM_TEXT JWT eyJhbGciOiJIUzI1NiJ9.payload.signature"
+    }
+  ],
+  "user_identifiers": [
+    "DRIFTSHIELD_REDACTION_CANARY_UI alice@example.test"
+  ]
+}

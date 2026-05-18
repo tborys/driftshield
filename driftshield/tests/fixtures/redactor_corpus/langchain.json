@@ -1,0 +1,45 @@
+{
+  "trace": {
+    "trace_id": "lc-trace-001",
+    "owner": "ExampleCorp"
+  },
+  "runs": [
+    {
+      "run_id": "lc-run-1",
+      "name": "agent_executor",
+      "inputs": {
+        "input": "DRIFTSHIELD_REDACTION_CANARY_LC_RUN_INPUT pay 4111111111111111 to alice@example.test",
+        "messages": [
+          {
+            "role": "user",
+            "content": "DRIFTSHIELD_REDACTION_CANARY_LC_NESTED_PROMPT"
+          }
+        ]
+      },
+      "outputs": {
+        "output": "DRIFTSHIELD_REDACTION_CANARY_LC_RUN_OUTPUT done"
+      },
+      "child_runs": [
+        {
+          "run_id": "lc-run-2",
+          "name": "tool",
+          "input": {
+            "query": "DRIFTSHIELD_REDACTION_CANARY_LC_CHILD_TOOL_INPUT"
+          },
+          "output": {
+            "result": "DRIFTSHIELD_REDACTION_CANARY_LC_CHILD_TOOL_OUTPUT contents from /home/example-user/data.csv"
+          },
+          "child_runs": [
+            {
+              "run_id": "lc-run-3",
+              "input": {
+                "prompt": "DRIFTSHIELD_REDACTION_CANARY_LC_LEAF_PROMPT"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "session_id": "lc-sess-001"
+}
