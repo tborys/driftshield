@@ -26,6 +26,13 @@ from driftshield.intake_contract import (
 
 _DEFAULT_SOURCE_SYSTEM = "driftshield-oss"
 
+# Nested keys that carry prompt/response text inside real session transcripts
+# (Claude Code events[].content, message.content, etc.). Stripped at every
+# depth alongside REQUIRED_REDACTION_FIELDS. Implementation-only: the public
+# redaction_manifest contract still advertises REQUIRED_REDACTION_FIELDS.
+_NESTED_SENSITIVE_KEYS: frozenset[str] = frozenset({"content", "text"})
+_REDACTED_KEYS: frozenset[str] = REQUIRED_REDACTION_FIELDS | _NESTED_SENSITIVE_KEYS
+
 
 @dataclass(frozen=True, slots=True)
 class OssRemoteSubmissionConfig:
@@ -38,15 +45,29 @@ class RemoteSubmissionError(RuntimeError):
     """Raised when the remote submission cannot be assembled or accepted."""
 
 
-def redact_payload(payload: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
-    """Strip required-redaction fields from the top level of the payload.
+def _redact_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {k: _redact_value(v) for k, v in value.items() if k not in _REDACTED_KEYS}
+    if isinstance(value, list):
+        return [_redact_value(item) for item in value]
+    return value
 
-    Returns (redacted_payload, redacted_fields). The manifest must always
-    advertise the full REQUIRED_REDACTION_FIELDS superset, even if the input
-    payload did not carry one of them, so the intake validator
-    (incomplete_redaction_manifest) is satisfied without lying about it.
+
+def redact_payload(payload: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    """Recursively strip sensitive keys from the payload.
+
+    Drops REQUIRED_REDACTION_FIELDS plus nested prompt/response-bearing keys
+    (`content`, `text`) at every depth. Real Claude Code session JSON keeps
+    prompts and responses inside events[].content, message.content and similar
+    nested structures, which top-level-only redaction missed (driftshield#107).
+
+    Returns (redacted_payload, redacted_fields). The manifest always advertises
+    the full REQUIRED_REDACTION_FIELDS superset so the intake validator
+    (incomplete_redaction_manifest) is satisfied without lying about it. The
+    nested key set is implementation-only and intentionally not advertised
+    on the public contract.
     """
-    redacted = {k: v for k, v in payload.items() if k not in REQUIRED_REDACTION_FIELDS}
+    redacted = _redact_value(payload)
     return redacted, sorted(REQUIRED_REDACTION_FIELDS)
 
 

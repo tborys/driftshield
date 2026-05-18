@@ -50,6 +50,125 @@ def test_redact_payload_strips_required_fields():
     assert set(redacted_fields) == REQUIRED_REDACTION_FIELDS
 
 
+def test_redact_payload_strips_nested_content_and_text_keys():
+    payload = {
+        "session_id": "sess-1",
+        "events": [
+            {"type": "user", "content": "MY SECRET PROMPT", "ts": 1},
+            {"type": "assistant", "text": "MY SECRET RESPONSE", "ts": 2},
+        ],
+    }
+
+    redacted, _ = redact_payload(payload)
+
+    serialised = json.dumps(redacted)
+    assert "MY SECRET PROMPT" not in serialised
+    assert "MY SECRET RESPONSE" not in serialised
+    assert redacted["session_id"] == "sess-1"
+    assert [e["type"] for e in redacted["events"]] == ["user", "assistant"]
+    assert [e["ts"] for e in redacted["events"]] == [1, 2]
+    for event in redacted["events"]:
+        assert "content" not in event
+        assert "text" not in event
+
+
+def test_redact_payload_strips_deeply_nested_sensitive_keys():
+    payload = {
+        "level_1": {
+            "level_2": {
+                "level_3": {
+                    "level_4": {
+                        "content": "DEEP_SECRET",
+                        "keep": "safe_value",
+                    }
+                }
+            }
+        }
+    }
+
+    redacted, _ = redact_payload(payload)
+
+    assert "DEEP_SECRET" not in json.dumps(redacted)
+    assert redacted["level_1"]["level_2"]["level_3"]["level_4"] == {"keep": "safe_value"}
+
+
+def test_redact_payload_removes_claude_code_prompt_response_strings():
+    """Realistic Claude Code session shape: events[].content carries prompts/responses."""
+    payload = {
+        "session_id": "claude-sess-abc",
+        "events": [
+            {
+                "type": "user",
+                "content": "Please refactor the auth middleware to use JWT",
+                "timestamp": "2026-05-17T10:00:00Z",
+            },
+            {
+                "type": "assistant",
+                "content": "Here's the refactored middleware with JWT validation...",
+                "timestamp": "2026-05-17T10:00:05Z",
+                "tool_calls": [
+                    {"name": "edit", "arguments": {"file": "/src/auth.py"}},
+                ],
+            },
+        ],
+        "metadata": {"model": "claude-opus-4-7"},
+    }
+
+    redacted, _ = redact_payload(payload)
+    serialised = json.dumps(redacted)
+
+    assert "Please refactor the auth middleware to use JWT" not in serialised
+    assert "Here's the refactored middleware with JWT validation..." not in serialised
+    assert redacted["session_id"] == "claude-sess-abc"
+    assert redacted["metadata"] == {"model": "claude-opus-4-7"}
+    assert [e["type"] for e in redacted["events"]] == ["user", "assistant"]
+
+
+def test_redact_payload_handles_none_and_empty_values():
+    payload = {
+        "session_id": "sess-1",
+        "empty_dict": {},
+        "empty_list": [],
+        "none_value": None,
+        "events": [],
+    }
+
+    redacted, _ = redact_payload(payload)
+
+    assert redacted == payload
+
+
+def test_build_oss_submission_request_redacts_nested_content_before_manifest():
+    """The envelope-building path must redact nested content before the manifest is built."""
+    payload = {
+        "session_id": "sess-1",
+        "events": [
+            {"type": "user", "content": "LEAK_CANARY_PROMPT"},
+            {"type": "assistant", "content": "LEAK_CANARY_RESPONSE"},
+        ],
+    }
+
+    request = build_oss_submission_request(
+        source_session_id="sess-1",
+        payload=payload,
+    )
+
+    serialised = request.envelope.model_dump_json()
+    assert "LEAK_CANARY_PROMPT" not in serialised
+    assert "LEAK_CANARY_RESPONSE" not in serialised
+    # Public manifest contract is unchanged: still advertises REQUIRED_REDACTION_FIELDS.
+    assert set(request.envelope.redaction_manifest.redacted_fields) == REQUIRED_REDACTION_FIELDS
+    assert request.envelope.redaction_manifest.redaction_applied is True
+    # payload_size_bytes must reflect the redacted payload, not the original.
+    expected_bytes = json.dumps(
+        request.envelope.payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    assert request.envelope.payload_size_bytes == len(expected_bytes)
+
+
 def test_redact_payload_manifest_advertises_superset_even_if_missing():
     payload = {"session_id": "sess-1", "metadata": {"foo": "bar"}}
 
