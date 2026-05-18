@@ -61,17 +61,16 @@ The redactor does not touch:
 - Non-sensitive structural keys: `events[].type`, `events[].ts`, `tool_use[].name`, `messages[].role`, IDs that do not contain PII.
 - Free-text strings that match none of the regex categories above. Free-text content not under a redacted key is passed through verbatim.
 
-Server-side coverage for free-text content with leaked secrets that escaped the
-client redactor is the job of the intake backstop scanner
-(driftshield-intel#131), not the client.
+Server-side coverage for free-text content with leaked secrets that escaped
+the client redactor is the job of the server-side intake backstop scanner,
+not the client.
 
 ## Public manifest claim
 
 The redaction manifest accompanying every envelope advertises only the v1
 public superset (`prompts`, `responses`, `user_identifiers`). The v2 internal
 ruleset is implementation-only and intentionally not surfaced on the public
-contract. A future contract bump
-(driftshield-intel#132, `redaction-manifest.v2`) will add
+contract. A future `redaction-manifest.v2` contract bump will add
 `redactor_version` and `redaction_ruleset_version` fields so server-side can
 identify which redactor produced a given payload.
 

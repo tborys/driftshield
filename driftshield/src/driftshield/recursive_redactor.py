@@ -17,8 +17,8 @@ What v2 adds:
 The public envelope contract continues to advertise the v1 manifest claim
 (``REQUIRED_REDACTION_FIELDS``). The internal rule set is implementation-only
 and intentionally not surfaced on the manifest. A future contract bump
-(driftshield-intel#132) will add ``redactor_version`` and
-``redaction_ruleset_version`` provenance fields.
+will add ``redactor_version`` and ``redaction_ruleset_version`` provenance
+fields; this module pins both values as constants in anticipation.
 
 Tool-IO values are replaced (not deleted) with a stable hash placeholder so
 downstream analysers can keep their structural assumptions about tool-call
