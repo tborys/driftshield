@@ -299,6 +299,18 @@ def _write_session(tmp_path, contents):
     return session_path
 
 
+def _ok_result(*, submission_id="sub_xyz", server_contract_version="phase3g.v1"):
+    from driftshield.intake_contract import IntakeSubmissionResponse
+    from driftshield.remote_submission import OssSubmissionResult
+
+    return OssSubmissionResult(
+        response=IntakeSubmissionResponse(
+            submission_id=submission_id, processing_status="received"
+        ),
+        server_contract_version=server_contract_version,
+    )
+
+
 def test_submit_session_happy_path(tmp_path, monkeypatch):
     monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
     runner.invoke(app, _remote_enable_argv())
@@ -319,9 +331,8 @@ def test_submit_session_happy_path(tmp_path, monkeypatch):
         captured["intake_url"] = config.intake_url
         captured["payload_keys"] = sorted(submission.envelope.payload.keys())
         captured["request_keys"] = set(json.loads(submission.model_dump_json()).keys())
-        from driftshield.intake_contract import IntakeSubmissionResponse
-
-        return IntakeSubmissionResponse(submission_id="sub_xyz", processing_status="received")
+        captured["workflow_reference"] = submission.envelope.workflow_reference
+        return _ok_result()
 
     monkeypatch.setattr(
         "driftshield.cli.commands.telemetry.post_oss_submission",
@@ -336,12 +347,143 @@ def test_submit_session_happy_path(tmp_path, monkeypatch):
     assert "sub_xyz" in result.stdout
     assert "received" in result.stdout
     assert captured["intake_url"] == _OSS_TEST_INTAKE_URL
+    assert captured["workflow_reference"] == "default"
     assert "prompts" not in captured["payload_keys"]
     assert "responses" not in captured["payload_keys"]
     assert "user_identifiers" not in captured["payload_keys"]
     assert "metadata" in captured["payload_keys"]
     # D19 contract: request body has no installation_id, no consent_state.
     assert captured["request_keys"] == {"envelope_contract_version", "envelope"}
+
+
+def test_submit_session_defaults_workflow_reference_to_default(tmp_path, monkeypatch):
+    """Neither --workflow-reference nor session JSON supplies one -> 'default'."""
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    runner.invoke(app, _remote_enable_argv())
+    session_path = _write_session(tmp_path, {"session_id": "sess-1"})
+    captured = {}
+
+    def fake_post(*, config, submission, opener=None):  # noqa: ARG001
+        captured["workflow_reference"] = submission.envelope.workflow_reference
+        return _ok_result()
+
+    monkeypatch.setattr(
+        "driftshield.cli.commands.telemetry.post_oss_submission", fake_post
+    )
+
+    result = runner.invoke(
+        app, ["telemetry", "submit-session", "--path", str(session_path)]
+    )
+
+    assert result.exit_code == 0
+    assert captured["workflow_reference"] == "default"
+
+
+def test_submit_session_prefers_session_json_workflow_reference(tmp_path, monkeypatch):
+    """Session JSON's workflow_reference wins over the default when --flag absent."""
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    runner.invoke(app, _remote_enable_argv())
+    session_path = _write_session(
+        tmp_path,
+        {"session_id": "sess-1", "workflow_reference": "checkout-flow"},
+    )
+    captured = {}
+
+    def fake_post(*, config, submission, opener=None):  # noqa: ARG001
+        captured["workflow_reference"] = submission.envelope.workflow_reference
+        return _ok_result()
+
+    monkeypatch.setattr(
+        "driftshield.cli.commands.telemetry.post_oss_submission", fake_post
+    )
+
+    result = runner.invoke(
+        app, ["telemetry", "submit-session", "--path", str(session_path)]
+    )
+
+    assert result.exit_code == 0
+    assert captured["workflow_reference"] == "checkout-flow"
+
+
+def test_submit_session_flag_overrides_session_json_workflow_reference(tmp_path, monkeypatch):
+    """--workflow-reference takes precedence over session JSON's value."""
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    runner.invoke(app, _remote_enable_argv())
+    session_path = _write_session(
+        tmp_path,
+        {"session_id": "sess-1", "workflow_reference": "from-json"},
+    )
+    captured = {}
+
+    def fake_post(*, config, submission, opener=None):  # noqa: ARG001
+        captured["workflow_reference"] = submission.envelope.workflow_reference
+        return _ok_result()
+
+    monkeypatch.setattr(
+        "driftshield.cli.commands.telemetry.post_oss_submission", fake_post
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "telemetry",
+            "submit-session",
+            "--path",
+            str(session_path),
+            "--workflow-reference",
+            "from-flag",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["workflow_reference"] == "from-flag"
+
+
+def test_submit_session_logs_deprecation_warning_when_server_on_phase3f_v1(
+    tmp_path, monkeypatch
+):
+    """If the server's X-DriftShield-Contract-Version header is phase3f.v1,
+    the CLI emits a deprecation note. AC5 second half."""
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    runner.invoke(app, _remote_enable_argv())
+    session_path = _write_session(tmp_path, {"session_id": "sess-1"})
+
+    def fake_post(*, config, submission, opener=None):  # noqa: ARG001
+        return _ok_result(server_contract_version="phase3f.v1")
+
+    monkeypatch.setattr(
+        "driftshield.cli.commands.telemetry.post_oss_submission", fake_post
+    )
+
+    result = runner.invoke(
+        app, ["telemetry", "submit-session", "--path", str(session_path)]
+    )
+
+    assert result.exit_code == 0
+    assert "deprecation" in result.stdout.lower()
+    assert "phase3f.v1" in result.stdout
+
+
+def test_submit_session_no_deprecation_warning_when_server_on_phase3g_v1(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    runner.invoke(app, _remote_enable_argv())
+    session_path = _write_session(tmp_path, {"session_id": "sess-1"})
+
+    def fake_post(*, config, submission, opener=None):  # noqa: ARG001
+        return _ok_result(server_contract_version="phase3g.v1")
+
+    monkeypatch.setattr(
+        "driftshield.cli.commands.telemetry.post_oss_submission", fake_post
+    )
+
+    result = runner.invoke(
+        app, ["telemetry", "submit-session", "--path", str(session_path)]
+    )
+
+    assert result.exit_code == 0
+    assert "deprecation" not in result.stdout.lower()
 
 
 def test_submit_session_fails_when_remote_not_configured(tmp_path, monkeypatch):
@@ -469,9 +611,7 @@ def test_submit_session_accepts_unknown_shape_when_forced(tmp_path, monkeypatch)
     session_path = _write_session(tmp_path, {"unrelated_top_key": True})
 
     def fake_post(*, config, submission, opener=None):  # noqa: ARG001
-        from driftshield.intake_contract import IntakeSubmissionResponse
-
-        return IntakeSubmissionResponse(submission_id="sub_forced", processing_status="received")
+        return _ok_result(submission_id="sub_forced")
 
     monkeypatch.setattr(
         "driftshield.cli.commands.telemetry.post_oss_submission", fake_post

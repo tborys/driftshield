@@ -20,6 +20,7 @@ from typing import Any
 from urllib import error, request
 
 from driftshield.intake_contract import (
+    DEFAULT_WORKFLOW_REFERENCE,
     REDACTION_MANIFEST_VERSION,
     REQUIRED_REDACTION_FIELDS,
     SUPPORTED_CONTRACT_VERSION,
@@ -34,6 +35,9 @@ from driftshield.recursive_redactor import (
     RedactionResult,
     redact,
 )
+
+
+SERVER_CONTRACT_VERSION_HEADER = "X-DriftShield-Contract-Version"
 
 
 _DEFAULT_SOURCE_SYSTEM = "driftshield-oss"
@@ -131,6 +135,9 @@ def build_oss_submission_request(
     project_reference: str | None = None,
     source_report_id: str | None = None,
     force_unknown_shape: bool = False,
+    agent_id: str | None = None,
+    model_name: str | None = None,
+    model_version: str | None = None,
 ) -> OssSubmissionRequest:
     """Build an unauthenticated OSS submission request.
 
@@ -155,11 +162,14 @@ def build_oss_submission_request(
     redacted_payload, redacted_fields = redact_payload(payload)
     _, payload_size = _encode_payload(redacted_payload)
 
+    envelope_workflow_reference = (
+        workflow_reference if workflow_reference is not None else DEFAULT_WORKFLOW_REFERENCE
+    )
     envelope = SubmissionEnvelope(
         source_system=source_system,
         source_session_id=source_session_id,
         source_report_id=source_report_id,
-        workflow_reference=workflow_reference,
+        workflow_reference=envelope_workflow_reference,
         project_reference=project_reference,
         schema_version=SUPPORTED_CONTRACT_VERSION,
         payload=redacted_payload,
@@ -171,6 +181,9 @@ def build_oss_submission_request(
             redactor_version=REDACTOR_VERSION,
             redaction_ruleset_version=REDACTION_RULESET_VERSION,
         ),
+        agent_id=agent_id,
+        model_name=model_name,
+        model_version=model_version,
     )
     return OssSubmissionRequest(
         envelope_contract_version=SUPPORTED_CONTRACT_VERSION,
@@ -178,12 +191,27 @@ def build_oss_submission_request(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class OssSubmissionResult:
+    """Response + transport-level metadata for one OSS submission.
+
+    ``server_contract_version`` is the value of the
+    ``X-DriftShield-Contract-Version`` response header, or ``None`` if the
+    server did not advertise one. Callers compare it against
+    :data:`driftshield.intake_contract.SUPPORTED_CONTRACT_VERSION` to detect
+    a deprecated server.
+    """
+
+    response: IntakeSubmissionResponse
+    server_contract_version: str | None
+
+
 def post_oss_submission(
     *,
     config: OssRemoteSubmissionConfig,
     submission: OssSubmissionRequest,
     opener: Any = None,
-) -> IntakeSubmissionResponse:
+) -> OssSubmissionResult:
     """Single unauthenticated POST to /v1/oss/submissions. No retry on failure.
 
     No X-API-Key header. No Authorization header. The intake URL is taken
@@ -203,6 +231,7 @@ def post_oss_submission(
     try:
         with urlopen(req) as resp:
             raw = resp.read().decode("utf-8")
+            server_contract_version = resp.headers.get(SERVER_CONTRACT_VERSION_HEADER)
     except error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace") if hasattr(exc, "read") else str(exc)
         raise RemoteSubmissionError(f"intake HTTP {exc.code}: {detail}") from exc
@@ -213,13 +242,19 @@ def post_oss_submission(
         decoded = json.loads(raw)
     except json.JSONDecodeError as exc:
         raise RemoteSubmissionError(f"intake returned non-JSON body: {raw!r}") from exc
-    return IntakeSubmissionResponse.model_validate(decoded)
+    response = IntakeSubmissionResponse.model_validate(decoded)
+    return OssSubmissionResult(
+        response=response,
+        server_contract_version=server_contract_version,
+    )
 
 
 __all__ = [
     "REDACTION_RULESET_VERSION",
     "REDACTOR_VERSION",
+    "SERVER_CONTRACT_VERSION_HEADER",
     "OssRemoteSubmissionConfig",
+    "OssSubmissionResult",
     "RemoteSubmissionError",
     "UnknownTranscriptShapeError",
     "build_oss_submission_request",

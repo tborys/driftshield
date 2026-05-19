@@ -10,12 +10,14 @@ from urllib import error
 import pytest
 
 from driftshield.intake_contract import (
+    DEFAULT_WORKFLOW_REFERENCE,
     REDACTION_MANIFEST_VERSION,
     REQUIRED_REDACTION_FIELDS,
     SUPPORTED_CONTRACT_VERSION,
     OssSubmissionRequest,
 )
 from driftshield.remote_submission import (
+    SERVER_CONTRACT_VERSION_HEADER,
     OssRemoteSubmissionConfig,
     RemoteSubmissionError,
     build_oss_submission_request,
@@ -178,7 +180,8 @@ def test_redact_payload_manifest_advertises_superset_even_if_missing():
     assert set(redacted_fields) == REQUIRED_REDACTION_FIELDS
 
 
-def test_build_oss_submission_request_phase3f_v1_shape():
+def test_build_oss_submission_request_phase3g_v1_shape():
+    """Builder produces a phase3g.v1 envelope with the default workflow ref."""
     payload = {
         "session_id": "sess-1",
         "prompts": ["should be stripped"],
@@ -193,11 +196,15 @@ def test_build_oss_submission_request_phase3f_v1_shape():
     )
 
     assert isinstance(request, OssSubmissionRequest)
-    assert request.envelope_contract_version == SUPPORTED_CONTRACT_VERSION
+    assert request.envelope_contract_version == SUPPORTED_CONTRACT_VERSION == "phase3g.v1"
 
     envelope = request.envelope
     assert envelope.schema_version == SUPPORTED_CONTRACT_VERSION
     assert envelope.source_session_id == "sess-1"
+    assert envelope.workflow_reference == DEFAULT_WORKFLOW_REFERENCE
+    assert envelope.agent_id is None
+    assert envelope.model_name is None
+    assert envelope.model_version is None
     assert "prompts" not in envelope.payload
     assert "responses" not in envelope.payload
     assert "user_identifiers" not in envelope.payload
@@ -207,6 +214,32 @@ def test_build_oss_submission_request_phase3f_v1_shape():
     assert envelope.redaction_manifest.manifest_version == REDACTION_MANIFEST_VERSION
     assert envelope.redaction_manifest.redaction_applied is True
     assert set(envelope.redaction_manifest.redacted_fields) == REQUIRED_REDACTION_FIELDS
+
+
+def test_build_oss_submission_request_threads_provenance_fields():
+    """agent_id / model_name / model_version are surfaced on the envelope when supplied."""
+    request = build_oss_submission_request(
+        source_session_id="sess-1",
+        payload={"session_id": "sess-1"},
+        agent_id="agent-42",
+        model_name="claude-opus-4-7",
+        model_version="2026-05",
+    )
+
+    envelope = request.envelope
+    assert envelope.agent_id == "agent-42"
+    assert envelope.model_name == "claude-opus-4-7"
+    assert envelope.model_version == "2026-05"
+
+
+def test_build_oss_submission_request_workflow_reference_override():
+    request = build_oss_submission_request(
+        source_session_id="sess-1",
+        payload={"session_id": "sess-1"},
+        workflow_reference="checkout-flow",
+    )
+
+    assert request.envelope.workflow_reference == "checkout-flow"
 
 
 def test_build_oss_submission_request_emits_manifest_v2_with_provenance():
@@ -259,8 +292,9 @@ def test_build_oss_submission_request_payload_size_bytes_is_exact():
 
 
 class _FakeHttpResponse:
-    def __init__(self, body: bytes) -> None:
+    def __init__(self, body: bytes, headers: dict[str, str] | None = None) -> None:
         self._body = body
+        self.headers = headers or {}
 
     def __enter__(self) -> "_FakeHttpResponse":
         return self
@@ -281,7 +315,8 @@ def test_post_oss_submission_happy_path():
         captured["headers"] = dict(req.headers)
         captured["body"] = req.data
         return _FakeHttpResponse(
-            json.dumps({"submission_id": "sub_abc", "processing_status": "received"}).encode("utf-8")
+            json.dumps({"submission_id": "sub_abc", "processing_status": "received"}).encode("utf-8"),
+            headers={SERVER_CONTRACT_VERSION_HEADER: SUPPORTED_CONTRACT_VERSION},
         )
 
     request = build_oss_submission_request(
@@ -289,10 +324,11 @@ def test_post_oss_submission_happy_path():
         payload={"session_id": "sess-1"},
     )
 
-    response = post_oss_submission(config=_config(), submission=request, opener=fake_opener)
+    result = post_oss_submission(config=_config(), submission=request, opener=fake_opener)
 
-    assert response.submission_id == "sub_abc"
-    assert response.processing_status == "received"
+    assert result.response.submission_id == "sub_abc"
+    assert result.response.processing_status == "received"
+    assert result.server_contract_version == SUPPORTED_CONTRACT_VERSION
     assert captured["url"] == _OSS_INTAKE_URL
     assert captured["method"] == "POST"
     # urllib.request lowercases header keys when stored on the Request object.
@@ -304,6 +340,42 @@ def test_post_oss_submission_happy_path():
     assert "installation_id" not in decoded
     assert "consent_state" not in decoded
     assert decoded["envelope_contract_version"] == SUPPORTED_CONTRACT_VERSION
+
+
+def test_post_oss_submission_surfaces_deprecated_server_header():
+    """OSS client surfaces a server-side phase3f.v1 advertisement so the CLI
+    can log a deprecation warning. AC5."""
+
+    def fake_opener(req: Any) -> _FakeHttpResponse:
+        return _FakeHttpResponse(
+            json.dumps({"submission_id": "sub_abc", "processing_status": "received"}).encode("utf-8"),
+            headers={SERVER_CONTRACT_VERSION_HEADER: "phase3f.v1"},
+        )
+
+    request = build_oss_submission_request(
+        source_session_id="sess-1",
+        payload={"session_id": "sess-1"},
+    )
+
+    result = post_oss_submission(config=_config(), submission=request, opener=fake_opener)
+
+    assert result.server_contract_version == "phase3f.v1"
+
+
+def test_post_oss_submission_server_contract_version_absent_when_header_missing():
+    def fake_opener(req: Any) -> _FakeHttpResponse:
+        return _FakeHttpResponse(
+            json.dumps({"submission_id": "sub_abc", "processing_status": "received"}).encode("utf-8"),
+        )
+
+    request = build_oss_submission_request(
+        source_session_id="sess-1",
+        payload={"session_id": "sess-1"},
+    )
+
+    result = post_oss_submission(config=_config(), submission=request, opener=fake_opener)
+
+    assert result.server_contract_version is None
 
 
 def test_post_oss_submission_http_error_raises_remote_submission_error():
