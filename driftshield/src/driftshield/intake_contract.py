@@ -1,10 +1,12 @@
-"""Phase 3h intake submission contract (OSS side).
+"""Intake submission contract (OSS side).
 
-Duplicate-with-version-pin of the canonical models at
-driftshield-intel/src/driftshield_intel/intake_api.py:57-149.
-Promote to a shared package post Phase 3i. Until then, any change here
-must be mirrored on the intel side and vice versa, and both ends must
-continue to advertise the same SUPPORTED_CONTRACT_VERSION.
+Pydantic models for the request body that ``driftshield submit-session``
+sends to the configured intake server. The server validates the same
+shape and rejects with HTTP 422 when ``envelope_contract_version`` or
+``schema_version`` are not in ``ACCEPTED_CONTRACT_VERSIONS``. Keep
+``SUPPORTED_CONTRACT_VERSION`` and the model field sets in lockstep with
+the server-side contract; both ends must continue to advertise the same
+``SUPPORTED_CONTRACT_VERSION`` outside the post-bump deprecation window.
 """
 
 from __future__ import annotations
@@ -16,10 +18,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 SUPPORTED_CONTRACT_VERSION = "phase3g.v1"
-# Server-side validators on the intel side accept either pin during the
-# 90-day deprecation window (see
-# driftshield-meta/docs/operations/phase-3i-envelope-deprecation.md). The
-# OSS-side declaration is here for contract-pin parity; this module has no
+# Intake servers accept submissions on either pin during a 90-day
+# deprecation window after a contract bump, so older clients can still
+# submit while operators upgrade. The OSS-side declaration is here for
+# contract-pin parity with the server validator; this module has no
 # accept-logic of its own.
 ACCEPTED_CONTRACT_VERSIONS: frozenset[str] = frozenset({"phase3f.v1", "phase3g.v1"})
 MAX_ENVELOPE_BYTES = 256_000

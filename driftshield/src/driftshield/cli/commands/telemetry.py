@@ -10,7 +10,14 @@ from rich.console import Console
 
 from driftshield.intake_contract import (
     DEFAULT_WORKFLOW_REFERENCE,
+    REDACTION_MANIFEST_VERSION,
+    REQUIRED_REDACTION_FIELDS,
     SUPPORTED_CONTRACT_VERSION,
+    RedactionManifest,
+)
+from driftshield.recursive_redactor import (
+    REDACTION_RULESET_VERSION,
+    REDACTOR_VERSION,
 )
 from driftshield.remote_submission import (
     OssRemoteSubmissionConfig,
@@ -182,18 +189,17 @@ def telemetry_submit_session(
                 )
             )
         if show_manifest:
-            typer.echo(
-                json.dumps(
-                    {
-                        "manifest_version": "redaction-manifest.v1",
-                        "redaction_applied": True,
-                        "redacted_fields": sorted(["prompts", "responses", "user_identifiers"]),
-                        "detected_shape": shape,
-                        "ruleset_entry_count": len(result.entries),
-                    },
-                    indent=2,
-                )
+            manifest = RedactionManifest(
+                manifest_version=REDACTION_MANIFEST_VERSION,
+                redaction_applied=True,
+                redacted_fields=sorted(REQUIRED_REDACTION_FIELDS),
+                redactor_version=REDACTOR_VERSION,
+                redaction_ruleset_version=REDACTION_RULESET_VERSION,
             )
+            manifest_payload = manifest.model_dump(mode="json")
+            manifest_payload["detected_shape"] = shape
+            manifest_payload["ruleset_entry_count"] = len(result.entries)
+            typer.echo(json.dumps(manifest_payload, indent=2))
         return
 
     config = TelemetryService().load_config()
@@ -245,9 +251,9 @@ def telemetry_submit_session(
         console.print(
             f"[yellow]Deprecation:[/yellow] intake server advertises "
             f"{result.server_contract_version}; this client is on "
-            f"{SUPPORTED_CONTRACT_VERSION}. Coordinate the server upgrade "
-            "before the 90-day sunset documented at "
-            "driftshield-meta/docs/operations/phase-3i-envelope-deprecation.md."
+            f"{SUPPORTED_CONTRACT_VERSION}. The server is in its post-bump "
+            "deprecation window: submissions are still accepted, but the "
+            "server operator should upgrade before the window closes."
         )
 
     response = result.response

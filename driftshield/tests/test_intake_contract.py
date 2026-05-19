@@ -1,13 +1,11 @@
-"""Structural pin for the duplicated phase3g.v1 intake contract.
+"""Structural pin for the phase3g.v1 intake contract.
 
-Until the contract is promoted to a shared package (Phase 3i+), this test
-locks the OSS-side models against a hardcoded reference snapshot copied
-from `driftshield-intel/src/driftshield_intel/intake_api.py:57-149`.
-
-If the canonical intel models change, update both the reference snapshot
-below AND `src/driftshield/intake_contract.py`, in lockstep. Otherwise the
-intake validator will reject submissions silently or with a misleading
-error code.
+Locks the OSS-side Pydantic models against a hardcoded reference
+snapshot that mirrors the server-side validator. If either side moves
+without the other, the intake validator will reject submissions silently
+or with a misleading error code. Update both the reference snapshot
+below AND ``src/driftshield/intake_contract.py`` in lockstep, and keep
+the server-side validator in sync.
 """
 
 from __future__ import annotations
