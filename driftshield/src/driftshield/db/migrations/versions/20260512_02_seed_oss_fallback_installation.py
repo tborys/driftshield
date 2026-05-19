@@ -21,7 +21,7 @@ depends_on: Sequence[str] | None = None
 
 LOGGER = logging.getLogger("alembic.runtime.migration")
 
-# Keep the hard-coded row UUIDs aligned with driftshield-infra fallback env wiring/test fixtures.
+# Keep the hard-coded row UUIDs aligned with the matching server-side fallback env vars and the smoke test fixtures.
 
 
 def upgrade() -> None:
