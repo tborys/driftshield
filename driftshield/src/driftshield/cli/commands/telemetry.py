@@ -8,6 +8,17 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
+from driftshield.intake_contract import (
+    DEFAULT_WORKFLOW_REFERENCE,
+    REDACTION_MANIFEST_VERSION,
+    REQUIRED_REDACTION_FIELDS,
+    SUPPORTED_CONTRACT_VERSION,
+    RedactionManifest,
+)
+from driftshield.recursive_redactor import (
+    REDACTION_RULESET_VERSION,
+    REDACTOR_VERSION,
+)
 from driftshield.remote_submission import (
     OssRemoteSubmissionConfig,
     RemoteSubmissionError,
@@ -94,13 +105,28 @@ def telemetry_submit_session(
         help="Override the source_session_id field. Defaults to the JSON file stem.",
     ),
     workflow_reference: str | None = typer.Option(
-        None, "--workflow-reference", help="Optional workflow identifier."
+        None,
+        "--workflow-reference",
+        help=(
+            "Workflow identifier stamped on the envelope. Defaults to the "
+            "value in the session JSON's 'workflow_reference' field, or "
+            "'default' if neither is supplied."
+        ),
     ),
     project_reference: str | None = typer.Option(
         None, "--project-reference", help="Optional project identifier."
     ),
     source_report_id: str | None = typer.Option(
         None, "--source-report-id", help="Optional source report identifier."
+    ),
+    agent_id: str | None = typer.Option(
+        None, "--agent-id", help="Optional agent identifier (phase3g.v1 provenance)."
+    ),
+    model_name: str | None = typer.Option(
+        None, "--model-name", help="Optional model name (phase3g.v1 provenance)."
+    ),
+    model_version: str | None = typer.Option(
+        None, "--model-version", help="Optional model version (phase3g.v1 provenance)."
     ),
     dry_run_redaction: bool = typer.Option(
         False,
@@ -118,11 +144,17 @@ def telemetry_submit_session(
         help="Submit even if the transcript top-level shape is not recognised by the redactor.",
     ),
 ) -> None:
-    """Build a phase3f.v1 envelope from a finished session JSON and POST once to the OSS intake URL.
+    """Build a phase3g.v1 envelope from a finished session JSON and POST once to the OSS intake URL.
 
     The OSS lane is unauthenticated. No X-API-Key header is sent, no installation_id
     or consent_state is included in the request. The server binds the persisted row
     to the in-stack OSS fallback installation + consent.
+
+    ``workflow_reference`` precedence: --workflow-reference flag, then
+    session JSON's ``workflow_reference`` field, then ``"default"``. The
+    Phase 3i recurrence matcher requires distinct workflow references to
+    light up the Emerging signal; leaving every submission on ``"default"``
+    masks recurrence.
     """
     try:
         raw = path.read_text(encoding="utf-8")
@@ -157,18 +189,17 @@ def telemetry_submit_session(
                 )
             )
         if show_manifest:
-            typer.echo(
-                json.dumps(
-                    {
-                        "manifest_version": "redaction-manifest.v1",
-                        "redaction_applied": True,
-                        "redacted_fields": sorted(["prompts", "responses", "user_identifiers"]),
-                        "detected_shape": shape,
-                        "ruleset_entry_count": len(result.entries),
-                    },
-                    indent=2,
-                )
+            manifest = RedactionManifest(
+                manifest_version=REDACTION_MANIFEST_VERSION,
+                redaction_applied=True,
+                redacted_fields=sorted(REQUIRED_REDACTION_FIELDS),
+                redactor_version=REDACTOR_VERSION,
+                redaction_ruleset_version=REDACTION_RULESET_VERSION,
             )
+            manifest_payload = manifest.model_dump(mode="json")
+            manifest_payload["detected_shape"] = shape
+            manifest_payload["ruleset_entry_count"] = len(result.entries)
+            typer.echo(json.dumps(manifest_payload, indent=2))
         return
 
     config = TelemetryService().load_config()
@@ -179,14 +210,25 @@ def telemetry_submit_session(
         )
         raise typer.Exit(1)
 
+    resolved_workflow_reference = workflow_reference
+    if resolved_workflow_reference is None:
+        payload_workflow = payload.get("workflow_reference")
+        if isinstance(payload_workflow, str) and payload_workflow.strip():
+            resolved_workflow_reference = payload_workflow
+    if resolved_workflow_reference is None:
+        resolved_workflow_reference = DEFAULT_WORKFLOW_REFERENCE
+
     try:
         submission = build_oss_submission_request(
             source_session_id=source_session_id or path.stem,
             payload=payload,
-            workflow_reference=workflow_reference,
+            workflow_reference=resolved_workflow_reference,
             project_reference=project_reference,
             source_report_id=source_report_id,
             force_unknown_shape=force_unknown_shape,
+            agent_id=agent_id,
+            model_name=model_name,
+            model_version=model_version,
         )
     except UnknownTranscriptShapeError as exc:
         console.print(
@@ -197,11 +239,24 @@ def telemetry_submit_session(
 
     submission_config = OssRemoteSubmissionConfig(intake_url=config.remote_intake_url)
     try:
-        response = post_oss_submission(config=submission_config, submission=submission)
+        result = post_oss_submission(config=submission_config, submission=submission)
     except RemoteSubmissionError as exc:
         console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1) from exc
 
+    if (
+        result.server_contract_version is not None
+        and result.server_contract_version != SUPPORTED_CONTRACT_VERSION
+    ):
+        console.print(
+            f"[yellow]Deprecation:[/yellow] intake server advertises "
+            f"{result.server_contract_version}; this client is on "
+            f"{SUPPORTED_CONTRACT_VERSION}. The server is in its post-bump "
+            "deprecation window: submissions are still accepted, but the "
+            "server operator should upgrade before the window closes."
+        )
+
+    response = result.response
     console.print(
         f"Submitted. submission_id={response.submission_id} status={response.processing_status}"
     )
