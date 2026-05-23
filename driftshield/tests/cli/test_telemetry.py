@@ -509,7 +509,11 @@ def test_submit_session_fails_on_invalid_json(tmp_path, monkeypatch):
     )
 
     assert result.exit_code == 1
-    assert "not valid json" in result.stdout.lower()
+    # After the JSON-or-JSONL loader landed, the file is parsed as
+    # JSONL: every line fails json.loads silently, leaving zero events.
+    # Rich may wrap the error string on whitespace, so match the stable
+    # prefix only.
+    assert "no parseable jsonl" in result.stdout.lower()
 
 
 def test_submit_session_fails_on_non_object_json(tmp_path, monkeypatch):
@@ -523,7 +527,7 @@ def test_submit_session_fails_on_non_object_json(tmp_path, monkeypatch):
     )
 
     assert result.exit_code == 1
-    assert "json object" in result.stdout.lower()
+    assert "must contain a json object" in result.stdout.lower()
 
 
 def test_submit_session_dry_run_redaction_prints_entries_and_does_not_submit(
@@ -885,3 +889,57 @@ def test_submit_session_include_analysis_empty_matches_is_valid_success(
     assert captured["signature_summary"] is not None
     assert captured["signature_summary"].schema_version == SIGNATURE_SUMMARY_VERSION
     assert captured["signature_summary"].matches == []
+
+
+def test_submit_session_accepts_jsonl_input(tmp_path, monkeypatch):
+    """A native JSONL transcript at --path is accepted transparently.
+
+    The loader collects each parsed line into ``payload['events']`` and
+    threads ``sessionId`` into ``payload['session_id']``.
+    """
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    runner.invoke(app, _remote_enable_argv())
+    jsonl_path = tmp_path / "session.jsonl"
+    jsonl_path.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "type": "assistant",
+                        "sessionId": "sess-jsonl",
+                        "message": {"content": []},
+                    }
+                ),
+                json.dumps({"type": "user", "message": {"content": "hi"}}),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    captured = {}
+
+    def fake_post(*, config, submission, opener=None):  # noqa: ARG001
+        captured["payload"] = submission.envelope.payload
+        captured["session_id"] = submission.envelope.source_session_id
+        return _ok_result()
+
+    monkeypatch.setattr(
+        "driftshield.cli.commands.telemetry.post_oss_submission", fake_post
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "telemetry",
+            "submit-session",
+            "--path",
+            str(jsonl_path),
+        ],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    payload = captured["payload"]
+    assert isinstance(payload, dict)
+    assert payload.get("session_id") == "sess-jsonl"
+    assert isinstance(payload.get("events"), list)
+    assert len(payload["events"]) == 2
