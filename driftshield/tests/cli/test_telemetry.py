@@ -701,3 +701,128 @@ def test_submit_session_surfaces_remote_error(tmp_path, monkeypatch):
     assert result.exit_code == 1
     assert "422" in result.stdout
     assert "invalid_redaction_manifest" in result.stdout
+
+
+# ---------------------------------------------------------------------------
+# --include-analysis flag on submit-session
+# ---------------------------------------------------------------------------
+
+
+def test_submit_session_default_no_signature_summary(tmp_path, monkeypatch):
+    """Default invocation (no --include-analysis) keeps signature_summary=None."""
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    runner.invoke(app, _remote_enable_argv())
+    session_path = _write_session(tmp_path, {"session_id": "sess-1"})
+    captured = {}
+
+    def fake_post(*, config, submission, opener=None):  # noqa: ARG001
+        captured["signature_summary"] = submission.envelope.signature_summary
+        return _ok_result()
+
+    monkeypatch.setattr(
+        "driftshield.cli.commands.telemetry.post_oss_submission", fake_post
+    )
+
+    result = runner.invoke(
+        app, ["telemetry", "submit-session", "--path", str(session_path)]
+    )
+
+    assert result.exit_code == 0
+    assert captured["signature_summary"] is None
+
+
+def test_submit_session_with_include_analysis_populates_signature_summary(
+    tmp_path, monkeypatch
+):
+    """--include-analysis triggers the local matcher and attaches the block."""
+    from driftshield.intake_contract import (
+        SIGNATURE_SUMMARY_VERSION,
+        SignatureSummary,
+        SignatureSummaryEntry,
+    )
+
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    runner.invoke(app, _remote_enable_argv())
+    session_path = _write_session(tmp_path, {"session_id": "sess-1"})
+    captured = {}
+
+    def fake_post(*, config, submission, opener=None):  # noqa: ARG001
+        captured["signature_summary"] = submission.envelope.signature_summary
+        return _ok_result()
+
+    fake_summary = SignatureSummary(
+        schema_version=SIGNATURE_SUMMARY_VERSION,
+        matches=[
+            SignatureSummaryEntry(
+                signature_id="sig-abc",
+                match_status="matched",
+                community_pack_id="community-general",
+                community_pack_version="1.0.0",
+                matcher_id="phase-3g-deterministic-v1",
+                matcher_version="phase-3g-deterministic-rules-v1",
+                confidence=0.9,
+                confidence_band="high",
+            )
+        ],
+    )
+
+    monkeypatch.setattr(
+        "driftshield.cli.commands.telemetry.post_oss_submission", fake_post
+    )
+    monkeypatch.setattr(
+        "driftshield.cli.commands.telemetry.build_signature_summary_from_session",
+        lambda _path: fake_summary,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "telemetry",
+            "submit-session",
+            "--path",
+            str(session_path),
+            "--include-analysis",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["signature_summary"] is not None
+    assert captured["signature_summary"].schema_version == SIGNATURE_SUMMARY_VERSION
+    assert captured["signature_summary"].matches[0].signature_id == "sig-abc"
+
+
+def test_submit_session_include_analysis_handles_builder_failure(tmp_path, monkeypatch):
+    """If the local matcher fails, submission still proceeds with signature_summary=None."""
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    runner.invoke(app, _remote_enable_argv())
+    session_path = _write_session(tmp_path, {"session_id": "sess-1"})
+    captured = {}
+
+    def fake_post(*, config, submission, opener=None):  # noqa: ARG001
+        captured["signature_summary"] = submission.envelope.signature_summary
+        return _ok_result()
+
+    def boom(_path):
+        raise RuntimeError("matcher exploded")
+
+    monkeypatch.setattr(
+        "driftshield.cli.commands.telemetry.post_oss_submission", fake_post
+    )
+    monkeypatch.setattr(
+        "driftshield.cli.commands.telemetry.build_signature_summary_from_session", boom
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "telemetry",
+            "submit-session",
+            "--path",
+            str(session_path),
+            "--include-analysis",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["signature_summary"] is None
+    assert "warning" in result.stdout.lower()

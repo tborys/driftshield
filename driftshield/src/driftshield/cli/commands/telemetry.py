@@ -19,6 +19,7 @@ from driftshield.recursive_redactor import (
     REDACTION_RULESET_VERSION,
     REDACTOR_VERSION,
 )
+from driftshield.cli._signature_summary import build_signature_summary_from_session
 from driftshield.remote_submission import (
     OssRemoteSubmissionConfig,
     RemoteSubmissionError,
@@ -143,6 +144,15 @@ def telemetry_submit_session(
         "--force-unknown-shape",
         help="Submit even if the transcript top-level shape is not recognised by the redactor.",
     ),
+    include_analysis: bool = typer.Option(
+        False,
+        "--include-analysis",
+        help=(
+            "Run the local deterministic matcher and attach a signature_summary "
+            "block to the envelope. Off by default; no behavioural change vs the "
+            "default submission path when omitted."
+        ),
+    ),
 ) -> None:
     """Build a phase3g.v1 envelope from a finished session JSON and POST once to the OSS intake URL.
 
@@ -218,6 +228,16 @@ def telemetry_submit_session(
     if resolved_workflow_reference is None:
         resolved_workflow_reference = DEFAULT_WORKFLOW_REFERENCE
 
+    summary = None
+    if include_analysis:
+        try:
+            summary = build_signature_summary_from_session(path)
+        except Exception as exc:  # noqa: BLE001
+            console.print(
+                f"[yellow]Warning:[/yellow] Could not derive signature_summary "
+                f"({exc}). Submission will proceed without it."
+            )
+
     try:
         submission = build_oss_submission_request(
             source_session_id=source_session_id or path.stem,
@@ -229,6 +249,7 @@ def telemetry_submit_session(
             agent_id=agent_id,
             model_name=model_name,
             model_version=model_version,
+            signature_summary=summary,
         )
     except UnknownTranscriptShapeError as exc:
         console.print(

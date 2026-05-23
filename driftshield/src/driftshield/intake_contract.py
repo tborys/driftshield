@@ -38,6 +38,42 @@ REQUIRED_REDACTION_FIELDS: frozenset[str] = frozenset(
     {"prompts", "responses", "user_identifiers"}
 )
 
+# Signature summary block (envelope-level sibling of ``payload``).
+#
+# Locally derived deterministic-matcher output for a single submission so a
+# remote endpoint can record what the OSS-side analyser already produced.
+# Sits at envelope level, not inside ``payload``, the recursive redactor
+# only walks ``payload``, so the summary is untouched by construction.
+SIGNATURE_SUMMARY_VERSION = "signature-summary.v1"
+ACCEPTED_SIGNATURE_SUMMARY_VERSIONS: frozenset[str] = frozenset(
+    {SIGNATURE_SUMMARY_VERSION}
+)
+MAX_SIGNATURE_SUMMARY_ENTRIES = 50
+
+
+class SignatureSummaryEntry(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    signature_id: str = Field(min_length=1, max_length=64)
+    signature_version: str | None = Field(default=None, max_length=24)
+    mechanism_id: str | None = Field(default=None, max_length=48)
+    match_status: str = Field(min_length=1, max_length=24)
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    confidence_band: str | None = Field(default=None, max_length=24)
+    community_pack_id: str = Field(min_length=1, max_length=48)
+    community_pack_version: str = Field(min_length=1, max_length=32)
+    matcher_id: str = Field(min_length=1, max_length=48)
+    matcher_version: str = Field(min_length=1, max_length=40)
+
+
+class SignatureSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str = Field(min_length=1)
+    matches: list[SignatureSummaryEntry] = Field(
+        default_factory=list, max_length=MAX_SIGNATURE_SUMMARY_ENTRIES
+    )
+
 
 class RedactionManifest(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -76,6 +112,9 @@ class SubmissionEnvelope(BaseModel):
     agent_id: str | None = Field(default=None, min_length=1)
     model_name: str | None = Field(default=None, min_length=1)
     model_version: str | None = Field(default=None, min_length=1)
+    # Envelope-level sibling of ``payload``. The recursive redactor only
+    # walks ``payload``; this block stays byte-identical end-to-end.
+    signature_summary: SignatureSummary | None = None
 
 
 class IntakeSubmissionRequest(BaseModel):

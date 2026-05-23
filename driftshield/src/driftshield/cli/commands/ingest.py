@@ -51,6 +51,7 @@ class SubmissionContext:
     workflow_reference: str | None = None
     project_reference: str | None = None
     source_connector: SourceConnectorMetadata | None = None
+    signature_summary_json: str | None = None
 
 
 def ingest(
@@ -129,6 +130,15 @@ def ingest(
         help="Optional source connector parser name.",
         envvar="DRIFTSHIELD_SOURCE_CONNECTOR_PARSER",
     ),
+    include_analysis: bool = typer.Option(
+        False,
+        "--include-analysis",
+        help=(
+            "Run the local deterministic matcher and attach a signature_summary "
+            "form field to the multipart upload. Off by default; no behavioural "
+            "change vs the default ingest path when omitted."
+        ),
+    ),
 ) -> None:
     """Upload a transcript to the DriftShield ingest API."""
     selected = [bool(path), project, latest]
@@ -180,6 +190,30 @@ def ingest(
     except error.URLError as exc:
         console.print(f"[red]Error:[/red] Could not reach Teams auth-check endpoint: {exc.reason}")
         raise typer.Exit(1) from exc
+
+    if include_analysis:
+        try:
+            from driftshield.cli._signature_summary import (
+                build_signature_summary_from_session,
+            )
+
+            summary = build_signature_summary_from_session(file_path)
+        except Exception as exc:  # noqa: BLE001
+            console.print(
+                f"[yellow]Warning:[/yellow] Could not derive signature_summary "
+                f"({exc}). Ingest will proceed without it."
+            )
+            summary = None
+        if summary is not None:
+            submission_context = SubmissionContext(
+                submission_tier=submission_context.submission_tier,
+                tenant_id=submission_context.tenant_id,
+                workspace_id=submission_context.workspace_id,
+                workflow_reference=submission_context.workflow_reference,
+                project_reference=submission_context.project_reference,
+                source_connector=submission_context.source_connector,
+                signature_summary_json=summary.model_dump_json(),
+            )
 
     target_url = api_url.rstrip("/") + "/api/ingest"
 
@@ -390,6 +424,12 @@ def _build_multipart_body(
         boundary=boundary,
         name="project_reference",
         value=submission_context.project_reference,
+    )
+    _append_optional_text_form_field(
+        segments,
+        boundary=boundary,
+        name="signature_summary",
+        value=submission_context.signature_summary_json,
     )
     if submission_context.source_connector is not None:
         source_connector_payload = submission_context.source_connector.as_payload()

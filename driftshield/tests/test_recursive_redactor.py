@@ -220,3 +220,69 @@ def test_build_request_accepts_unknown_shape_when_forced():
         force_unknown_shape=True,
     )
     assert submission.envelope.source_session_id == "s"
+
+
+# ---------------------------------------------------------------------------
+# signature_summary stays byte-identical at envelope level
+# ---------------------------------------------------------------------------
+
+
+def test_signature_summary_at_envelope_level_is_untouched():
+    """The redactor only walks ``payload``. A sibling ``signature_summary``
+    block must come out the other side byte-for-byte identical.
+    """
+    import copy
+    from driftshield.intake_contract import (
+        REDACTION_MANIFEST_VERSION,
+        REQUIRED_REDACTION_FIELDS,
+        SIGNATURE_SUMMARY_VERSION,
+        SUPPORTED_CONTRACT_VERSION,
+        RedactionManifest,
+        SignatureSummary,
+        SignatureSummaryEntry,
+        SubmissionEnvelope,
+    )
+
+    summary = SignatureSummary(
+        schema_version=SIGNATURE_SUMMARY_VERSION,
+        matches=[
+            SignatureSummaryEntry(
+                signature_id="sig-abc",
+                match_status="matched",
+                community_pack_id="community-general",
+                community_pack_version="1.0.0",
+                matcher_id="phase-3g-deterministic-v1",
+                matcher_version="phase-3g-deterministic-rules-v1",
+                confidence=0.9,
+                confidence_band="high",
+            )
+        ],
+    )
+
+    envelope = SubmissionEnvelope(
+        source_system="oss",
+        source_session_id="sess-1",
+        schema_version=SUPPORTED_CONTRACT_VERSION,
+        payload={
+            "session_id": "sess-1",
+            "events": [{"type": "user", "content": "LEAK_CANARY_PROMPT"}],
+        },
+        payload_size_bytes=64,
+        redaction_manifest=RedactionManifest(
+            manifest_version=REDACTION_MANIFEST_VERSION,
+            redaction_applied=True,
+            redacted_fields=sorted(REQUIRED_REDACTION_FIELDS),
+        ),
+        signature_summary=summary,
+    )
+
+    before = copy.deepcopy(envelope.signature_summary)
+    before_json = envelope.signature_summary.model_dump_json()
+
+    # Run the redactor against ONLY the payload, mirroring the build-time call site.
+    result = redact(envelope.payload)
+    assert "LEAK_CANARY_PROMPT" not in json.dumps(result.payload)
+
+    after_json = envelope.signature_summary.model_dump_json()
+    assert envelope.signature_summary == before
+    assert after_json == before_json
