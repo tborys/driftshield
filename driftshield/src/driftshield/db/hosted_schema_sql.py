@@ -106,6 +106,8 @@ def build_hosted_base_sql() -> tuple[str, ...]:
             review_needed boolean not null default false,
             visibility_class text not null default 'internal_only',
             recurrence_group_key text,
+            source_trust text not null default 'client_supplied_oss'
+                check (source_trust in ('client_supplied_oss', 'server_derived')),
             created_at timestamptz not null default timezone('utc', now())
         )
         """,

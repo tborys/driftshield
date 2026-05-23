@@ -425,3 +425,90 @@ def test_post_oss_submission_non_json_response_raises():
     with pytest.raises(RemoteSubmissionError) as exc_info:
         post_oss_submission(config=_config(), submission=request, opener=fake_opener)
     assert "non-JSON" in str(exc_info.value)
+
+
+# ---------------------------------------------------------------------------
+# signature_summary plumbing
+# ---------------------------------------------------------------------------
+
+
+from unittest.mock import patch  # noqa: E402
+
+from driftshield.intake_contract import (  # noqa: E402
+    SIGNATURE_SUMMARY_VERSION,
+    SignatureSummary,
+    SignatureSummaryEntry,
+)
+
+
+def _summary_with_one_entry() -> SignatureSummary:
+    return SignatureSummary(
+        schema_version=SIGNATURE_SUMMARY_VERSION,
+        matches=[
+            SignatureSummaryEntry(
+                signature_id="sig-abc",
+                match_status="matched",
+                community_pack_id="community-general",
+                community_pack_version="1.0.0",
+                matcher_id="phase-3g-deterministic-v1",
+                matcher_version="phase-3g-deterministic-rules-v1",
+                confidence=0.9,
+                confidence_band="high",
+            )
+        ],
+    )
+
+
+def test_build_oss_submission_request_no_signature_summary():
+    """Default invocation produces an envelope with signature_summary=None."""
+    request = build_oss_submission_request(
+        source_session_id="sess-1",
+        payload={"session_id": "sess-1"},
+    )
+    assert request.envelope.signature_summary is None
+
+
+def test_build_oss_submission_request_populates_signature_summary():
+    summary = _summary_with_one_entry()
+    request = build_oss_submission_request(
+        source_session_id="sess-1",
+        payload={"session_id": "sess-1"},
+        signature_summary=summary,
+    )
+    assert request.envelope.signature_summary is not None
+    assert request.envelope.signature_summary.schema_version == SIGNATURE_SUMMARY_VERSION
+    assert request.envelope.signature_summary.matches[0].signature_id == "sig-abc"
+
+    # Serialised payload carries the block alongside ``payload``.
+    encoded = json.loads(request.model_dump_json())
+    assert "signature_summary" in encoded["envelope"]
+    assert encoded["envelope"]["signature_summary"]["matches"][0]["signature_id"] == "sig-abc"
+
+
+def test_redact_call_site_passes_only_payload():
+    """The redactor is invoked only with the inner payload dict, never the envelope."""
+    summary = _summary_with_one_entry()
+    captured: dict[str, Any] = {}
+
+    real_redact = __import__(
+        "driftshield.remote_submission", fromlist=["redact_payload"]
+    ).redact_payload
+
+    def spy(payload):
+        captured["payload"] = payload
+        return real_redact(payload)
+
+    with patch("driftshield.remote_submission.redact_payload", side_effect=spy) as spied:
+        build_oss_submission_request(
+            source_session_id="sess-1",
+            payload={"session_id": "sess-1", "metadata": {"foo": "bar"}},
+            signature_summary=summary,
+        )
+
+    # Redactor saw exactly the inner payload dict; signature_summary was not
+    # in the input, by construction (it is a sibling of payload, not nested).
+    assert spied.call_count == 1
+    inner_payload = captured["payload"]
+    assert "signature_summary" not in inner_payload
+    assert inner_payload["session_id"] == "sess-1"
+    assert inner_payload["metadata"] == {"foo": "bar"}

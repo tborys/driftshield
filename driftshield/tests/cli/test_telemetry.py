@@ -701,3 +701,187 @@ def test_submit_session_surfaces_remote_error(tmp_path, monkeypatch):
     assert result.exit_code == 1
     assert "422" in result.stdout
     assert "invalid_redaction_manifest" in result.stdout
+
+
+# ---------------------------------------------------------------------------
+# --include-analysis flag on submit-session
+# ---------------------------------------------------------------------------
+
+
+def test_submit_session_default_no_signature_summary(tmp_path, monkeypatch):
+    """Default invocation (no --include-analysis) keeps signature_summary=None."""
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    runner.invoke(app, _remote_enable_argv())
+    session_path = _write_session(tmp_path, {"session_id": "sess-1"})
+    captured = {}
+
+    def fake_post(*, config, submission, opener=None):  # noqa: ARG001
+        captured["signature_summary"] = submission.envelope.signature_summary
+        return _ok_result()
+
+    monkeypatch.setattr(
+        "driftshield.cli.commands.telemetry.post_oss_submission", fake_post
+    )
+
+    result = runner.invoke(
+        app, ["telemetry", "submit-session", "--path", str(session_path)]
+    )
+
+    assert result.exit_code == 0
+    assert captured["signature_summary"] is None
+
+
+def test_submit_session_with_include_analysis_populates_signature_summary(
+    tmp_path, monkeypatch
+):
+    """--include-analysis triggers the local matcher and attaches the block."""
+    from driftshield.intake_contract import (
+        SIGNATURE_SUMMARY_VERSION,
+        SignatureSummary,
+        SignatureSummaryEntry,
+    )
+
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    runner.invoke(app, _remote_enable_argv())
+    session_path = _write_session(tmp_path, {"session_id": "sess-1"})
+    captured = {}
+
+    def fake_post(*, config, submission, opener=None):  # noqa: ARG001
+        captured["signature_summary"] = submission.envelope.signature_summary
+        return _ok_result()
+
+    fake_summary = SignatureSummary(
+        schema_version=SIGNATURE_SUMMARY_VERSION,
+        matches=[
+            SignatureSummaryEntry(
+                signature_id="sig-abc",
+                match_status="matched",
+                community_pack_id="community-general",
+                community_pack_version="1.0.0",
+                matcher_id="phase-3g-deterministic-v1",
+                matcher_version="phase-3g-deterministic-rules-v1",
+                confidence=0.9,
+                confidence_band="high",
+            )
+        ],
+    )
+
+    monkeypatch.setattr(
+        "driftshield.cli.commands.telemetry.post_oss_submission", fake_post
+    )
+    monkeypatch.setattr(
+        "driftshield.cli.commands.telemetry.build_signature_summary_from_session",
+        lambda _path: fake_summary,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "telemetry",
+            "submit-session",
+            "--path",
+            str(session_path),
+            "--include-analysis",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["signature_summary"] is not None
+    assert captured["signature_summary"].schema_version == SIGNATURE_SUMMARY_VERSION
+    assert captured["signature_summary"].matches[0].signature_id == "sig-abc"
+
+
+def test_submit_session_include_analysis_strict_fail_on_builder_error(
+    tmp_path, monkeypatch
+):
+    """--include-analysis is strict: any builder exception fails the command.
+
+    The submission MUST NOT be sent and the exit code MUST be non-zero so the
+    operator notices that the explicit opt-in could not be honoured.
+    """
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    runner.invoke(app, _remote_enable_argv())
+    session_path = _write_session(tmp_path, {"session_id": "sess-1"})
+    posted = {"called": False}
+
+    def fake_post(*, config, submission, opener=None):  # noqa: ARG001
+        posted["called"] = True
+        return _ok_result()
+
+    def boom(_path):
+        raise RuntimeError("matcher exploded")
+
+    monkeypatch.setattr(
+        "driftshield.cli.commands.telemetry.post_oss_submission", fake_post
+    )
+    monkeypatch.setattr(
+        "driftshield.cli.commands.telemetry.build_signature_summary_from_session", boom
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "telemetry",
+            "submit-session",
+            "--path",
+            str(session_path),
+            "--include-analysis",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert posted["called"] is False
+    assert "build_signature_summary_from_session" in result.stderr
+    assert "matcher exploded" in result.stderr
+
+
+def test_submit_session_include_analysis_empty_matches_is_valid_success(
+    tmp_path, monkeypatch
+):
+    """An empty matches list IS a valid success path under --include-analysis.
+
+    Zero matches is not a builder failure: the submission proceeds with the
+    empty SignatureSummary attached.
+    """
+    from driftshield.intake_contract import (
+        SIGNATURE_SUMMARY_VERSION,
+        SignatureSummary,
+    )
+
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    runner.invoke(app, _remote_enable_argv())
+    session_path = _write_session(tmp_path, {"session_id": "sess-1"})
+    captured = {}
+
+    def fake_post(*, config, submission, opener=None):  # noqa: ARG001
+        captured["signature_summary"] = submission.envelope.signature_summary
+        return _ok_result()
+
+    empty_summary = SignatureSummary(
+        schema_version=SIGNATURE_SUMMARY_VERSION,
+        matches=[],
+    )
+
+    monkeypatch.setattr(
+        "driftshield.cli.commands.telemetry.post_oss_submission", fake_post
+    )
+    monkeypatch.setattr(
+        "driftshield.cli.commands.telemetry.build_signature_summary_from_session",
+        lambda _path: empty_summary,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "telemetry",
+            "submit-session",
+            "--path",
+            str(session_path),
+            "--include-analysis",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["signature_summary"] is not None
+    assert captured["signature_summary"].schema_version == SIGNATURE_SUMMARY_VERSION
+    assert captured["signature_summary"].matches == []

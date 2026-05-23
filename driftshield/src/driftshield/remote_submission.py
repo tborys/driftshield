@@ -27,6 +27,7 @@ from driftshield.intake_contract import (
     IntakeSubmissionResponse,
     OssSubmissionRequest,
     RedactionManifest,
+    SignatureSummary,
     SubmissionEnvelope,
 )
 from driftshield.recursive_redactor import (
@@ -138,6 +139,7 @@ def build_oss_submission_request(
     agent_id: str | None = None,
     model_name: str | None = None,
     model_version: str | None = None,
+    signature_summary: SignatureSummary | None = None,
 ) -> OssSubmissionRequest:
     """Build an unauthenticated OSS submission request.
 
@@ -184,6 +186,7 @@ def build_oss_submission_request(
         agent_id=agent_id,
         model_name=model_name,
         model_version=model_version,
+        signature_summary=signature_summary,
     )
     return OssSubmissionRequest(
         envelope_contract_version=SUPPORTED_CONTRACT_VERSION,
