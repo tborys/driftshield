@@ -192,28 +192,37 @@ def ingest(
         raise typer.Exit(1) from exc
 
     if include_analysis:
-        try:
-            from driftshield.cli._signature_summary import (
-                build_signature_summary_from_session,
-            )
+        from driftshield.cli._signature_summary import (
+            build_signature_summary_from_session,
+        )
 
+        try:
             summary = build_signature_summary_from_session(file_path)
         except Exception as exc:  # noqa: BLE001
-            console.print(
-                f"[yellow]Warning:[/yellow] Could not derive signature_summary "
-                f"({exc}). Ingest will proceed without it."
+            typer.echo(
+                "error: --include-analysis specified but "
+                f"build_signature_summary_from_session(...) failed: {exc}",
+                err=True,
             )
-            summary = None
-        if summary is not None:
-            submission_context = SubmissionContext(
-                submission_tier=submission_context.submission_tier,
-                tenant_id=submission_context.tenant_id,
-                workspace_id=submission_context.workspace_id,
-                workflow_reference=submission_context.workflow_reference,
-                project_reference=submission_context.project_reference,
-                source_connector=submission_context.source_connector,
-                signature_summary_json=summary.model_dump_json(),
+            raise typer.Exit(code=2) from exc
+        if summary is None:
+            typer.echo(
+                "error: --include-analysis specified but "
+                "build_signature_summary_from_session(...) could not produce "
+                "a summary (no parser detected or session yielded no events). "
+                "Re-run without --include-analysis or supply a parseable session.",
+                err=True,
             )
+            raise typer.Exit(code=2)
+        submission_context = SubmissionContext(
+            submission_tier=submission_context.submission_tier,
+            tenant_id=submission_context.tenant_id,
+            workspace_id=submission_context.workspace_id,
+            workflow_reference=submission_context.workflow_reference,
+            project_reference=submission_context.project_reference,
+            source_connector=submission_context.source_connector,
+            signature_summary_json=summary.model_dump_json(),
+        )
 
     target_url = api_url.rstrip("/") + "/api/ingest"
 

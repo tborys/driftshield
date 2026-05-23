@@ -233,10 +233,21 @@ def telemetry_submit_session(
         try:
             summary = build_signature_summary_from_session(path)
         except Exception as exc:  # noqa: BLE001
-            console.print(
-                f"[yellow]Warning:[/yellow] Could not derive signature_summary "
-                f"({exc}). Submission will proceed without it."
+            typer.echo(
+                "error: --include-analysis specified but "
+                f"build_signature_summary_from_session(...) failed: {exc}",
+                err=True,
             )
+            raise typer.Exit(code=2) from exc
+        if summary is None:
+            typer.echo(
+                "error: --include-analysis specified but "
+                "build_signature_summary_from_session(...) could not produce "
+                "a summary (no parser detected or session yielded no events). "
+                "Re-run without --include-analysis or supply a parseable session.",
+                err=True,
+            )
+            raise typer.Exit(code=2)
 
     try:
         submission = build_oss_submission_request(
