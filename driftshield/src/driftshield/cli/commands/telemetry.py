@@ -19,6 +19,7 @@ from driftshield.recursive_redactor import (
     REDACTION_RULESET_VERSION,
     REDACTOR_VERSION,
 )
+from driftshield.cli._session_payload import load_session_payload
 from driftshield.cli._signature_summary import build_signature_summary_from_session
 from driftshield.remote_submission import (
     OssRemoteSubmissionConfig,
@@ -167,18 +168,13 @@ def telemetry_submit_session(
     masks recurrence.
     """
     try:
-        raw = path.read_text(encoding="utf-8")
+        payload = load_session_payload(path)
     except OSError as exc:
         console.print(f"[red]Error:[/red] Could not read session file: {exc}")
         raise typer.Exit(1) from exc
-    try:
-        payload = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        console.print(f"[red]Error:[/red] Session file is not valid JSON: {exc}")
+    except ValueError as exc:
+        console.print(f"[red]Error:[/red] {exc}.")
         raise typer.Exit(1) from exc
-    if not isinstance(payload, dict):
-        console.print("[red]Error:[/red] Session file must contain a JSON object at top level.")
-        raise typer.Exit(1)
 
     if dry_run_redaction or show_manifest:
         result = redact_payload_with_manifest(payload)
