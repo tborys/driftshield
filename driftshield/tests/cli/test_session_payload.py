@@ -39,9 +39,7 @@ def test_loads_jsonl_collects_events_and_session_id(tmp_path: Path) -> None:
 
 def test_jsonl_without_session_id_omits_field(tmp_path: Path) -> None:
     """Multi-line JSONL whose lines lack ``sessionId`` produces a payload
-    with ``events`` but no ``session_id``. A single-line JSONL parses as
-    a JSON object and takes the object branch (see
-    ``test_loads_single_json_object``); two lines forces the JSONL branch.
+    with ``events`` but no ``session_id``.
     """
     path = tmp_path / "session.jsonl"
     path.write_text(
@@ -57,6 +55,33 @@ def test_jsonl_without_session_id_omits_field(tmp_path: Path) -> None:
     assert "session_id" not in loaded
     assert loaded["events"][0]["type"] == "user"
     assert loaded["events"][1]["type"] == "assistant"
+
+
+def test_single_line_jsonl_is_still_jsonl(tmp_path: Path) -> None:
+    """A one-line ``.jsonl`` file MUST take the JSONL branch — the lone
+    line is wrapped as ``payload['events'][0]`` and ``sessionId`` is
+    promoted. Reviewer-flagged edge case on PR-118: previously a
+    single-line JSONL collapsed through the JSON-object branch and
+    returned the bare transcript event in place of an envelope payload,
+    breaking downstream shape detection.
+    """
+    path = tmp_path / "session.jsonl"
+    payload_line = {
+        "type": "assistant",
+        "sessionId": "sess-one-liner",
+        "message": {"content": [{"type": "text", "text": "hello"}]},
+    }
+    path.write_text(json.dumps(payload_line) + "\n", encoding="utf-8")
+
+    loaded = load_session_payload(path)
+
+    assert loaded["session_id"] == "sess-one-liner"
+    assert isinstance(loaded["events"], list)
+    assert len(loaded["events"]) == 1
+    assert loaded["events"][0]["type"] == "assistant"
+    # Critically: the loaded dict is the envelope payload (events,
+    # session_id) — NOT the raw transcript event itself.
+    assert "sessionId" not in loaded
 
 
 def test_jsonl_drops_unparseable_lines(tmp_path: Path) -> None:
