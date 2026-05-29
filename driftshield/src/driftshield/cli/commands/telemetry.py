@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import typer
@@ -26,9 +27,17 @@ from driftshield.remote_submission import (
     RemoteSubmissionError,
     UnknownTranscriptShapeError,
     build_oss_submission_request,
+    build_redacted_payload,
     detect_shape,
     post_oss_submission,
     redact_payload_with_manifest,
+)
+from driftshield.remote_upload import (
+    INLINE_PAYLOAD_THRESHOLD_BYTES,
+    OssUploadConfig,
+    TeamsUploadConfig,
+    submit_oss_via_presigned_upload,
+    submit_teams_via_presigned_upload,
 )
 from driftshield.telemetry import TelemetryService, validate_outcome_status
 
@@ -154,6 +163,15 @@ def telemetry_submit_session(
             "default submission path when omitted."
         ),
     ),
+    tier: str = typer.Option(
+        "oss",
+        "--tier",
+        help=(
+            "Submission tier: 'oss' (unauthenticated community lane) or "
+            "'teams' (authenticated; requires DRIFTSHIELD_API_KEY). Large "
+            "transcripts upload via presigned storage on either tier."
+        ),
+    ),
 ) -> None:
     """Build a phase3g.v1 envelope from a finished session JSON and POST once to the OSS intake URL.
 
@@ -177,7 +195,7 @@ def telemetry_submit_session(
         raise typer.Exit(1) from exc
 
     if dry_run_redaction or show_manifest:
-        result = redact_payload_with_manifest(payload)
+        redaction_result = redact_payload_with_manifest(payload)
         shape = detect_shape(payload) or "unknown"
         if dry_run_redaction:
             entries = [
@@ -186,7 +204,7 @@ def telemetry_submit_session(
                     "category": entry.category,
                     "sample_hash": entry.sample_hash,
                 }
-                for entry in result.entries
+                for entry in redaction_result.entries
             ]
             typer.echo(
                 json.dumps(
@@ -204,7 +222,7 @@ def telemetry_submit_session(
             )
             manifest_payload = manifest.model_dump(mode="json")
             manifest_payload["detected_shape"] = shape
-            manifest_payload["ruleset_entry_count"] = len(result.entries)
+            manifest_payload["ruleset_entry_count"] = len(redaction_result.entries)
             typer.echo(json.dumps(manifest_payload, indent=2))
         return
 
@@ -245,18 +263,30 @@ def telemetry_submit_session(
             )
             raise typer.Exit(code=2)
 
+    resolved_tier = tier.strip().lower()
+    if resolved_tier not in {"oss", "teams"}:
+        console.print("[red]Error:[/red] --tier must be 'oss' or 'teams'.")
+        raise typer.Exit(1)
+
+    teams_api_key: str | None = None
+    if resolved_tier == "teams":
+        teams_api_key = os.environ.get("DRIFTSHIELD_API_KEY") or os.environ.get(
+            "API_KEY"
+        )
+        if not teams_api_key:
+            console.print(
+                "[red]Error:[/red] --tier teams requires DRIFTSHIELD_API_KEY "
+                "(or API_KEY) in the environment."
+            )
+            raise typer.Exit(1)
+
+    # Redact once to measure the canonical size (uncapped) and decide the
+    # lane. The size-capped SubmissionEnvelope model is only built on the
+    # small inline OSS path; large transcripts exceed that cap by design
+    # and take the presigned-S3 lane instead.
     try:
-        submission = build_oss_submission_request(
-            source_session_id=source_session_id or path.stem,
-            payload=payload,
-            workflow_reference=resolved_workflow_reference,
-            project_reference=project_reference,
-            source_report_id=source_report_id,
-            force_unknown_shape=force_unknown_shape,
-            agent_id=agent_id,
-            model_name=model_name,
-            model_version=model_version,
-            signature_summary=summary,
+        redacted_payload = build_redacted_payload(
+            payload=payload, force_unknown_shape=force_unknown_shape
         )
     except UnknownTranscriptShapeError as exc:
         console.print(
@@ -265,9 +295,57 @@ def telemetry_submit_session(
         )
         raise typer.Exit(1) from exc
 
-    submission_config = OssRemoteSubmissionConfig(intake_url=config.remote_intake_url)
+    payload_size = len(
+        json.dumps(
+            redacted_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+    )
+    is_large = payload_size > INLINE_PAYLOAD_THRESHOLD_BYTES
+
     try:
-        result = post_oss_submission(config=submission_config, submission=submission)
+        if resolved_tier == "teams":
+            assert teams_api_key is not None
+            result = submit_teams_via_presigned_upload(
+                config=TeamsUploadConfig(
+                    intake_url=config.remote_intake_url, api_key=teams_api_key
+                ),
+                payload=redacted_payload,
+                workflow_reference=resolved_workflow_reference,
+                file_name=path.name,
+            )
+        elif is_large:
+            result = submit_oss_via_presigned_upload(
+                config=OssUploadConfig(intake_url=config.remote_intake_url),
+                payload=redacted_payload,
+                workflow_reference=resolved_workflow_reference,
+                file_name=path.name,
+            )
+        else:
+            try:
+                submission = build_oss_submission_request(
+                    source_session_id=source_session_id or path.stem,
+                    payload=payload,
+                    workflow_reference=resolved_workflow_reference,
+                    project_reference=project_reference,
+                    source_report_id=source_report_id,
+                    force_unknown_shape=force_unknown_shape,
+                    agent_id=agent_id,
+                    model_name=model_name,
+                    model_version=model_version,
+                    signature_summary=summary,
+                )
+            except UnknownTranscriptShapeError as exc:
+                console.print(
+                    f"[red]Error:[/red] {exc} "
+                    "Inspect the payload with --dry-run-redaction first."
+                )
+                raise typer.Exit(1) from exc
+            submission_config = OssRemoteSubmissionConfig(
+                intake_url=config.remote_intake_url
+            )
+            result = post_oss_submission(
+                config=submission_config, submission=submission
+            )
     except RemoteSubmissionError as exc:
         console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1) from exc
