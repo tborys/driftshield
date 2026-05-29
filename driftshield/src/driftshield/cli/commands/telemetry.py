@@ -302,6 +302,23 @@ def telemetry_submit_session(
     )
     is_large = payload_size > INLINE_PAYLOAD_THRESHOLD_BYTES
 
+    # The provenance surface the inline lane carries on the envelope must
+    # also ride the presigned lane (else large + Teams submissions lose it).
+    provenance: dict[str, object] = {
+        "source_session_id": source_session_id or path.stem,
+    }
+    for key, value in (
+        ("project_reference", project_reference),
+        ("source_report_id", source_report_id),
+        ("agent_id", agent_id),
+        ("model_name", model_name),
+        ("model_version", model_version),
+    ):
+        if value is not None:
+            provenance[key] = value
+    if summary is not None:
+        provenance["signature_summary"] = summary.model_dump(mode="json")
+
     try:
         if resolved_tier == "teams":
             assert teams_api_key is not None
@@ -312,6 +329,7 @@ def telemetry_submit_session(
                 payload=redacted_payload,
                 workflow_reference=resolved_workflow_reference,
                 file_name=path.name,
+                provenance=provenance,
             )
         elif is_large:
             result = submit_oss_via_presigned_upload(
@@ -319,6 +337,7 @@ def telemetry_submit_session(
                 payload=redacted_payload,
                 workflow_reference=resolved_workflow_reference,
                 file_name=path.name,
+                provenance=provenance,
             )
         else:
             try:

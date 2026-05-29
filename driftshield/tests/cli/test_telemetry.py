@@ -962,7 +962,7 @@ def test_submit_session_large_oss_routes_to_presigned_upload(tmp_path, monkeypat
 
     used = {"presigned": False, "inline": False}
 
-    def fake_presigned(*, config, payload, workflow_reference, file_name, mode="file", opener=None):  # noqa: ARG001
+    def fake_presigned(*, config, payload, workflow_reference, file_name, mode="file", provenance=None, opener=None):  # noqa: ARG001
         used["presigned"] = True
         return _ok_result()
 
@@ -993,7 +993,7 @@ def test_submit_session_small_oss_stays_inline(tmp_path, monkeypatch):
 
     used = {"presigned": False, "inline": False}
 
-    def fake_presigned(*, config, payload, workflow_reference, file_name, mode="file", opener=None):  # noqa: ARG001
+    def fake_presigned(*, config, payload, workflow_reference, file_name, mode="file", provenance=None, opener=None):  # noqa: ARG001
         used["presigned"] = True
         return _ok_result()
 
@@ -1025,7 +1025,7 @@ def test_submit_session_teams_tier_uses_teams_lane_with_api_key(tmp_path, monkey
 
     captured = {}
 
-    def fake_teams(*, config, payload, workflow_reference, file_name, mode="file", opener=None):  # noqa: ARG001
+    def fake_teams(*, config, payload, workflow_reference, file_name, mode="file", provenance=None, opener=None):  # noqa: ARG001
         captured["api_key"] = config.api_key
         return _ok_result()
 

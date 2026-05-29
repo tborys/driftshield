@@ -122,3 +122,52 @@ def test_malformed_presign_response_raises() -> None:
             file_name="s.jsonl",
             opener=opener,
         )
+
+
+def test_provenance_fields_ride_the_finalise_body() -> None:
+    """Reviewer finding: the presigned lane must not drop provenance."""
+    finalise_bodies: list[dict[str, Any]] = []
+
+    def opener(req: Any) -> _FakeResponse:
+        url = req.full_url
+        if url.endswith("/uploads/presign"):
+            return _FakeResponse(
+                json.dumps(
+                    {
+                        "upload_id": "up_1",
+                        "url": "https://s3.example/bucket",
+                        "fields": {"key": "uploads/raw/up_1"},
+                        "max_bytes": 50 * 1024 * 1024,
+                    }
+                ).encode("utf-8")
+            )
+        if url.endswith("/uploads/finalise"):
+            finalise_bodies.append(json.loads(req.data.decode("utf-8")))
+            return _FakeResponse(
+                json.dumps(
+                    {"submission_id": "sub_1", "processing_status": "received"}
+                ).encode("utf-8")
+            )
+        return _FakeResponse(b"")
+
+    submit_teams_via_presigned_upload(
+        config=TeamsUploadConfig(
+            intake_url="https://api.example/v1/intake", api_key="k"
+        ),
+        payload={"session_id": "sess-1"},
+        workflow_reference="wf-triage",
+        file_name="s.jsonl",
+        provenance={
+            "source_session_id": "sess-prov",
+            "project_reference": "proj-ops",
+            "agent_id": "agent-x",
+            "model_name": "claude",
+        },
+        opener=opener,
+    )
+    body = finalise_bodies[0]
+    assert body["source_session_id"] == "sess-prov"
+    assert body["project_reference"] == "proj-ops"
+    assert body["agent_id"] == "agent-x"
+    assert body["model_name"] == "claude"
+    assert body["workflow_reference"] == "wf-triage"

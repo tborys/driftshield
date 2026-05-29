@@ -154,6 +154,7 @@ def _submit_via_presigned_upload(
     file_name: str,
     mode: str,
     api_key: str | None,
+    provenance: dict[str, Any] | None,
     opener: Any,
 ) -> OssSubmissionResult:
     """Shared presign → POST-to-S3 → finalise flow for both lanes.
@@ -207,6 +208,11 @@ def _submit_via_presigned_upload(
         finalise_body["file_name"] = file_name
     if workflow_reference:
         finalise_body["workflow_reference"] = workflow_reference
+    # Carry the provenance surface (source_session_id, project_reference,
+    # source_report_id, agent_id, model_name, model_version,
+    # signature_summary) so the presigned lane is not lossier than inline.
+    if provenance:
+        finalise_body.update(provenance)
 
     decoded = _post_json(
         f"{base}{finalise_path}", finalise_body, api_key=api_key, opener=opener
@@ -226,6 +232,7 @@ def submit_oss_via_presigned_upload(
     workflow_reference: str | None,
     file_name: str,
     mode: str = "file",
+    provenance: dict[str, Any] | None = None,
     opener: Any = None,
 ) -> OssSubmissionResult:
     """Upload a large OSS (unauthenticated) session via presigned S3."""
@@ -238,6 +245,7 @@ def submit_oss_via_presigned_upload(
         file_name=file_name,
         mode=mode,
         api_key=None,
+        provenance=provenance,
         opener=opener,
     )
 
@@ -249,6 +257,7 @@ def submit_teams_via_presigned_upload(
     workflow_reference: str | None,
     file_name: str,
     mode: str = "file",
+    provenance: dict[str, Any] | None = None,
     opener: Any = None,
 ) -> OssSubmissionResult:
     """Upload a large Teams (API-key) session via presigned S3."""
@@ -261,6 +270,7 @@ def submit_teams_via_presigned_upload(
         file_name=file_name,
         mode=mode,
         api_key=config.api_key,
+        provenance=provenance,
         opener=opener,
     )
 
