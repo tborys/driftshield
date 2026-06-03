@@ -56,7 +56,54 @@ _TOOL_IO_KEYS: frozenset[str] = frozenset(
 
 _PROMPT_RESPONSE_KEYS: frozenset[str] = frozenset({"content", "text"})
 
-_DROPPED_KEYS: frozenset[str] = REQUIRED_REDACTION_FIELDS | _PROMPT_RESPONSE_KEYS
+# Failure / diagnostic body keys.
+#
+# Native transcripts append failure and tool-result records verbatim into
+# ``payload['events']`` with no field mapping, so a key carrying a raw
+# failure body (an API-error message with bearer tokens and response
+# headers, a command's stdout/stderr, a traceback, a tool-argument blob)
+# survives unless dropped by name. None of these keys are read by the
+# deterministic matcher: failure mechanism is keyed off the locally derived
+# structured fields (``result_status``, ``failure_context.error``,
+# ``error_code``, the ``is_error`` flag), which are computed before
+# redaction from the parsed events, not from these verbatim keys. So
+# dropping them has zero matcher-quality cost.
+#
+# Scope is the named free-text keys only. Bare codes / enums / flags are
+# deliberately NOT dropped, so the matcher keeps its failure signal and
+# the retained non-sensitive HTTP status code stays available:
+#
+#  * ``status`` / ``error_code`` / ``result_status`` / ``is_error`` are
+#    matcher mechanism signals (enums / flags), retained.
+#  * ``api_error_status`` is a bare HTTP status code (401/429/500). It is
+#    non-sensitive and is retained on purpose; only the ``error`` body that
+#    accompanies it carries tokens/headers/tracebacks and must be dropped.
+#
+# Dropped keys:
+#  * ``error``          free-text failure body (Claude Code API-error
+#                       records; crewai ``outputs.error``; langchain
+#                       ``outputs.error`` + ``metadata.error``)
+#  * ``stdout`` /       native ``toolUseResult`` command-output streams
+#    ``stderr``         (tracebacks, hostnames, file dumps)
+#  * ``toolUseResult``  the native root-level key itself, which arrives as a
+#                       bare string ("Error: ...") or a dict wrapping
+#                       stdout/stderr
+#  * ``details``        openclaw ``outputs.details`` diagnostic dict
+#  * ``raw``            openclaw fallback for unparseable tool arguments
+_FAILURE_BODY_KEYS: frozenset[str] = frozenset(
+    {
+        "error",
+        "stdout",
+        "stderr",
+        "toolUseResult",
+        "details",
+        "raw",
+    }
+)
+
+_DROPPED_KEYS: frozenset[str] = (
+    REQUIRED_REDACTION_FIELDS | _PROMPT_RESPONSE_KEYS | _FAILURE_BODY_KEYS
+)
 
 
 _AWS_ACCESS_KEY = re.compile(r"AKIA[0-9A-Z]{16}")

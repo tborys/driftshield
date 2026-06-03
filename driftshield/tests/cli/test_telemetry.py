@@ -943,3 +943,115 @@ def test_submit_session_accepts_jsonl_input(tmp_path, monkeypatch):
     assert payload.get("session_id") == "sess-jsonl"
     assert isinstance(payload.get("events"), list)
     assert len(payload["events"]) == 2
+
+
+# ---------------------------------------------------------------------------
+# meta#273 large-upload routing (presigned S3)
+# ---------------------------------------------------------------------------
+
+
+def test_submit_session_large_oss_routes_to_presigned_upload(tmp_path, monkeypatch):
+    """A large OSS payload skips the inline POST and uses presigned S3."""
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    runner.invoke(app, _remote_enable_argv())
+    # A big metadata blob pushes the redacted payload past the inline
+    # threshold so the large-upload lane is selected.
+    session_path = _write_session(
+        tmp_path, {"session_id": "sess-1", "metadata": {"blob": "x" * 300_000}}
+    )
+
+    used = {"presigned": False, "inline": False}
+
+    def fake_presigned(*, config, payload, workflow_reference, file_name, mode="file", provenance=None, opener=None):  # noqa: ARG001
+        used["presigned"] = True
+        return _ok_result()
+
+    def fake_inline(*, config, submission, opener=None):  # noqa: ARG001
+        used["inline"] = True
+        return _ok_result()
+
+    monkeypatch.setattr(
+        "driftshield.cli.commands.telemetry.submit_oss_via_presigned_upload",
+        fake_presigned,
+    )
+    monkeypatch.setattr(
+        "driftshield.cli.commands.telemetry.post_oss_submission", fake_inline
+    )
+
+    result = runner.invoke(
+        app, ["telemetry", "submit-session", "--path", str(session_path)]
+    )
+    assert result.exit_code == 0
+    assert used["presigned"] is True
+    assert used["inline"] is False
+
+
+def test_submit_session_small_oss_stays_inline(tmp_path, monkeypatch):
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    runner.invoke(app, _remote_enable_argv())
+    session_path = _write_session(tmp_path, {"session_id": "sess-1"})
+
+    used = {"presigned": False, "inline": False}
+
+    def fake_presigned(*, config, payload, workflow_reference, file_name, mode="file", provenance=None, opener=None):  # noqa: ARG001
+        used["presigned"] = True
+        return _ok_result()
+
+    def fake_inline(*, config, submission, opener=None):  # noqa: ARG001
+        used["inline"] = True
+        return _ok_result()
+
+    monkeypatch.setattr(
+        "driftshield.cli.commands.telemetry.submit_oss_via_presigned_upload",
+        fake_presigned,
+    )
+    monkeypatch.setattr(
+        "driftshield.cli.commands.telemetry.post_oss_submission", fake_inline
+    )
+
+    result = runner.invoke(
+        app, ["telemetry", "submit-session", "--path", str(session_path)]
+    )
+    assert result.exit_code == 0
+    assert used["inline"] is True
+    assert used["presigned"] is False
+
+
+def test_submit_session_teams_tier_uses_teams_lane_with_api_key(tmp_path, monkeypatch):
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    monkeypatch.setenv("DRIFTSHIELD_API_KEY", "ds_teams_key")
+    runner.invoke(app, _remote_enable_argv())
+    session_path = _write_session(tmp_path, {"session_id": "sess-1"})
+
+    captured = {}
+
+    def fake_teams(*, config, payload, workflow_reference, file_name, mode="file", provenance=None, opener=None):  # noqa: ARG001
+        captured["api_key"] = config.api_key
+        return _ok_result()
+
+    monkeypatch.setattr(
+        "driftshield.cli.commands.telemetry.submit_teams_via_presigned_upload",
+        fake_teams,
+    )
+
+    result = runner.invoke(
+        app,
+        ["telemetry", "submit-session", "--path", str(session_path), "--tier", "teams"],
+    )
+    assert result.exit_code == 0
+    assert captured["api_key"] == "ds_teams_key"
+
+
+def test_submit_session_teams_tier_without_api_key_errors(tmp_path, monkeypatch):
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    monkeypatch.delenv("DRIFTSHIELD_API_KEY", raising=False)
+    monkeypatch.delenv("API_KEY", raising=False)
+    runner.invoke(app, _remote_enable_argv())
+    session_path = _write_session(tmp_path, {"session_id": "sess-1"})
+
+    result = runner.invoke(
+        app,
+        ["telemetry", "submit-session", "--path", str(session_path), "--tier", "teams"],
+    )
+    assert result.exit_code == 1
+    assert "DRIFTSHIELD_API_KEY" in result.stdout
