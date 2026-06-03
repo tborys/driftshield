@@ -358,3 +358,194 @@ def test_ingest_teams_submission_uses_server_resolved_context(monkeypatch):
             workspace_id="workspace-resolved",
         ),
     }
+
+
+# ---------------------------------------------------------------------------
+# --include-analysis flag on ingest
+# ---------------------------------------------------------------------------
+
+
+def test_ingest_default_no_signature_summary(monkeypatch):
+    """Default invocation does not attach a signature_summary form field."""
+    captured: dict[str, object] = {}
+
+    def fake_post_ingest(*, target_url, api_key, file_path, parser, submission_context):  # noqa: ARG001
+        captured["submission_context"] = submission_context
+        return DummyResponse()._payload
+
+    monkeypatch.setenv("DRIFTSHIELD_API_URL", "http://localhost:8000")
+    monkeypatch.setenv("DRIFTSHIELD_API_KEY", "test-key")
+    monkeypatch.setattr("driftshield.cli.commands.ingest.post_ingest", fake_post_ingest)
+
+    transcript = FIXTURES_DIR / "sample_claude_code_session.jsonl"
+    result = runner.invoke(app, ["ingest", "--path", str(transcript)])
+
+    assert result.exit_code == 0
+    context = captured["submission_context"]
+    assert isinstance(context, SubmissionContext)
+    assert context.signature_summary_json is None
+
+
+def test_ingest_with_include_analysis_attaches_signature_summary(monkeypatch):
+    """--include-analysis populates SubmissionContext.signature_summary_json."""
+    from driftshield.intake_contract import (
+        SIGNATURE_SUMMARY_VERSION,
+        SignatureSummary,
+        SignatureSummaryEntry,
+    )
+
+    fake_summary = SignatureSummary(
+        schema_version=SIGNATURE_SUMMARY_VERSION,
+        matches=[
+            SignatureSummaryEntry(
+                signature_id="sig-abc",
+                match_status="matched",
+                community_pack_id="community-general",
+                community_pack_version="1.0.0",
+                matcher_id="phase-3g-deterministic-v1",
+                matcher_version="phase-3g-deterministic-rules-v1",
+                confidence=0.9,
+                confidence_band="high",
+            )
+        ],
+    )
+
+    captured: dict[str, object] = {}
+
+    def fake_post_ingest(*, target_url, api_key, file_path, parser, submission_context):  # noqa: ARG001
+        captured["submission_context"] = submission_context
+        return DummyResponse()._payload
+
+    monkeypatch.setenv("DRIFTSHIELD_API_URL", "http://localhost:8000")
+    monkeypatch.setenv("DRIFTSHIELD_API_KEY", "test-key")
+    monkeypatch.setattr("driftshield.cli.commands.ingest.post_ingest", fake_post_ingest)
+    monkeypatch.setattr(
+        "driftshield.cli._signature_summary.build_signature_summary_from_session",
+        lambda _path: fake_summary,
+    )
+
+    transcript = FIXTURES_DIR / "sample_claude_code_session.jsonl"
+    result = runner.invoke(
+        app, ["ingest", "--path", str(transcript), "--include-analysis"]
+    )
+
+    assert result.exit_code == 0
+    context = captured["submission_context"]
+    assert isinstance(context, SubmissionContext)
+    assert context.signature_summary_json is not None
+    decoded = json.loads(context.signature_summary_json)
+    assert decoded["schema_version"] == SIGNATURE_SUMMARY_VERSION
+    assert decoded["matches"][0]["signature_id"] == "sig-abc"
+
+
+def test_ingest_include_analysis_strict_fail_on_builder_error(monkeypatch):
+    """--include-analysis is strict: any builder exception fails the command.
+
+    The ingest POST MUST NOT happen and the exit code MUST be non-zero so the
+    operator notices that the explicit opt-in could not be honoured.
+    """
+    posted = {"called": False}
+
+    def fake_post_ingest(*, target_url, api_key, file_path, parser, submission_context):  # noqa: ARG001
+        posted["called"] = True
+        return DummyResponse()._payload
+
+    def boom(_path):
+        raise RuntimeError("matcher exploded")
+
+    monkeypatch.setenv("DRIFTSHIELD_API_URL", "http://localhost:8000")
+    monkeypatch.setenv("DRIFTSHIELD_API_KEY", "test-key")
+    monkeypatch.setattr("driftshield.cli.commands.ingest.post_ingest", fake_post_ingest)
+    monkeypatch.setattr(
+        "driftshield.cli._signature_summary.build_signature_summary_from_session",
+        boom,
+    )
+
+    transcript = FIXTURES_DIR / "sample_claude_code_session.jsonl"
+    result = runner.invoke(
+        app, ["ingest", "--path", str(transcript), "--include-analysis"]
+    )
+
+    assert result.exit_code != 0
+    assert posted["called"] is False
+    assert "build_signature_summary_from_session" in result.stderr
+    assert "matcher exploded" in result.stderr
+
+
+def test_ingest_include_analysis_empty_matches_is_valid_success(monkeypatch):
+    """An empty matches list IS a valid success path under --include-analysis.
+
+    Zero matches is not a builder failure: the multipart upload proceeds with
+    the empty SignatureSummary attached as the signature_summary form field.
+    """
+    from driftshield.intake_contract import (
+        SIGNATURE_SUMMARY_VERSION,
+        SignatureSummary,
+    )
+
+    empty_summary = SignatureSummary(
+        schema_version=SIGNATURE_SUMMARY_VERSION,
+        matches=[],
+    )
+
+    captured: dict[str, object] = {}
+
+    def fake_post_ingest(*, target_url, api_key, file_path, parser, submission_context):  # noqa: ARG001
+        captured["submission_context"] = submission_context
+        return DummyResponse()._payload
+
+    monkeypatch.setenv("DRIFTSHIELD_API_URL", "http://localhost:8000")
+    monkeypatch.setenv("DRIFTSHIELD_API_KEY", "test-key")
+    monkeypatch.setattr("driftshield.cli.commands.ingest.post_ingest", fake_post_ingest)
+    monkeypatch.setattr(
+        "driftshield.cli._signature_summary.build_signature_summary_from_session",
+        lambda _path: empty_summary,
+    )
+
+    transcript = FIXTURES_DIR / "sample_claude_code_session.jsonl"
+    result = runner.invoke(
+        app, ["ingest", "--path", str(transcript), "--include-analysis"]
+    )
+
+    assert result.exit_code == 0
+    context = captured["submission_context"]
+    assert isinstance(context, SubmissionContext)
+    assert context.signature_summary_json is not None
+    decoded = json.loads(context.signature_summary_json)
+    assert decoded["schema_version"] == SIGNATURE_SUMMARY_VERSION
+    assert decoded["matches"] == []
+
+
+def test_build_multipart_body_includes_signature_summary_field():
+    """signature_summary form field is written when SubmissionContext carries it."""
+    transcript = FIXTURES_DIR / "sample_claude_code_session.jsonl"
+
+    summary_json = '{"schema_version": "signature-summary.v1", "matches": []}'
+    body = _build_multipart_body(
+        boundary="test-boundary",
+        file_path=transcript,
+        parser="claude_code",
+        submission_context=SubmissionContext(
+            submission_tier="oss",
+            signature_summary_json=summary_json,
+        ),
+    )
+
+    decoded = body.decode("utf-8", errors="ignore")
+    assert 'name="signature_summary"' in decoded
+    assert "signature-summary.v1" in decoded
+
+
+def test_build_multipart_body_omits_signature_summary_when_absent():
+    """No signature_summary field appears when SubmissionContext.signature_summary_json is None."""
+    transcript = FIXTURES_DIR / "sample_claude_code_session.jsonl"
+
+    body = _build_multipart_body(
+        boundary="test-boundary",
+        file_path=transcript,
+        parser="claude_code",
+        submission_context=SubmissionContext(submission_tier="oss"),
+    )
+
+    decoded = body.decode("utf-8", errors="ignore")
+    assert 'name="signature_summary"' not in decoded

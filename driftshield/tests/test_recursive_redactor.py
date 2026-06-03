@@ -183,6 +183,119 @@ def test_redact_payload_with_manifest_exposes_entries():
     assert any(entry.path.startswith("events[0].note") for entry in result.entries)
 
 
+def test_claude_code_error_body_dropped_api_error_status_retained():
+    """Confirmed live leak: a native Claude Code API-failure record nests a
+    free-text ``error`` body (bearer token + 401 headers) plus a bare
+    ``api_error_status`` HTTP code. The free-text body must be dropped; the
+    bare status code is a non-sensitive failure-mechanism code and is retained.
+    """
+    payload = {
+        "events": [
+            {
+                "event": {
+                    "error": "401 Unauthorized: Bearer sk-leakedtokenvalue\r\n"
+                    "www-authenticate: ... host internal.example",
+                    "api_error_status": 401,
+                }
+            }
+        ]
+    }
+    result = redact(payload)
+    serialised = json.dumps(result.payload)
+
+    assert "sk-leakedtokenvalue" not in serialised
+    assert "www-authenticate" not in serialised
+    assert any(
+        entry.category == "dropped_key" and entry.path.endswith(".error")
+        for entry in result.entries
+    )
+    event = result.payload["events"][0]["event"]
+    assert "error" not in event
+    # api_error_status is a bare HTTP status code, not free text -> retained.
+    assert event["api_error_status"] == 401
+
+
+def test_verbatim_failure_body_keys_dropped_at_any_depth():
+    """``stdout`` / ``stderr`` / ``toolUseResult`` / ``details`` / ``raw`` ride
+    verbatim into ``events[]`` via the native-JSONL passthrough and can carry
+    command output, tracebacks and tool-argument text. None are read by the
+    matcher by name, so all are dropped wherever they nest.
+    """
+    payload = {
+        "events": [
+            {
+                "toolUseResult": {
+                    "stdout": "leak STDOUT_CANARY /home/example-user/secrets.txt",
+                    "stderr": "leak STDERR_CANARY Traceback host internal.example",
+                    "interrupted": False,
+                },
+            },
+            {"toolUseResult": "Error: STRINGFORM_CANARY leaked body"},
+            {"outputs": {"details": {"diag": "DETAILS_CANARY leaked"}}},
+            {"inputs": {"raw": "RAW_CANARY unparseable tool arguments"}},
+        ]
+    }
+    result = redact(payload)
+    serialised = json.dumps(result.payload)
+
+    for canary in (
+        "STDOUT_CANARY",
+        "STDERR_CANARY",
+        "STRINGFORM_CANARY",
+        "DETAILS_CANARY",
+        "RAW_CANARY",
+    ):
+        assert canary not in serialised, f"{canary} survived redaction"
+
+    dropped_paths = {
+        entry.path for entry in result.entries if entry.category == "dropped_key"
+    }
+    assert any(p.endswith("toolUseResult") for p in dropped_paths)
+    assert any(p.endswith("details") for p in dropped_paths)
+    assert any(p.endswith("raw") for p in dropped_paths)
+
+
+def test_claude_code_corpus_api_error_status_retained():
+    """The claude_code corpus fixture carries a native API-failure record.
+    Its free-text ``error`` body is dropped by the canary-survival test; the
+    bare ``api_error_status`` HTTP code is retained.
+    """
+    redacted, _ = redact_payload(_load("claude_code"))
+    statuses = [
+        event["event"]["api_error_status"]
+        for event in redacted.get("events", [])
+        if isinstance(event, dict) and isinstance(event.get("event"), dict)
+        and "api_error_status" in event["event"]
+    ]
+    assert 401 in statuses
+
+
+def test_matcher_signal_keys_retained_not_blanket_dropped():
+    """Guard against over-broad drops. ``error_code`` / ``status`` / ``is_error``
+    are matcher mechanism signals (bare codes/enums/flags), not free-text
+    bodies, and must survive redaction.
+    """
+    payload = {
+        "events": [
+            {
+                "structured_payload": {
+                    "result_status": "error",
+                    "error_code": "tool_error",
+                },
+                "tool_activity": {"status": "error"},
+                "is_error": True,
+            }
+        ]
+    }
+    result = redact(payload)
+    event = result.payload["events"][0]
+
+    assert event["structured_payload"]["result_status"] == "error"
+    assert event["structured_payload"]["error_code"] == "tool_error"
+    assert event["tool_activity"]["status"] == "error"
+    assert event["is_error"] is True
+
+
 @pytest.mark.parametrize("name", _CORPUS_NAMES)
 def test_corpus_fixture_has_no_canary_survival(name: str):
     payload = _load(name)
@@ -220,3 +333,69 @@ def test_build_request_accepts_unknown_shape_when_forced():
         force_unknown_shape=True,
     )
     assert submission.envelope.source_session_id == "s"
+
+
+# ---------------------------------------------------------------------------
+# signature_summary stays byte-identical at envelope level
+# ---------------------------------------------------------------------------
+
+
+def test_signature_summary_at_envelope_level_is_untouched():
+    """The redactor only walks ``payload``. A sibling ``signature_summary``
+    block must come out the other side byte-for-byte identical.
+    """
+    import copy
+    from driftshield.intake_contract import (
+        REDACTION_MANIFEST_VERSION,
+        REQUIRED_REDACTION_FIELDS,
+        SIGNATURE_SUMMARY_VERSION,
+        SUPPORTED_CONTRACT_VERSION,
+        RedactionManifest,
+        SignatureSummary,
+        SignatureSummaryEntry,
+        SubmissionEnvelope,
+    )
+
+    summary = SignatureSummary(
+        schema_version=SIGNATURE_SUMMARY_VERSION,
+        matches=[
+            SignatureSummaryEntry(
+                signature_id="sig-abc",
+                match_status="matched",
+                community_pack_id="community-general",
+                community_pack_version="1.0.0",
+                matcher_id="phase-3g-deterministic-v1",
+                matcher_version="phase-3g-deterministic-rules-v1",
+                confidence=0.9,
+                confidence_band="high",
+            )
+        ],
+    )
+
+    envelope = SubmissionEnvelope(
+        source_system="oss",
+        source_session_id="sess-1",
+        schema_version=SUPPORTED_CONTRACT_VERSION,
+        payload={
+            "session_id": "sess-1",
+            "events": [{"type": "user", "content": "LEAK_CANARY_PROMPT"}],
+        },
+        payload_size_bytes=64,
+        redaction_manifest=RedactionManifest(
+            manifest_version=REDACTION_MANIFEST_VERSION,
+            redaction_applied=True,
+            redacted_fields=sorted(REQUIRED_REDACTION_FIELDS),
+        ),
+        signature_summary=summary,
+    )
+
+    before = copy.deepcopy(envelope.signature_summary)
+    before_json = envelope.signature_summary.model_dump_json()
+
+    # Run the redactor against ONLY the payload, mirroring the build-time call site.
+    result = redact(envelope.payload)
+    assert "LEAK_CANARY_PROMPT" not in json.dumps(result.payload)
+
+    after_json = envelope.signature_summary.model_dump_json()
+    assert envelope.signature_summary == before
+    assert after_json == before_json

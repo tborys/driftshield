@@ -32,6 +32,23 @@
       "type": "assistant",
       "ts": 1700000003,
       "content": "DRIFTSHIELD_REDACTION_CANARY_NESTED_ASSISTANT email me at alice@example.test"
+    },
+    {
+      "type": "tool_result",
+      "ts": 1700000004,
+      "toolUseResult": {
+        "stdout": "DRIFTSHIELD_REDACTION_CANARY_STDOUT_VERBATIM contents of /home/example-user/secrets.txt",
+        "stderr": "DRIFTSHIELD_REDACTION_CANARY_STDERR_VERBATIM Traceback host internal.example",
+        "interrupted": false
+      }
+    },
+    {
+      "type": "api_error",
+      "ts": 1700000005,
+      "event": {
+        "error": "DRIFTSHIELD_REDACTION_CANARY_API_ERROR_BODY 401 Unauthorized: Bearer ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "api_error_status": 401
+      }
     }
   ],
   "user_identifiers": ["DRIFTSHIELD_REDACTION_CANARY_USER_IDS user@example.test"],

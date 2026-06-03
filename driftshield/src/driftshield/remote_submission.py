@@ -27,6 +27,7 @@ from driftshield.intake_contract import (
     IntakeSubmissionResponse,
     OssSubmissionRequest,
     RedactionManifest,
+    SignatureSummary,
     SubmissionEnvelope,
 )
 from driftshield.recursive_redactor import (
@@ -138,6 +139,7 @@ def build_oss_submission_request(
     agent_id: str | None = None,
     model_name: str | None = None,
     model_version: str | None = None,
+    signature_summary: SignatureSummary | None = None,
 ) -> OssSubmissionRequest:
     """Build an unauthenticated OSS submission request.
 
@@ -184,11 +186,37 @@ def build_oss_submission_request(
         agent_id=agent_id,
         model_name=model_name,
         model_version=model_version,
+        signature_summary=signature_summary,
     )
     return OssSubmissionRequest(
         envelope_contract_version=SUPPORTED_CONTRACT_VERSION,
         envelope=envelope,
     )
+
+
+def build_redacted_payload(
+    *,
+    payload: dict[str, Any],
+    force_unknown_shape: bool = False,
+) -> dict[str, Any]:
+    """Redact a transcript payload without wrapping it in the envelope model.
+
+    The :class:`SubmissionEnvelope` model caps ``payload_size_bytes`` at
+    256 KB, which is exactly the limit large transcripts exceed. The
+    presigned-S3 upload lane sends the redacted payload as an object, not
+    inline in that model, so it needs the redacted dict without the cap.
+    Shape detection + the recursive redactor are identical to
+    :func:`build_oss_submission_request`.
+    """
+    shape = detect_shape(payload)
+    if shape is None and not force_unknown_shape:
+        raise UnknownTranscriptShapeError(
+            "Unrecognised transcript shape. Map the payload into a known "
+            "shape or pass force_unknown_shape=True (CLI: "
+            "--force-unknown-shape) to override."
+        )
+    redacted_payload, _ = redact_payload(payload)
+    return redacted_payload
 
 
 @dataclass(frozen=True, slots=True)
@@ -258,6 +286,7 @@ __all__ = [
     "RemoteSubmissionError",
     "UnknownTranscriptShapeError",
     "build_oss_submission_request",
+    "build_redacted_payload",
     "detect_shape",
     "post_oss_submission",
     "redact_payload",

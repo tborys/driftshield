@@ -509,7 +509,11 @@ def test_submit_session_fails_on_invalid_json(tmp_path, monkeypatch):
     )
 
     assert result.exit_code == 1
-    assert "not valid json" in result.stdout.lower()
+    # After the JSON-or-JSONL loader landed, the file is parsed as
+    # JSONL: every line fails json.loads silently, leaving zero events.
+    # Rich may wrap the error string on whitespace, so match the stable
+    # prefix only.
+    assert "no parseable jsonl" in result.stdout.lower()
 
 
 def test_submit_session_fails_on_non_object_json(tmp_path, monkeypatch):
@@ -523,7 +527,7 @@ def test_submit_session_fails_on_non_object_json(tmp_path, monkeypatch):
     )
 
     assert result.exit_code == 1
-    assert "json object" in result.stdout.lower()
+    assert "must contain a json object" in result.stdout.lower()
 
 
 def test_submit_session_dry_run_redaction_prints_entries_and_does_not_submit(
@@ -701,3 +705,353 @@ def test_submit_session_surfaces_remote_error(tmp_path, monkeypatch):
     assert result.exit_code == 1
     assert "422" in result.stdout
     assert "invalid_redaction_manifest" in result.stdout
+
+
+# ---------------------------------------------------------------------------
+# --include-analysis flag on submit-session
+# ---------------------------------------------------------------------------
+
+
+def test_submit_session_default_no_signature_summary(tmp_path, monkeypatch):
+    """Default invocation (no --include-analysis) keeps signature_summary=None."""
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    runner.invoke(app, _remote_enable_argv())
+    session_path = _write_session(tmp_path, {"session_id": "sess-1"})
+    captured = {}
+
+    def fake_post(*, config, submission, opener=None):  # noqa: ARG001
+        captured["signature_summary"] = submission.envelope.signature_summary
+        return _ok_result()
+
+    monkeypatch.setattr(
+        "driftshield.cli.commands.telemetry.post_oss_submission", fake_post
+    )
+
+    result = runner.invoke(
+        app, ["telemetry", "submit-session", "--path", str(session_path)]
+    )
+
+    assert result.exit_code == 0
+    assert captured["signature_summary"] is None
+
+
+def test_submit_session_with_include_analysis_populates_signature_summary(
+    tmp_path, monkeypatch
+):
+    """--include-analysis triggers the local matcher and attaches the block."""
+    from driftshield.intake_contract import (
+        SIGNATURE_SUMMARY_VERSION,
+        SignatureSummary,
+        SignatureSummaryEntry,
+    )
+
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    runner.invoke(app, _remote_enable_argv())
+    session_path = _write_session(tmp_path, {"session_id": "sess-1"})
+    captured = {}
+
+    def fake_post(*, config, submission, opener=None):  # noqa: ARG001
+        captured["signature_summary"] = submission.envelope.signature_summary
+        return _ok_result()
+
+    fake_summary = SignatureSummary(
+        schema_version=SIGNATURE_SUMMARY_VERSION,
+        matches=[
+            SignatureSummaryEntry(
+                signature_id="sig-abc",
+                match_status="matched",
+                community_pack_id="community-general",
+                community_pack_version="1.0.0",
+                matcher_id="phase-3g-deterministic-v1",
+                matcher_version="phase-3g-deterministic-rules-v1",
+                confidence=0.9,
+                confidence_band="high",
+            )
+        ],
+    )
+
+    monkeypatch.setattr(
+        "driftshield.cli.commands.telemetry.post_oss_submission", fake_post
+    )
+    monkeypatch.setattr(
+        "driftshield.cli.commands.telemetry.build_signature_summary_from_session",
+        lambda _path: fake_summary,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "telemetry",
+            "submit-session",
+            "--path",
+            str(session_path),
+            "--include-analysis",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["signature_summary"] is not None
+    assert captured["signature_summary"].schema_version == SIGNATURE_SUMMARY_VERSION
+    assert captured["signature_summary"].matches[0].signature_id == "sig-abc"
+
+
+def test_submit_session_include_analysis_strict_fail_on_builder_error(
+    tmp_path, monkeypatch
+):
+    """--include-analysis is strict: any builder exception fails the command.
+
+    The submission MUST NOT be sent and the exit code MUST be non-zero so the
+    operator notices that the explicit opt-in could not be honoured.
+    """
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    runner.invoke(app, _remote_enable_argv())
+    session_path = _write_session(tmp_path, {"session_id": "sess-1"})
+    posted = {"called": False}
+
+    def fake_post(*, config, submission, opener=None):  # noqa: ARG001
+        posted["called"] = True
+        return _ok_result()
+
+    def boom(_path):
+        raise RuntimeError("matcher exploded")
+
+    monkeypatch.setattr(
+        "driftshield.cli.commands.telemetry.post_oss_submission", fake_post
+    )
+    monkeypatch.setattr(
+        "driftshield.cli.commands.telemetry.build_signature_summary_from_session", boom
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "telemetry",
+            "submit-session",
+            "--path",
+            str(session_path),
+            "--include-analysis",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert posted["called"] is False
+    assert "build_signature_summary_from_session" in result.stderr
+    assert "matcher exploded" in result.stderr
+
+
+def test_submit_session_include_analysis_empty_matches_is_valid_success(
+    tmp_path, monkeypatch
+):
+    """An empty matches list IS a valid success path under --include-analysis.
+
+    Zero matches is not a builder failure: the submission proceeds with the
+    empty SignatureSummary attached.
+    """
+    from driftshield.intake_contract import (
+        SIGNATURE_SUMMARY_VERSION,
+        SignatureSummary,
+    )
+
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    runner.invoke(app, _remote_enable_argv())
+    session_path = _write_session(tmp_path, {"session_id": "sess-1"})
+    captured = {}
+
+    def fake_post(*, config, submission, opener=None):  # noqa: ARG001
+        captured["signature_summary"] = submission.envelope.signature_summary
+        return _ok_result()
+
+    empty_summary = SignatureSummary(
+        schema_version=SIGNATURE_SUMMARY_VERSION,
+        matches=[],
+    )
+
+    monkeypatch.setattr(
+        "driftshield.cli.commands.telemetry.post_oss_submission", fake_post
+    )
+    monkeypatch.setattr(
+        "driftshield.cli.commands.telemetry.build_signature_summary_from_session",
+        lambda _path: empty_summary,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "telemetry",
+            "submit-session",
+            "--path",
+            str(session_path),
+            "--include-analysis",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["signature_summary"] is not None
+    assert captured["signature_summary"].schema_version == SIGNATURE_SUMMARY_VERSION
+    assert captured["signature_summary"].matches == []
+
+
+def test_submit_session_accepts_jsonl_input(tmp_path, monkeypatch):
+    """A native JSONL transcript at --path is accepted transparently.
+
+    The loader collects each parsed line into ``payload['events']`` and
+    threads ``sessionId`` into ``payload['session_id']``.
+    """
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    runner.invoke(app, _remote_enable_argv())
+    jsonl_path = tmp_path / "session.jsonl"
+    jsonl_path.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "type": "assistant",
+                        "sessionId": "sess-jsonl",
+                        "message": {"content": []},
+                    }
+                ),
+                json.dumps({"type": "user", "message": {"content": "hi"}}),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    captured = {}
+
+    def fake_post(*, config, submission, opener=None):  # noqa: ARG001
+        captured["payload"] = submission.envelope.payload
+        captured["session_id"] = submission.envelope.source_session_id
+        return _ok_result()
+
+    monkeypatch.setattr(
+        "driftshield.cli.commands.telemetry.post_oss_submission", fake_post
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "telemetry",
+            "submit-session",
+            "--path",
+            str(jsonl_path),
+        ],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    payload = captured["payload"]
+    assert isinstance(payload, dict)
+    assert payload.get("session_id") == "sess-jsonl"
+    assert isinstance(payload.get("events"), list)
+    assert len(payload["events"]) == 2
+
+
+# ---------------------------------------------------------------------------
+# meta#273 large-upload routing (presigned S3)
+# ---------------------------------------------------------------------------
+
+
+def test_submit_session_large_oss_routes_to_presigned_upload(tmp_path, monkeypatch):
+    """A large OSS payload skips the inline POST and uses presigned S3."""
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    runner.invoke(app, _remote_enable_argv())
+    # A big metadata blob pushes the redacted payload past the inline
+    # threshold so the large-upload lane is selected.
+    session_path = _write_session(
+        tmp_path, {"session_id": "sess-1", "metadata": {"blob": "x" * 300_000}}
+    )
+
+    used = {"presigned": False, "inline": False}
+
+    def fake_presigned(*, config, payload, workflow_reference, file_name, mode="file", provenance=None, opener=None):  # noqa: ARG001
+        used["presigned"] = True
+        return _ok_result()
+
+    def fake_inline(*, config, submission, opener=None):  # noqa: ARG001
+        used["inline"] = True
+        return _ok_result()
+
+    monkeypatch.setattr(
+        "driftshield.cli.commands.telemetry.submit_oss_via_presigned_upload",
+        fake_presigned,
+    )
+    monkeypatch.setattr(
+        "driftshield.cli.commands.telemetry.post_oss_submission", fake_inline
+    )
+
+    result = runner.invoke(
+        app, ["telemetry", "submit-session", "--path", str(session_path)]
+    )
+    assert result.exit_code == 0
+    assert used["presigned"] is True
+    assert used["inline"] is False
+
+
+def test_submit_session_small_oss_stays_inline(tmp_path, monkeypatch):
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    runner.invoke(app, _remote_enable_argv())
+    session_path = _write_session(tmp_path, {"session_id": "sess-1"})
+
+    used = {"presigned": False, "inline": False}
+
+    def fake_presigned(*, config, payload, workflow_reference, file_name, mode="file", provenance=None, opener=None):  # noqa: ARG001
+        used["presigned"] = True
+        return _ok_result()
+
+    def fake_inline(*, config, submission, opener=None):  # noqa: ARG001
+        used["inline"] = True
+        return _ok_result()
+
+    monkeypatch.setattr(
+        "driftshield.cli.commands.telemetry.submit_oss_via_presigned_upload",
+        fake_presigned,
+    )
+    monkeypatch.setattr(
+        "driftshield.cli.commands.telemetry.post_oss_submission", fake_inline
+    )
+
+    result = runner.invoke(
+        app, ["telemetry", "submit-session", "--path", str(session_path)]
+    )
+    assert result.exit_code == 0
+    assert used["inline"] is True
+    assert used["presigned"] is False
+
+
+def test_submit_session_teams_tier_uses_teams_lane_with_api_key(tmp_path, monkeypatch):
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    monkeypatch.setenv("DRIFTSHIELD_API_KEY", "ds_teams_key")
+    runner.invoke(app, _remote_enable_argv())
+    session_path = _write_session(tmp_path, {"session_id": "sess-1"})
+
+    captured = {}
+
+    def fake_teams(*, config, payload, workflow_reference, file_name, mode="file", provenance=None, opener=None):  # noqa: ARG001
+        captured["api_key"] = config.api_key
+        return _ok_result()
+
+    monkeypatch.setattr(
+        "driftshield.cli.commands.telemetry.submit_teams_via_presigned_upload",
+        fake_teams,
+    )
+
+    result = runner.invoke(
+        app,
+        ["telemetry", "submit-session", "--path", str(session_path), "--tier", "teams"],
+    )
+    assert result.exit_code == 0
+    assert captured["api_key"] == "ds_teams_key"
+
+
+def test_submit_session_teams_tier_without_api_key_errors(tmp_path, monkeypatch):
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    monkeypatch.delenv("DRIFTSHIELD_API_KEY", raising=False)
+    monkeypatch.delenv("API_KEY", raising=False)
+    runner.invoke(app, _remote_enable_argv())
+    session_path = _write_session(tmp_path, {"session_id": "sess-1"})
+
+    result = runner.invoke(
+        app,
+        ["telemetry", "submit-session", "--path", str(session_path), "--tier", "teams"],
+    )
+    assert result.exit_code == 1
+    assert "DRIFTSHIELD_API_KEY" in result.stdout

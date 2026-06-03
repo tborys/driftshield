@@ -67,6 +67,7 @@ _REFERENCE_FIELDS = {
         "agent_id",
         "model_name",
         "model_version",
+        "signature_summary",
     },
     "IntakeSubmissionRequest": {
         "installation_id",
@@ -270,3 +271,152 @@ def test_payload_size_bytes_bounds_match_canonical():
 
     accepted = SubmissionEnvelope.model_validate({**base, "payload_size_bytes": 1})
     assert accepted.payload_size_bytes == 1
+
+
+# ---------------------------------------------------------------------------
+# signature_summary block (envelope-level sibling of payload)
+# ---------------------------------------------------------------------------
+
+
+from driftshield.intake_contract import (  # noqa: E402
+    ACCEPTED_SIGNATURE_SUMMARY_VERSIONS,
+    MAX_SIGNATURE_SUMMARY_ENTRIES,
+    SIGNATURE_SUMMARY_VERSION,
+    SignatureSummary,
+    SignatureSummaryEntry,
+)
+
+
+_BASE_ENTRY = {
+    "signature_id": "sig-abc",
+    "match_status": "matched",
+    "community_pack_id": "community-general",
+    "community_pack_version": "1.0.0",
+    "matcher_id": "phase-3g-deterministic-v1",
+    "matcher_version": "phase-3g-deterministic-rules-v1",
+}
+
+
+def _envelope_body(*, signature_summary: dict | None = None) -> dict:
+    body = {
+        "source_system": "oss",
+        "source_session_id": "sess-1",
+        "schema_version": SUPPORTED_CONTRACT_VERSION,
+        "payload": {"foo": "bar"},
+        "payload_size_bytes": 13,
+        "redaction_manifest": {
+            "manifest_version": REDACTION_MANIFEST_VERSION,
+            "redaction_applied": True,
+            "redacted_fields": ["prompts", "responses", "user_identifiers"],
+        },
+    }
+    if signature_summary is not None:
+        body["signature_summary"] = signature_summary
+    return body
+
+
+def test_signature_summary_constants_match_canonical_snapshot():
+    assert SIGNATURE_SUMMARY_VERSION == "signature-summary.v1"
+    assert ACCEPTED_SIGNATURE_SUMMARY_VERSIONS == frozenset({SIGNATURE_SUMMARY_VERSION})
+    assert MAX_SIGNATURE_SUMMARY_ENTRIES == 50
+
+
+def test_envelope_signature_summary_optional():
+    envelope = SubmissionEnvelope.model_validate(_envelope_body())
+    assert envelope.signature_summary is None
+
+
+def test_envelope_accepts_signature_summary():
+    summary = {
+        "schema_version": SIGNATURE_SUMMARY_VERSION,
+        "matches": [
+            {**_BASE_ENTRY, "confidence": 0.85, "confidence_band": "high"},
+        ],
+    }
+    envelope = SubmissionEnvelope.model_validate(
+        _envelope_body(signature_summary=summary)
+    )
+    assert envelope.signature_summary is not None
+    assert envelope.signature_summary.schema_version == SIGNATURE_SUMMARY_VERSION
+    assert len(envelope.signature_summary.matches) == 1
+    entry = envelope.signature_summary.matches[0]
+    assert entry.signature_id == "sig-abc"
+    assert entry.confidence == 0.85
+    assert entry.confidence_band == "high"
+
+    # OssSubmissionRequest carries the block through to the request body.
+    request = OssSubmissionRequest.model_validate(
+        {
+            "envelope_contract_version": SUPPORTED_CONTRACT_VERSION,
+            "envelope": _envelope_body(signature_summary=summary),
+        }
+    )
+    assert request.envelope.signature_summary is not None
+    assert request.envelope.signature_summary.matches[0].signature_id == "sig-abc"
+
+
+def test_envelope_rejects_unknown_signature_summary_fields():
+    summary = {
+        "schema_version": SIGNATURE_SUMMARY_VERSION,
+        "matches": [{**_BASE_ENTRY, "rogue": "value"}],
+    }
+    with pytest.raises(ValidationError):
+        SubmissionEnvelope.model_validate(_envelope_body(signature_summary=summary))
+
+    summary_with_extra_top = {
+        "schema_version": SIGNATURE_SUMMARY_VERSION,
+        "matches": [],
+        "rogue_top": "x",
+    }
+    with pytest.raises(ValidationError):
+        SubmissionEnvelope.model_validate(
+            _envelope_body(signature_summary=summary_with_extra_top)
+        )
+
+
+@pytest.mark.parametrize(
+    "field_name, max_length",
+    [
+        ("signature_id", 64),
+        ("community_pack_version", 32),
+        ("matcher_version", 40),
+    ],
+)
+def test_signature_summary_per_field_caps_enforced(field_name, max_length):
+    at_cap = {**_BASE_ENTRY, field_name: "a" * max_length}
+    accepted = SignatureSummaryEntry.model_validate(at_cap)
+    assert getattr(accepted, field_name) == "a" * max_length
+
+    over_cap = {**_BASE_ENTRY, field_name: "a" * (max_length + 1)}
+    with pytest.raises(ValidationError):
+        SignatureSummaryEntry.model_validate(over_cap)
+
+
+def test_signature_summary_50_entry_cap():
+    base_matches = [dict(_BASE_ENTRY) for _ in range(MAX_SIGNATURE_SUMMARY_ENTRIES)]
+    accepted = SignatureSummary.model_validate(
+        {
+            "schema_version": SIGNATURE_SUMMARY_VERSION,
+            "matches": base_matches,
+        }
+    )
+    assert len(accepted.matches) == MAX_SIGNATURE_SUMMARY_ENTRIES
+
+    over_cap_matches = [dict(_BASE_ENTRY) for _ in range(MAX_SIGNATURE_SUMMARY_ENTRIES + 1)]
+    with pytest.raises(ValidationError):
+        SignatureSummary.model_validate(
+            {
+                "schema_version": SIGNATURE_SUMMARY_VERSION,
+                "matches": over_cap_matches,
+            }
+        )
+
+
+def test_signature_summary_confidence_bounds():
+    with pytest.raises(ValidationError):
+        SignatureSummaryEntry.model_validate({**_BASE_ENTRY, "confidence": 1.5})
+    with pytest.raises(ValidationError):
+        SignatureSummaryEntry.model_validate({**_BASE_ENTRY, "confidence": -0.1})
+
+    accepted = SignatureSummaryEntry.model_validate({**_BASE_ENTRY, "confidence": 0.0})
+    assert accepted.confidence == 0.0
