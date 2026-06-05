@@ -1,4 +1,4 @@
-"""Phase 3g canonical analysed-run builder."""
+"""Canonical analysed-run builder."""
 
 from __future__ import annotations
 

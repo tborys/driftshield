@@ -17,6 +17,14 @@ interface LineageGraphProps {
 
 const nodeTypes = { custom: GraphNodeComponent }
 
+// Brand colours for the flow canvas. xyflow renders SVG markers, minimap nodes
+// and the background pattern with inline fills that don't resolve CSS
+// variables, so the resolved hexes from the DriftShield palette are used here.
+const DS_EDGE = '#5b8cff'
+const DS_WARNING = '#ffce7a'
+const DS_GRID = 'rgba(130, 160, 240, 0.18)'
+const DS_MINIMAP_NODE = '#1d2c5a'
+
 function layoutGraph(graph: GraphResponse, selectedNodeId: string | null): { nodes: Node[]; edges: Edge[] } {
   const g = new Dagre.graphlib.Graph().setDefaultEdgeLabel(() => ({}))
   g.setGraph({ rankdir: 'TB', nodesep: 50, ranksep: 80 })
@@ -55,11 +63,13 @@ function layoutGraph(graph: GraphResponse, selectedNodeId: string | null): { nod
     type: 'smoothstep',
     animated: edge.inferred,
     label: edge.inferred ? 'inferred' : undefined,
-    style: edge.inferred ? { strokeDasharray: '6 4', stroke: '#f59e0b' } : undefined,
-    labelStyle: edge.inferred ? { fill: '#b45309', fontSize: 11 } : undefined,
+    style: edge.inferred
+      ? { strokeDasharray: '6 4', stroke: DS_WARNING }
+      : { stroke: DS_EDGE },
+    labelStyle: edge.inferred ? { fill: DS_WARNING, fontSize: 11 } : undefined,
     markerEnd: {
       type: MarkerType.ArrowClosed,
-      color: edge.inferred ? '#f59e0b' : '#64748b',
+      color: edge.inferred ? DS_WARNING : DS_EDGE,
     },
   }))
 
@@ -107,9 +117,17 @@ export function LineageGraph({ graph, onNodeSelect, selectedNodeId }: LineageGra
         fitView
         proOptions={{ hideAttribution: true }}
       >
-        <Background />
+        <Background color={DS_GRID} gap={20} size={1} />
         <Controls />
-        <MiniMap />
+        <MiniMap
+          pannable
+          zoomable
+          bgColor="rgba(8, 14, 38, 0.9)"
+          maskColor="rgba(6, 11, 24, 0.66)"
+          nodeColor={DS_MINIMAP_NODE}
+          nodeStrokeColor={DS_EDGE}
+          nodeStrokeWidth={2}
+        />
       </ReactFlow>
     </div>
   )

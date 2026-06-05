@@ -2,9 +2,13 @@
 
 Find where an AI agent first went wrong.
 
+<p align="center">
+  <img src="docs/media/driftshield-hero.gif" alt="DriftShield: a failed AI run reconstructed as a decision graph with the inflection point and a matched failure signature" width="100%" />
+</p>
+
 DriftShield is an open source failed-run investigation tool for AI workflows. When a run
 breaks, teams often fall back on logs, traces, and guesswork. DriftShield reconstructs the run
-as a decision graph, highlights where reasoning first drifted, and turns the failure into a
+as a decision graph, shows where reasoning first drifted, and turns the failure into a
 report a human can inspect.
 
 As teams move from single prompts to multi-step and agentic workflows, failures become harder to
@@ -161,6 +165,14 @@ npm run dev
 
 Open http://localhost:5173 to view ingested sessions.
 
+The dashboard reconstructs each run as a decision graph. Click a node to inspect
+its risk flags, evidence, and inflection explanation, and open the generated
+forensic report inline.
+
+![DriftShield dashboard, session triage view](docs/media/theme-shots/after/01-sessions-desktop.png)
+
+![DriftShield dashboard, investigation graph view](docs/media/theme-shots/after/02-investigation-desktop.png)
+
 ### 5. Ingest a transcript into the local API
 
 ```bash
@@ -250,13 +262,14 @@ driftshield analyze <session-id-or-path>
 # Inspect a specific node in the decision graph
 driftshield inspect <file.jsonl> --node 0
 
-# Generate a report
+# Generate a report (defaults to the full report; use --type summary for a short one)
 driftshield report <file.jsonl>
 
 # Generate a JSON report contract from the CLI
 driftshield report <file.jsonl> --format json
 
-# Discover available transcript sources
+# Discover and list local transcript connectors
+driftshield connectors discover
 driftshield connectors list
 ```
 

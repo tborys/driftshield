@@ -201,7 +201,7 @@ export function SessionListPage() {
       <Card>
         <CardHeader>
           <CardTitle>Daily filters</CardTitle>
-          <CardDescription>Query the server using the #42 triage filters instead of rebuilding state in the client.</CardDescription>
+          <CardDescription>Query the server with the triage filters instead of rebuilding state in the client.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-3 xl:grid-cols-4">
           <div className="space-y-2">

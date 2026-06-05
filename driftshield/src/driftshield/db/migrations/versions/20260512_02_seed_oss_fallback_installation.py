@@ -11,7 +11,7 @@ import logging
 from alembic import op
 import sqlalchemy as sa
 
-from driftshield.db.hosted_schema_sql import build_phase3h_oss_fallback_installation_seed_sql
+from driftshield.db.hosted_schema_sql import build_oss_fallback_installation_seed_sql
 
 
 revision: str = "20260512_02"
@@ -26,7 +26,7 @@ LOGGER = logging.getLogger("alembic.runtime.migration")
 
 def upgrade() -> None:
     installation_insert_sql, consent_insert_sql, resolved_ids_sql = (
-        build_phase3h_oss_fallback_installation_seed_sql()
+        build_oss_fallback_installation_seed_sql()
     )
     op.execute(installation_insert_sql)
     op.execute(consent_insert_sql)

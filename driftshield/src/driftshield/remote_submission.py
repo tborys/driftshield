@@ -1,15 +1,13 @@
 """OSS-side submission envelope builder, redaction, and unauthenticated POST.
 
-Per Phase 3h D19 (operator decision 2026-05-16): OSS submissions go on a
-dedicated unauthenticated lane. No installation_id, no api_key header, no
-consent_state echo. The server binds the persisted row to the in-stack OSS
-fallback installation + consent.
+OSS submissions go on a dedicated unauthenticated lane. No installation_id, no
+api_key header, no consent_state echo. The server binds the persisted row to the
+built-in OSS fallback installation and consent record.
 
-Phase 3i (driftshield#109) replaces the v1 field-name-only redactor with a
-recursive ruleset implemented in :mod:`driftshield.recursive_redactor`. The
-public manifest contract still advertises ``REQUIRED_REDACTION_FIELDS``; the
-internal v2 ruleset (tool-IO keys, regex secrets, path-shape, email) is
-implementation-only.
+The redactor is a recursive ruleset implemented in
+:mod:`driftshield.recursive_redactor`. The public manifest contract advertises
+``REQUIRED_REDACTION_FIELDS``; the recursive ruleset (tool-IO keys, regex
+secrets, path-shape, email) is an implementation detail behind that contract.
 """
 
 from __future__ import annotations

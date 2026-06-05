@@ -1,4 +1,4 @@
-"""Phase 3g deterministic candidate generation over canonical analysed runs."""
+"""Deterministic candidate generation over canonical analysed runs."""
 
 from __future__ import annotations
 

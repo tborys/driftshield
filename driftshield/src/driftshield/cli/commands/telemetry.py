@@ -1,4 +1,4 @@
-"""CLI commands for consent-gated Phase 2a telemetry."""
+"""CLI commands for consent-gated telemetry."""
 
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ from driftshield.remote_upload import (
 from driftshield.telemetry import TelemetryService, validate_outcome_status
 
 console = Console(force_terminal=True)
-app = typer.Typer(help="Manage opt-in Phase 2a telemetry.")
+app = typer.Typer(help="Manage opt-in telemetry.")
 
 
 @app.command("status")
@@ -131,13 +131,13 @@ def telemetry_submit_session(
         None, "--source-report-id", help="Optional source report identifier."
     ),
     agent_id: str | None = typer.Option(
-        None, "--agent-id", help="Optional agent identifier (phase3g.v1 provenance)."
+        None, "--agent-id", help="Optional agent identifier recorded as run provenance."
     ),
     model_name: str | None = typer.Option(
-        None, "--model-name", help="Optional model name (phase3g.v1 provenance)."
+        None, "--model-name", help="Optional model name recorded as run provenance."
     ),
     model_version: str | None = typer.Option(
-        None, "--model-version", help="Optional model version (phase3g.v1 provenance)."
+        None, "--model-version", help="Optional model version recorded as run provenance."
     ),
     dry_run_redaction: bool = typer.Option(
         False,
@@ -180,10 +180,9 @@ def telemetry_submit_session(
     to the in-stack OSS fallback installation + consent.
 
     ``workflow_reference`` precedence: --workflow-reference flag, then
-    session JSON's ``workflow_reference`` field, then ``"default"``. The
-    Phase 3i recurrence matcher requires distinct workflow references to
-    light up the Emerging signal; leaving every submission on ``"default"``
-    masks recurrence.
+    session JSON's ``workflow_reference`` field, then ``"default"``. Distinct
+    workflow references are what let downstream analysis tell repeat workflows
+    apart; leaving every submission on ``"default"`` hides that signal.
     """
     try:
         payload = load_session_payload(path)

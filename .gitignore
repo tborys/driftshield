@@ -17,3 +17,6 @@
 __pycache__/
 *.py[cod]
 /sessions/
+
+# macOS
+.DS_Store

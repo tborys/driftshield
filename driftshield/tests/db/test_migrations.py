@@ -9,7 +9,7 @@ from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
 
 from driftshield.db.hosted_schema_sql import (
-    build_phase3h_oss_fallback_installation_seed_sql,
+    build_oss_fallback_installation_seed_sql,
 )
 
 
@@ -58,7 +58,7 @@ def test_recurrence_cleanup_downgrade_uses_sqlite_safe_types():
         assert isinstance(session_columns["signature_id"]["type"], sa.String)
 
 
-def test_phase3h_oss_fallback_installation_seed_downgrade_is_forward_only() -> None:
+def test_oss_fallback_installation_seed_downgrade_is_forward_only() -> None:
     migration_path = (
         Path(__file__).resolve().parents[2]
         / "src/driftshield/db/migrations/versions/20260512_02_seed_oss_fallback_installation.py"
@@ -73,8 +73,8 @@ def test_phase3h_oss_fallback_installation_seed_downgrade_is_forward_only() -> N
         module.downgrade()
 
 
-def test_phase3h_oss_fallback_installation_seed_sql_is_idempotent_and_resolves_ids() -> None:
-    statements = build_phase3h_oss_fallback_installation_seed_sql()
+def test_oss_fallback_installation_seed_sql_is_idempotent_and_resolves_ids() -> None:
+    statements = build_oss_fallback_installation_seed_sql()
 
     assert len(statements) == 3
     assert "insert into installations" in statements[0].lower()

@@ -361,7 +361,7 @@ class ForensicArtifactRef:
 
 @dataclass
 class ForensicCase:
-    """Durable single-run forensic case used by the Phase 2b OSS-safe workflow."""
+    """Durable single-run forensic case used by the OSS-safe single-run workflow."""
 
     id: UUID
     session_id: UUID

@@ -1,4 +1,4 @@
-"""Reusable lineage fixtures for Phase 2b graph coverage."""
+"""Reusable lineage fixtures for graph coverage."""
 
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4

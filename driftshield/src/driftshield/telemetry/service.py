@@ -1,4 +1,4 @@
-"""Consent-gated local telemetry transport for the Phase 2a evidence loop."""
+"""Consent-gated local telemetry transport for the evidence loop."""
 
 from __future__ import annotations
 
@@ -102,17 +102,17 @@ class TelemetryService:
     def remote_enable(self, *, intake_url: str) -> TelemetryConfig:
         """Persist the OSS intake URL.
 
-        Per Phase 3h D19 (2026-05-16): the OSS lane is unauthenticated.
-        No api_key, no installation_id. If a config file from a previous D7/D8
-        install still carries those legacy fields, they are cleared here so
-        the on-disk state stays consistent with the live contract.
+        The OSS intake lane is unauthenticated: no api_key, no installation_id.
+        If a config file from an older install still carries those legacy fields,
+        they are cleared here so the on-disk state stays consistent with the
+        current contract.
         """
         intake_url_clean = intake_url.strip()
         if not intake_url_clean:
             raise ValueError("intake_url must not be empty")
         config = self.load_config()
         config.remote_intake_url = intake_url_clean
-        # Migrate D7/D8 legacy fields out of the on-disk config on first use.
+        # Migrate legacy auth fields out of the on-disk config on first use.
         config.remote_api_key = None
         config.remote_installation_id = None
         if not config.event_stream_path:

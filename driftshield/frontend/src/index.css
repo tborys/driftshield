@@ -4,121 +4,394 @@
 
 @custom-variant dark (&:is(.dark *));
 
-@theme inline {
-    --radius-sm: calc(var(--radius) - 4px);
-    --radius-md: calc(var(--radius) - 2px);
-    --radius-lg: var(--radius);
-    --radius-xl: calc(var(--radius) + 4px);
-    --radius-2xl: calc(var(--radius) + 8px);
-    --radius-3xl: calc(var(--radius) + 12px);
-    --radius-4xl: calc(var(--radius) + 16px);
-    --color-background: var(--background);
-    --color-foreground: var(--foreground);
-    --color-card: var(--card);
-    --color-card-foreground: var(--card-foreground);
-    --color-popover: var(--popover);
-    --color-popover-foreground: var(--popover-foreground);
-    --color-primary: var(--primary);
-    --color-primary-foreground: var(--primary-foreground);
-    --color-secondary: var(--secondary);
-    --color-secondary-foreground: var(--secondary-foreground);
-    --color-muted: var(--muted);
-    --color-muted-foreground: var(--muted-foreground);
-    --color-accent: var(--accent);
-    --color-accent-foreground: var(--accent-foreground);
-    --color-destructive: var(--destructive);
-    --color-border: var(--border);
-    --color-input: var(--input);
-    --color-ring: var(--ring);
-    --color-chart-1: var(--chart-1);
-    --color-chart-2: var(--chart-2);
-    --color-chart-3: var(--chart-3);
-    --color-chart-4: var(--chart-4);
-    --color-chart-5: var(--chart-5);
-    --color-sidebar: var(--sidebar);
-    --color-sidebar-foreground: var(--sidebar-foreground);
-    --color-sidebar-primary: var(--sidebar-primary);
-    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-    --color-sidebar-accent: var(--sidebar-accent);
-    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-    --color-sidebar-border: var(--sidebar-border);
-    --color-sidebar-ring: var(--sidebar-ring);
-}
+/*
+ * DriftShield dashboard theme.
+ *
+ * Dark navy + royal blue in the DriftShield brand palette. The brand tokens
+ * live on :root (the dashboard is dark only) and feed the shadcn semantic
+ * variables through the bridge below, so every shadcn Button / Card / Badge /
+ * Input renders in the brand palette without per-component theming. The named
+ * --ds-* tokens stay available to the small amount of hand-written CSS (the
+ * page background, the flow diagram, the markdown view).
+ */
 
 :root {
-    --radius: 0.625rem;
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.145 0 0);
-    --card: oklch(1 0 0);
-    --card-foreground: oklch(0.145 0 0);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.205 0 0);
-    --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.97 0 0);
-    --secondary-foreground: oklch(0.205 0 0);
-    --muted: oklch(0.97 0 0);
-    --muted-foreground: oklch(0.556 0 0);
-    --accent: oklch(0.97 0 0);
-    --accent-foreground: oklch(0.205 0 0);
-    --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.922 0 0);
-    --input: oklch(0.922 0 0);
-    --ring: oklch(0.708 0 0);
-    --chart-1: oklch(0.646 0.222 41.116);
-    --chart-2: oklch(0.6 0.118 184.704);
-    --chart-3: oklch(0.398 0.07 227.392);
-    --chart-4: oklch(0.828 0.189 84.429);
-    --chart-5: oklch(0.769 0.188 70.08);
-    --sidebar: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-primary: oklch(0.205 0 0);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.97 0 0);
-    --sidebar-accent-foreground: oklch(0.205 0 0);
-    --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: oklch(0.708 0 0);
+  color-scheme: dark;
+
+  --font-body: "Inter", "Segoe UI", "Helvetica Neue", sans-serif;
+  --font-heading: "Sora", "Inter", "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* DriftShield brand palette */
+  --ds-bg-deep: #060b18;
+  --ds-bg-primary: #08112a;
+  --ds-bg-elevated: #0f1d45;
+  --ds-bg-surface: rgba(10, 18, 46, 0.74);
+
+  --ds-border: rgba(130, 160, 240, 0.18);
+  --ds-border-strong: rgba(130, 160, 240, 0.30);
+
+  --ds-text-1: #f0f4ff;
+  --ds-text-2: rgba(220, 232, 255, 0.82);
+  --ds-text-3: rgba(180, 200, 240, 0.64);
+
+  --ds-accent: #5b8cff;
+  --ds-accent-strong: #3b6ef5;
+  --ds-accent-soft: rgba(91, 140, 255, 0.15);
+  --ds-accent-glow: rgba(91, 140, 255, 0.25);
+
+  --ds-success: #6ff2b2;
+  --ds-warning: #ffce7a;
+  --ds-danger: #ff9f9f;
 }
 
-.dark {
-    --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.205 0 0);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.205 0 0);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.922 0 0);
-    --primary-foreground: oklch(0.205 0 0);
-    --secondary: oklch(0.269 0 0);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
-    --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
-    --chart-1: oklch(0.488 0.243 264.376);
-    --chart-2: oklch(0.696 0.17 162.48);
-    --chart-3: oklch(0.769 0.188 70.08);
-    --chart-4: oklch(0.627 0.265 303.9);
-    --chart-5: oklch(0.645 0.246 16.439);
-    --sidebar: oklch(0.205 0 0);
-    --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.488 0.243 264.376);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.269 0 0);
-    --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.556 0 0);
+/*
+ * shadcn semantic bridge → DriftShield tokens.
+ *
+ * shadcn components read these semantic custom properties. We point them at the
+ * brand tokens so the dashboard renders navy + royal-blue. shadcn's own
+ * "accent" is a hover surface (not the brand blue), so it gets --ds-accent-soft
+ * while --primary carries the brand blue.
+ */
+:root {
+  --radius: 0.75rem;
+
+  --background: var(--ds-bg-primary);
+  --foreground: var(--ds-text-1);
+  --card: var(--ds-bg-elevated);
+  --card-foreground: var(--ds-text-1);
+  --popover: var(--ds-bg-elevated);
+  --popover-foreground: var(--ds-text-1);
+  --primary: var(--ds-accent);
+  --primary-foreground: #ffffff;
+  --secondary: var(--ds-bg-elevated);
+  --secondary-foreground: var(--ds-text-1);
+  --muted: var(--ds-bg-elevated);
+  --muted-foreground: var(--ds-text-3);
+  --accent: var(--ds-accent-soft);
+  --accent-foreground: var(--ds-text-1);
+  --destructive: var(--ds-danger);
+  --destructive-foreground: #1a0a0a;
+  --border: var(--ds-border);
+  --input: var(--ds-border-strong);
+  --ring: var(--ds-accent);
+
+  --chart-1: var(--ds-accent);
+  --chart-2: var(--ds-success);
+  --chart-3: var(--ds-warning);
+  --chart-4: #9bb6ff;
+  --chart-5: var(--ds-danger);
+
+  --sidebar: var(--ds-bg-deep);
+  --sidebar-foreground: var(--ds-text-1);
+  --sidebar-primary: var(--ds-accent);
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: var(--ds-accent-soft);
+  --sidebar-accent-foreground: var(--ds-text-1);
+  --sidebar-border: var(--ds-border);
+  --sidebar-ring: var(--ds-accent);
+}
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --font-sans: var(--font-body);
+  --font-mono: var(--font-mono);
 }
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
-    }
+  }
+
   body {
     @apply bg-background text-foreground;
-    }
+    font-family: var(--font-body);
+    background: var(--ds-bg-deep);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1, h2, h3, h4 {
+    font-family: var(--font-heading);
+    letter-spacing: -0.01em;
+  }
+
+  code, pre, .font-mono {
+    font-family: var(--font-mono);
+  }
 }
+
+/*
+ * ── Atmospheric page background ──
+ * Stacked accent radial blooms + a faint grid mesh over the navy gradient,
+ * a soft atmospheric backdrop. Fixed, behind everything, no pointer events.
+ */
+.ds-app-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 12% 2%, rgba(91, 140, 255, 0.18), transparent 32%),
+    radial-gradient(circle at 88% 12%, rgba(91, 140, 255, 0.10), transparent 26%),
+    radial-gradient(circle at 70% 88%, rgba(125, 169, 255, 0.07), transparent 26%),
+    linear-gradient(180deg, #08112a 0%, #09122b 34%, #060b18 100%);
+}
+
+.ds-app-bg::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(160, 190, 255, 0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(160, 190, 255, 0.018) 1px, transparent 1px);
+  background-size: 56px 56px;
+}
+
+/* App content sits above the fixed background. */
+.ds-app-shell {
+  position: relative;
+  z-index: 1;
+}
+
+/*
+ * ── Brand header ──
+ */
+.ds-header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  backdrop-filter: blur(16px) saturate(1.4);
+  background: rgba(5, 10, 24, 0.72);
+  border-bottom: 1px solid var(--ds-border);
+}
+
+.ds-nav-logo {
+  height: 30px;
+  width: auto;
+  object-fit: contain;
+  display: block;
+}
+
+.ds-eyebrow {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ds-text-3);
+}
+
+/*
+ * ── @xyflow/react dark overrides ──
+ * The library ships a light default stylesheet. Repaint the canvas, controls,
+ * minimap and edges for the navy surface.
+ */
+.react-flow {
+  background: transparent;
+}
+
+.react-flow__background {
+  background: transparent;
+}
+
+.react-flow__controls {
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(4, 9, 24, 0.4);
+  border: 1px solid var(--ds-border);
+}
+
+.react-flow__controls-button {
+  background: var(--ds-bg-elevated) !important;
+  border-bottom: 1px solid var(--ds-border) !important;
+  fill: var(--ds-text-2) !important;
+  color: var(--ds-text-2);
+}
+
+.react-flow__controls-button:hover {
+  background: rgba(91, 140, 255, 0.18) !important;
+  fill: var(--ds-text-1) !important;
+}
+
+.react-flow__controls-button svg {
+  fill: currentColor;
+}
+
+.react-flow__controls-button:disabled {
+  opacity: 0.4;
+}
+
+.react-flow__minimap {
+  background: rgba(8, 14, 38, 0.9) !important;
+  border: 1px solid var(--ds-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(4, 9, 24, 0.4);
+}
+
+.react-flow__minimap-mask {
+  fill: rgba(6, 11, 24, 0.66) !important;
+}
+
+/* The default minimap node fill is near-white and glares on the dark canvas. */
+.react-flow__minimap-node {
+  fill: #1d2c5a !important;
+  stroke: var(--ds-accent);
+  stroke-width: 2px;
+}
+
+.react-flow__attribution {
+  display: none;
+}
+
+.react-flow__edge-text {
+  fill: var(--ds-text-3);
+}
+
+.react-flow__edge-textbg {
+  fill: var(--ds-bg-elevated);
+}
+
+/*
+ * ── Markdown report view ──
+ * Styles the react-markdown output inside the report dialog for the dark
+ * surface. Scoped to .ds-markdown so it never bleeds into shadcn components.
+ */
+.ds-markdown {
+  color: var(--ds-text-2);
+  line-height: 1.7;
+  font-size: 0.9rem;
+}
+
+.ds-markdown h1,
+.ds-markdown h2,
+.ds-markdown h3 {
+  font-family: var(--font-heading);
+  color: var(--ds-text-1);
+  line-height: 1.25;
+  margin: 1.4em 0 0.5em;
+}
+
+.ds-markdown h1 { font-size: 1.4rem; }
+.ds-markdown h2 { font-size: 1.15rem; }
+.ds-markdown h3 { font-size: 1rem; }
+.ds-markdown h1:first-child,
+.ds-markdown h2:first-child { margin-top: 0; }
+
+.ds-markdown p { margin: 0.7em 0; }
+
+.ds-markdown a {
+  color: var(--ds-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.ds-markdown a:hover { color: #9bb6ff; }
+
+.ds-markdown ul,
+.ds-markdown ol {
+  margin: 0.7em 0;
+  padding-left: 1.4em;
+}
+
+.ds-markdown li { margin: 0.3em 0; }
+
+.ds-markdown li::marker { color: var(--ds-accent); }
+
+.ds-markdown code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: rgba(91, 140, 255, 0.12);
+  border: 1px solid var(--ds-border);
+  border-radius: 6px;
+  padding: 0.1em 0.35em;
+  color: #cfe0ff;
+}
+
+.ds-markdown pre {
+  background: rgba(5, 10, 24, 0.7);
+  border: 1px solid var(--ds-border);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+  overflow-x: auto;
+  margin: 0.9em 0;
+}
+
+.ds-markdown pre code {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: var(--ds-text-2);
+}
+
+.ds-markdown blockquote {
+  margin: 0.9em 0;
+  padding: 0.4em 1em;
+  border-left: 3px solid var(--ds-accent);
+  background: rgba(91, 140, 255, 0.06);
+  color: var(--ds-text-2);
+}
+
+.ds-markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.9em 0;
+  font-size: 0.85rem;
+}
+
+.ds-markdown th,
+.ds-markdown td {
+  border: 1px solid var(--ds-border);
+  padding: 0.5em 0.7em;
+  text-align: left;
+}
+
+.ds-markdown th {
+  background: rgba(91, 140, 255, 0.1);
+  color: var(--ds-text-1);
+  font-weight: 600;
+}
+
+.ds-markdown hr {
+  border: 0;
+  border-top: 1px solid var(--ds-border);
+  margin: 1.4em 0;
+}
+
+.ds-markdown strong { color: var(--ds-text-1); }

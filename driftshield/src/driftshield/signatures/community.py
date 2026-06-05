@@ -20,7 +20,7 @@ SUPPORTED_SCHEMA_MAJOR = 1
 
 @dataclass(frozen=True, slots=True)
 class CommunityPackManifest:
-    """Validated Phase 2a community pack manifest."""
+    """Validated community pack manifest."""
 
     schema_version: str
     metadata: SignaturePackMetadata
@@ -30,7 +30,7 @@ class CommunityPackManifest:
 
 
 class CommunityPack(SignatureProvider):
-    """Provider wrapper over a validated Phase 2a community pack manifest."""
+    """Provider wrapper over a validated community pack manifest."""
 
     def __init__(self, manifest: CommunityPackManifest) -> None:
         self.manifest = manifest
@@ -52,14 +52,14 @@ def load_builtin_community_pack() -> CommunityPackManifest:
 
 
 def load_community_pack(path: str | Path | Traversable) -> CommunityPackManifest:
-    """Load and validate a Phase 2a community pack manifest from JSON."""
+    """Load and validate a community pack manifest from JSON."""
 
     payload = json.loads(_read_manifest_text(path))
     return parse_community_pack(payload)
 
 
 def parse_community_pack(payload: Any) -> CommunityPackManifest:
-    """Validate a raw Phase 2a community pack manifest and project it to the OSS seam."""
+    """Validate a raw community pack manifest and project it to the OSS seam."""
 
     manifest_payload = _require_mapping(payload, field_name="manifest")
     schema_version = _require_non_empty_string(

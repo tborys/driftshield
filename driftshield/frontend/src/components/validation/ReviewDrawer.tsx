@@ -68,12 +68,27 @@ function verdictForOutcome(label: ReviewOutcomeLabel): 'accept' | 'reject' | 'ne
 
 export function ReviewDrawer({ open, sessionId, node, onClose }: ReviewDrawerProps) {
   const [reviewer, setReviewer] = useState('analyst')
-  const [verdict, setVerdict] = useState<'accept' | 'reject' | 'needs_review'>('accept')
-  const [reviewOutcome, setReviewOutcome] = useState<ReviewOutcomeLabel>('needs_follow_up')
+  const [reviewOutcome, setReviewOutcome] = useState<ReviewOutcomeLabel>(() => defaultOutcomeForNode(node))
   const [notes, setNotes] = useState('')
   const [confidence, setConfidence] = useState('0.8')
   const [shareable, setShareable] = useState(true)
   const [saveStatus, setSaveStatus] = useState<string | null>(null)
+
+  // The verdict is fully determined by the selected outcome, so it is derived
+  // rather than held as separate state.
+  const verdict = verdictForOutcome(reviewOutcome)
+
+  // Reset the default outcome when the drawer opens for a different node. This
+  // is the "adjust state while rendering" pattern, which avoids a cascading
+  // render from setting state inside an effect.
+  const [lastNodeKey, setLastNodeKey] = useState<string | null>(null)
+  const nodeKey = open && node ? node.id : null
+  if (nodeKey !== lastNodeKey) {
+    setLastNodeKey(nodeKey)
+    if (nodeKey) {
+      setReviewOutcome(defaultOutcomeForNode(node))
+    }
+  }
 
   const { data: validations = [], isLoading } = useSessionValidations(sessionId)
   const createValidation = useCreateSessionValidation(sessionId)
@@ -91,15 +106,12 @@ export function ReviewDrawer({ open, sessionId, node, onClose }: ReviewDrawerPro
     return () => window.removeEventListener('keydown', onEscape)
   }, [open, onClose])
 
+  // Focus the reviewer input when the drawer opens for a node. Focusing the DOM
+  // is a genuine external-system side effect, so it stays in an effect.
   useEffect(() => {
     if (open && node) {
-      const defaultOutcome = defaultOutcomeForNode(node)
-      setReviewOutcome(defaultOutcome)
-      setVerdict(verdictForOutcome(defaultOutcome))
-      setTimeout(() => {
-        const input = document.getElementById('reviewer-input') as HTMLInputElement | null
-        input?.focus()
-      }, 0)
+      const input = document.getElementById('reviewer-input') as HTMLInputElement | null
+      input?.focus()
     }
   }, [open, node])
 
@@ -180,10 +192,7 @@ export function ReviewDrawer({ open, sessionId, node, onClose }: ReviewDrawerPro
                   key={option}
                   size="sm"
                   variant={reviewOutcome === option ? 'default' : 'outline'}
-                  onClick={() => {
-                    setReviewOutcome(option)
-                    setVerdict(verdictForOutcome(option))
-                  }}
+                  onClick={() => setReviewOutcome(option)}
                 >
                   {prettifyReviewOutcome(option)}
                 </Button>
@@ -231,7 +240,7 @@ export function ReviewDrawer({ open, sessionId, node, onClose }: ReviewDrawerPro
           </Button>
 
           {saveStatus && (
-            <p className={`text-xs ${saveStatus === 'Review outcome saved.' ? 'text-emerald-600' : 'text-destructive'}`} aria-live="polite">
+            <p className={`text-xs ${saveStatus === 'Review outcome saved.' ? 'text-[var(--ds-success)]' : 'text-destructive'}`} aria-live="polite">
               {saveStatus}
             </p>
           )}

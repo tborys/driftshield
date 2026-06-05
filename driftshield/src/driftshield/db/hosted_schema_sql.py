@@ -1,4 +1,9 @@
-"""Hosted Aurora schema SQL for the Phase 3h intake and Teams runtime path."""
+"""Schema SQL for the hosted submission-intake path.
+
+This builds the relational schema used when DriftShield runs against a managed
+Postgres-compatible database for the opt-in hosted intake lane. It is separate
+from the local single-run schema and is only exercised on the hosted path.
+"""
 
 from __future__ import annotations
 
@@ -172,7 +177,7 @@ def build_hosted_base_drop_sql() -> tuple[str, ...]:
     )
 
 
-def build_phase3h_oss_fallback_installation_seed_sql() -> tuple[str, str, str]:
+def build_oss_fallback_installation_seed_sql() -> tuple[str, str, str]:
     return (
         """
         insert into installations (
