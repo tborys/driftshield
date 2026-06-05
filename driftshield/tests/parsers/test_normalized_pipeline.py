@@ -1,4 +1,4 @@
-"""Phase 2b normalized event pipeline coverage."""
+"""Normalized event pipeline coverage."""
 
 from pathlib import Path
 

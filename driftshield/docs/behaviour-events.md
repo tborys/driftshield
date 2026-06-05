@@ -1,8 +1,8 @@
-# Phase 3e behaviour events
+# Behaviour events
 
 This is the OSS-safe v1 behaviour-event layer for intelligence surfaces.
 
-It is **not** the older generic telemetry work from `#15` / `#17`.
+It is separate from the generic telemetry stream described in `telemetry.md`.
 
 ## Separate from telemetry
 

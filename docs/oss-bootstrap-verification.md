@@ -60,7 +60,7 @@ This command validates:
 
 ## Manual forensic workflow smoke paths
 
-These checks cover the operator-facing CLI and API paths for the Phase 2b forensic
+These checks cover the operator-facing CLI and API paths for the forensic
 workflow.
 
 ### CLI smoke

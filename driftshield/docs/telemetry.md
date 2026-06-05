@@ -1,6 +1,6 @@
-# Phase 2a Telemetry
+# Telemetry
 
-DriftShield Phase 2a telemetry is explicitly opt-in and disabled by default.
+DriftShield telemetry is explicitly opt-in and disabled by default.
 
 The current OSS transport is intentionally simple:
 
@@ -43,7 +43,7 @@ Fields:
 
 ### Analysis result
 
-Used as the Phase 2a smoke path for metric-shaped event fields before broader product instrumentation lands. When telemetry opt-in is enabled, the OSS ingest path now emits this event automatically for newly analysed runs.
+Used as the smoke path for metric-shaped event fields before broader product instrumentation lands. When telemetry opt-in is enabled, the OSS ingest path now emits this event automatically for newly analysed runs.
 
 Fields:
 
@@ -58,7 +58,7 @@ Fields:
 - `payload.not_classifiable_reason`
 - `payload.event_inventory_version = phase-2a-v1`
 
-These fields intentionally mirror the required Phase 2a run-level inventory for outcome status, classifiability, match count, mechanism rollup, and not-classifiable reasons without adding broader product analytics.
+These fields intentionally mirror the required run-level inventory for outcome status, classifiability, match count, mechanism rollup, and not-classifiable reasons without adding broader product analytics.
 
 Current OSS emission path:
 
@@ -85,7 +85,7 @@ DRIFTSHIELD_HOME=/tmp/driftshield driftshield telemetry emit-analysis \
   --primary-mechanism-id coverage_gap
 ```
 
-## Out of scope for Phase 2a
+## Out of scope
 
 - background emission without explicit consent
 - remote collection transport

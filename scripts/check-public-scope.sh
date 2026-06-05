@@ -38,6 +38,28 @@ FORBIDDEN_HASHES = {
     "6a3df8cb9431a676c336c01966394610e62e3f6cbbddb55bbb7805cbd12ef4d2",
 }
 
+# Employer / company identifiers that must never appear in this public repo.
+# Stored as hashes of the lowercased term so the public source never spells them
+# out. Tokens are lowercased before hashing, so any casing is caught.
+FORBIDDEN_LOWER_HASHES = {
+    "8550a0638140d5a913df979c201c7d39e242182caf055b90df9c5a2d10c09e3c",  # employer token
+    "9ecd0cf72dd239444f79926e10516b7230dd1a857908e267c89cb9dbb80017f3",  # employer token
+    "a087852dbf912af055580ea59270ddabccfcf4d91a14a707e05542e2f350cc43",  # employer token
+    "437434827f065aa108877354ae8bc87b2215a212de180f3a5ce75442719ad2a4",  # employer token
+}
+
+# Generic private-infrastructure terms. These are not secret names, so they are
+# matched as plain case-insensitive substrings. They describe the private hosted
+# platform (managed database, auth, billing, internal runtime) and have no place
+# in the local-only OSS source. "stripe"/"clerk"/"aurora" are bounded with word
+# breaks so common substrings (e.g. "auroral") do not trip the gate.
+PRIVATE_INFRA_RE = re.compile(
+    r"(?<![A-Za-z])(?:aurora|clerk|stripe)(?![A-Za-z])"
+    r"|teams[ -]runtime"
+    r"|operator decision",
+    re.IGNORECASE,
+)
+
 TOKEN_RE = re.compile(r"[A-Za-z0-9._:/-]+")
 PUBLIC_REPO_BASES = (
     "tborys/driftshield",
@@ -108,8 +130,15 @@ for rel_path in tracked_files:
                 line_findings.add("private boundary marker")
                 continue
 
+            if sha256(token.lower()) in FORBIDDEN_LOWER_HASHES:
+                line_findings.add("employer identifier")
+                continue
+
             if token.startswith(SAME_OWNER_PREFIXES):
                 line_findings.add("unexpected same-owner repo reference")
+
+        if PRIVATE_INFRA_RE.search(line):
+            line_findings.add("private infrastructure term")
 
         for finding in sorted(line_findings):
             violations.append((rel_path, lineno, finding))

@@ -1,4 +1,4 @@
-"""Phase 2a telemetry primitives."""
+"""Telemetry primitives."""
 
 from driftshield.telemetry.service import (
     TelemetryConfig,

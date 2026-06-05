@@ -37,7 +37,7 @@ function SignatureRecognitionCard({
       <CardHeader className="pb-3">
         <CardTitle className="text-base">OSS signature recognition</CardTitle>
         <CardDescription>
-          Phase 2a recognition output from the backend, limited to local OSS-safe signals.
+          Signature recognition output from the backend, limited to local OSS-safe signals.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3 text-sm">

@@ -35,7 +35,7 @@ export function ReportPreview({ reportId, open, onClose }: ReportPreviewProps) {
         {isLoading ? (
           <div className="text-muted-foreground">Loading report...</div>
         ) : report ? (
-          <article className="text-sm leading-6 bg-muted p-4 rounded border space-y-2">
+          <article className="ds-markdown bg-muted/40 p-4 rounded-md border">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{report.content_markdown}</ReactMarkdown>
           </article>
         ) : (

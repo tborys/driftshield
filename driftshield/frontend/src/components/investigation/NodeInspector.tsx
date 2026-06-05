@@ -87,7 +87,7 @@ export function NodeInspector({ node }: NodeInspectorProps) {
           {node.node_kind && <Badge variant="outline">{node.node_kind}</Badge>}
           <span className="text-sm text-muted-foreground">#{node.sequence_num}</span>
           {node.is_inflection && (
-            <Badge variant="outline" className="border-orange-500 text-orange-600">
+            <Badge variant="outline" className="border-[var(--ds-warning)] text-[var(--ds-warning)]">
               Inflection Node
             </Badge>
           )}

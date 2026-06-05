@@ -56,7 +56,7 @@ def normalize_events(
     source_type: str | None = None,
     source_path: str | None = None,
 ) -> list[CanonicalEvent]:
-    """Populate the Phase 2b normalized-event fields on parser output."""
+    """Populate the normalized-event fields on parser output."""
 
     for ordinal, event in enumerate(events):
         metadata = dict(event.metadata or {})
