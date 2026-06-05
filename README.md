@@ -38,7 +38,16 @@ not bundled OSS guarantees.
 
 ## Demo
 
-<video src="https://github.com/user-attachments/assets/bc103601-aa85-4106-81a3-cf352d4e10a8" controls width="100%"></video>
+A walk through the local dashboard: triage flagged runs, open one as a decision
+graph, inspect the inflection node, and read the generated forensic report.
+
+<!--
+  To use the higher-quality MP4 instead of the inline GIF: drag
+  driftshield-dashboard-demo.mp4 into a GitHub comment to get a
+  user-attachments URL, then replace the <img> below with:
+  <video src="<that-url>" controls width="100%"></video>
+-->
+<img src="docs/media/driftshield-dashboard-demo.gif" alt="DriftShield dashboard walkthrough: triaging a flagged run, the decision graph, the inflection node, and the forensic report" width="100%" />
 
 ## Supported Sources
 
