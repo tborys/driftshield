@@ -6,12 +6,40 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from driftshield.core.analysis.session import AnalysisResult
-from driftshield.core.models import CanonicalEvent, EventType, Session as DomainSession
+from driftshield.core.models import (
+    CanonicalEvent,
+    DeltaSeverity,
+    DeltaType,
+    EnvironmentClass,
+    EnvironmentSource,
+    EventType,
+    ProvenanceConfidence,
+    QualificationState,
+    Session as DomainSession,
+)
 
 if TYPE_CHECKING:
     from driftshield.db.persistence import IngestProvenance
 
 ANALYSIS_SCHEMA_VERSION = "phase-3g-canonical-v1"
+QUALIFICATION_SCHEMA_VERSION = "qualification-v1"
+QUALIFICATION_POLICY_VERSION = "qualification-policy-v1"
+
+# Extraction bands that fail the classifiable bar. A run in either band can never
+# reach qualified_failure, regardless of any candidate confidence.
+_DEGRADED_QUALITY_BANDS = {"degraded", "insufficient_for_matching"}
+
+# Integrity statuses that are too damaged to qualify a failure.
+_NON_QUALIFYING_INTEGRITY = {"corrupted_but_usable"}
+
+# Declared environment values trusted verbatim. Anything outside this set falls to
+# inference; absence falls to unknown. Never silently defaults to production.
+_DECLARED_ENVIRONMENTS = {
+    EnvironmentClass.PRODUCTION.value,
+    EnvironmentClass.STAGING.value,
+    EnvironmentClass.TEST.value,
+    EnvironmentClass.DEMO.value,
+}
 
 _DIRECT_RECOVERY_MODE = "direct"
 _NORMALISED_RECOVERY_MODE = "normalised"
@@ -49,6 +77,7 @@ def build_canonical_analysis(
     )
 
     integrity_reasons = _integrity_reasons(result.events)
+    integrity_status = _integrity_status(result.events)
     overall_quality_band = _overall_quality_band(result.events, ambiguity_count=ambiguity_count)
     delta_types = _delta_types(result)
     parser_name = _parser_name(provenance)
@@ -56,6 +85,13 @@ def build_canonical_analysis(
     ordering_confidence = _ordering_confidence(result.events)
     critical_gaps = _critical_gaps(result.events)
     quality_warnings = _quality_warnings(result.events)
+
+    qualification_state, qualification_reasons = _compute_qualification_state(
+        overall_quality_band=overall_quality_band,
+        integrity_status=integrity_status,
+        delta_types=delta_types,
+        normalized_events=normalized_events,
+    )
 
     return {
         "analysis_session": {
@@ -73,7 +109,7 @@ def build_canonical_analysis(
             "source_fingerprint": provenance.transcript_hash if provenance else None,
             "time_bounds": _time_bounds(result.events),
             "event_count": len(normalized_events),
-            "integrity_status": _integrity_status(result.events),
+            "integrity_status": integrity_status,
             "integrity_reasons": integrity_reasons,
         },
         "normalized_events": normalized_events,
@@ -133,7 +169,302 @@ def build_canonical_analysis(
                 overall_quality_band=overall_quality_band,
             ),
         },
+        "qualification": {
+            "qualification_state": qualification_state,
+            "qualification_reasons": qualification_reasons,
+            "qualified_at": _qualified_at(provenance, session),
+            "classifiability_inputs": _classifiability_inputs(
+                overall_quality_band=overall_quality_band,
+                coverage_ratio=coverage_ratio,
+                event_count=len(normalized_events),
+                ambiguity_count=ambiguity_count,
+                delta_types=delta_types,
+            ),
+            "qualification_schema_version": QUALIFICATION_SCHEMA_VERSION,
+            "qualification_policy_version": QUALIFICATION_POLICY_VERSION,
+        },
+        "provenance_environment": _compute_provenance_and_environment(session, provenance),
+        "delta_records": _refine_delta_records(
+            result,
+            normalized_events=normalized_events,
+            delta_types=delta_types,
+            overall_quality_band=overall_quality_band,
+            coverage_ratio=coverage_ratio,
+        ),
     }
+
+
+def _compute_qualification_state(
+    *,
+    overall_quality_band: str,
+    integrity_status: str,
+    delta_types: list[str],
+    normalized_events: list[dict[str, Any]],
+) -> tuple[str, list[str]]:
+    """Resolve the structural qualification state for an analysed run.
+
+    The bars are deliberately structural. ``qualified_failure`` requires usable
+    extraction AND a material delta AND acceptable integrity. A degraded run can
+    never be upgraded to ``qualified_failure`` by a high-confidence candidate;
+    degraded extraction is a hard ``unclassified`` bar.
+    """
+
+    if not normalized_events:
+        return QualificationState.NOT_CLASSIFIABLE.value, ["no_events"]
+
+    # HARD bar: degraded / insufficient extraction is never classifiable.
+    if overall_quality_band in _DEGRADED_QUALITY_BANDS:
+        return QualificationState.UNCLASSIFIED.value, ["extraction_quality_degraded"]
+
+    # A run too damaged to read leaves no usable structure to classify.
+    if integrity_status in _NON_QUALIFYING_INTEGRITY and _all_events_inferred_and_incomplete(
+        normalized_events
+    ):
+        return QualificationState.NOT_CLASSIFIABLE.value, ["corrupted_run_no_usable_events"]
+
+    has_material_delta = _has_material_delta(delta_types)
+
+    if not has_material_delta:
+        return QualificationState.UNCLASSIFIED.value, ["no_material_delta_detected"]
+
+    if integrity_status in _NON_QUALIFYING_INTEGRITY:
+        return QualificationState.UNCLASSIFIED.value, ["extraction_integrity_insufficient"]
+
+    return QualificationState.QUALIFIED_FAILURE.value, []
+
+
+def _has_material_delta(delta_types: list[str]) -> bool:
+    return bool(delta_types) and any(
+        delta_type != DeltaType.NO_MATERIAL_DELTA_DETECTED.value for delta_type in delta_types
+    )
+
+
+def _all_events_inferred_and_incomplete(normalized_events: list[dict[str, Any]]) -> bool:
+    return all(
+        event.get("recovery_mode") == _INFERRED_RECOVERY_MODE and event.get("missing_fields")
+        for event in normalized_events
+    )
+
+
+def _classifiability_inputs(
+    *,
+    overall_quality_band: str,
+    coverage_ratio: float,
+    event_count: int,
+    ambiguity_count: int,
+    delta_types: list[str],
+) -> dict[str, Any]:
+    return {
+        "extraction_quality_band": overall_quality_band,
+        "coverage_ratio": coverage_ratio,
+        "event_count": event_count,
+        "has_expected_actual_delta": _has_material_delta(delta_types),
+        "ambiguity_count": ambiguity_count,
+    }
+
+
+def _qualified_at(provenance: IngestProvenance | None, session: DomainSession) -> str | None:
+    """Stamp when qualification was computed.
+
+    Anchored to a deterministic clock so re-analysis produces a stable, auditable
+    timestamp rather than a wall-clock value that varies per call.
+    """
+
+    if provenance is not None:
+        return provenance.ingested_at.isoformat()
+    if session.ended_at is not None:
+        return session.ended_at.isoformat()
+    if session.started_at is not None:
+        return session.started_at.isoformat()
+    return None
+
+
+def _compute_provenance_and_environment(
+    session: DomainSession,
+    provenance: IngestProvenance | None,
+) -> dict[str, Any]:
+    """Classify origin attestation and run environment.
+
+    Environment is never silently defaulted to production: a declared value is
+    trusted only if it is in the closed set, otherwise the path is inspected, and
+    absence resolves to ``unknown``.
+    """
+
+    provenance_confidence = _provenance_confidence(session, provenance)
+    environment_class, environment_source = _environment_classification(session, provenance)
+
+    return {
+        "provenance_confidence": provenance_confidence.value,
+        "environment_class": environment_class.value,
+        "environment_source": environment_source.value,
+    }
+
+
+def _provenance_confidence(
+    session: DomainSession,
+    provenance: IngestProvenance | None,
+) -> ProvenanceConfidence:
+    # NOTE: IngestProvenance carries no connector signal today, so an attested
+    # provenance is user_claimed. connector_verified becomes reachable once a
+    # source-kind marker is threaded onto the provenance record.
+    if provenance is not None:
+        return ProvenanceConfidence.USER_CLAIMED
+    if session.external_id:
+        return ProvenanceConfidence.INFERRED
+    return ProvenanceConfidence.UNKNOWN
+
+
+def _environment_classification(
+    session: DomainSession,
+    provenance: IngestProvenance | None,
+) -> tuple[EnvironmentClass, EnvironmentSource]:
+    declared = session.metadata.get("environment") if isinstance(session.metadata, dict) else None
+    if isinstance(declared, str) and declared in _DECLARED_ENVIRONMENTS:
+        return EnvironmentClass(declared), EnvironmentSource.SUBMITTER_DECLARED
+
+    source_path = provenance.source_path if provenance else None
+    if source_path:
+        inferred = _infer_environment_from_path(source_path)
+        return inferred, EnvironmentSource.INFERRED
+
+    return EnvironmentClass.UNKNOWN, EnvironmentSource.ABSENT
+
+
+def _infer_environment_from_path(source_path: str) -> EnvironmentClass:
+    lowered = source_path.lower()
+    if "demo" in lowered:
+        return EnvironmentClass.DEMO
+    if "staging" in lowered or "/stg" in lowered:
+        return EnvironmentClass.STAGING
+    if "test" in lowered:
+        return EnvironmentClass.TEST
+    return EnvironmentClass.UNKNOWN
+
+
+def _refine_delta_records(
+    result: AnalysisResult,
+    *,
+    normalized_events: list[dict[str, Any]],
+    delta_types: list[str],
+    overall_quality_band: str,
+    coverage_ratio: float,
+) -> list[dict[str, Any]]:
+    """Build structured delta records from existing risk signals.
+
+    Each record carries a closed DeltaType, a severity band, and event_id refs
+    that resolve against ``normalized_events``. A ref that does not resolve (for
+    example, lost to redaction) is nulled rather than left dangling.
+    """
+
+    known_ids = {str(event.get("event_id")) for event in normalized_events}
+    delta_confidence = _delta_confidence(overall_quality_band, coverage_ratio)
+
+    if not _has_material_delta(delta_types):
+        return [
+            {
+                "delta_type": DeltaType.NO_MATERIAL_DELTA_DETECTED.value,
+                "delta_severity": DeltaSeverity.NONE.value,
+                "expected_ref": None,
+                "actual_ref": None,
+                "delta_summary": "No material deviation from expected behaviour was detected.",
+                "delta_confidence": delta_confidence,
+            }
+        ]
+
+    flag_events = _events_by_flag(result)
+    supporting = [str(event.id) for event in result.events if event.has_risk_flags()]
+    default_expected = next((ref for ref in supporting if ref in known_ids), None)
+
+    records: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for flag, (delta_type, severity, summary) in _DELTA_FLAG_MAP.items():
+        flagged = flag_events.get(flag, [])
+        if not flagged:
+            continue
+        if delta_type.value in seen:
+            continue
+        seen.add(delta_type.value)
+        expected_ref = next((str(eid) for eid in flagged if str(eid) in known_ids), default_expected)
+        records.append(
+            {
+                "delta_type": delta_type.value,
+                "delta_severity": severity.value,
+                "expected_ref": _resolve_ref(expected_ref, known_ids),
+                "actual_ref": None,
+                "delta_summary": summary,
+                "delta_confidence": delta_confidence,
+            }
+        )
+
+    if not records:
+        # A material delta_type was present but did not map to a per-event flag
+        # (for example, an unresolved ambiguity). Emit one honest record.
+        records.append(
+            {
+                "delta_type": DeltaType.CONTRADICTORY_OUTPUT.value,
+                "delta_severity": DeltaSeverity.MINOR.value,
+                "expected_ref": _resolve_ref(default_expected, known_ids),
+                "actual_ref": None,
+                "delta_summary": "An expected-vs-actual deviation was observed without a single owning event.",
+                "delta_confidence": delta_confidence,
+            }
+        )
+
+    return records
+
+
+# Risk flag -> (DeltaType, DeltaSeverity, human summary). Closed mapping.
+_DELTA_FLAG_MAP: dict[str, tuple[DeltaType, DeltaSeverity, str]] = {
+    "coverage_gap": (
+        DeltaType.MISSING_OUTPUT,
+        DeltaSeverity.MATERIAL,
+        "A required action or output was missing from the run.",
+    ),
+    "policy_divergence": (
+        DeltaType.INCORRECT_OUTPUT,
+        DeltaSeverity.MATERIAL,
+        "The run diverged from the expected action.",
+    ),
+    "assumption_mutation": (
+        DeltaType.INCORRECT_OUTPUT,
+        DeltaSeverity.MATERIAL,
+        "An implicit assumption changed and drove a divergent action.",
+    ),
+    "constraint_violation": (
+        DeltaType.INVALID_SCHEMA,
+        DeltaSeverity.SEVERE,
+        "A declared constraint or contract was violated.",
+    ),
+    "context_contamination": (
+        DeltaType.INCOMPLETE_EXECUTION,
+        DeltaSeverity.MINOR,
+        "Retrieved context was missing or contaminated.",
+    ),
+}
+
+
+def _events_by_flag(result: AnalysisResult) -> dict[str, list[Any]]:
+    by_flag: dict[str, list[Any]] = {}
+    for event in result.events:
+        classification = event.risk_classification
+        if classification is None:
+            continue
+        for flag in classification.active_flags():
+            by_flag.setdefault(flag, []).append(event.id)
+    return by_flag
+
+
+def _resolve_ref(candidate: str | None, known_ids: set[str]) -> str | None:
+    if candidate is None:
+        return None
+    return candidate if candidate in known_ids else None
+
+
+def _delta_confidence(overall_quality_band: str, coverage_ratio: float) -> float:
+    confidence = min(coverage_ratio, 0.95)
+    if overall_quality_band == "usable":
+        confidence = min(confidence, 0.75)
+    return round(max(confidence, 0.0), 4)
 
 
 def _canonical_event_payloads(events: list[CanonicalEvent]) -> list[dict[str, Any]]:

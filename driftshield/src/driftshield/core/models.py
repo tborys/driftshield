@@ -299,6 +299,88 @@ class Session:
             self.metadata = {}
 
 
+class QualificationState(str, Enum):
+    """Structural qualification state for an analysed run.
+
+    The state machine entry node is ``analysed``. It is never emitted as a final
+    state: every analysed run resolves to one of the terminal states below.
+
+        analysed
+          -> classifiable      (high/usable extraction)
+              -> qualified_failure   (material delta + integrity ok)
+              -> unclassified        (no material delta)
+          -> unclassified      (degraded extraction; HARD bar, never upgraded)
+          -> not_classifiable  (no usable events)
+
+    ``qualified_failure`` is the only state eligible to contribute to downstream
+    recurrence aggregation. Eligibility is structural, not a trust score: a
+    high-confidence candidate never upgrades a degraded run.
+    """
+
+    ANALYSED = "analysed"
+    CLASSIFIABLE = "classifiable"
+    UNCLASSIFIED = "unclassified"
+    NOT_CLASSIFIABLE = "not_classifiable"
+    QUALIFIED_FAILURE = "qualified_failure"
+
+
+class ProvenanceConfidence(str, Enum):
+    """How strongly the origin of a run is attested."""
+
+    CONNECTOR_VERIFIED = "connector_verified"
+    USER_CLAIMED = "user_claimed"
+    INFERRED = "inferred"
+    UNKNOWN = "unknown"
+
+
+class EnvironmentClass(str, Enum):
+    """Declared or inferred environment of a run.
+
+    Absence of any signal resolves to ``unknown``. It is never silently
+    defaulted to ``production``.
+    """
+
+    PRODUCTION = "production"
+    STAGING = "staging"
+    TEST = "test"
+    DEMO = "demo"
+    UNKNOWN = "unknown"
+
+
+class EnvironmentSource(str, Enum):
+    """How the environment class was determined."""
+
+    CONNECTOR = "connector"
+    SUBMITTER_DECLARED = "submitter_declared"
+    INFERRED = "inferred"
+    ABSENT = "absent"
+
+
+class DeltaType(str, Enum):
+    """Closed vocabulary of expected-vs-actual failure manifestations.
+
+    New values require a contract amendment, not a code-only addition.
+    """
+
+    MISSING_OUTPUT = "missing_output"
+    INCORRECT_OUTPUT = "incorrect_output"
+    CONTRADICTORY_OUTPUT = "contradictory_output"
+    INVALID_SCHEMA = "invalid_schema"
+    UNSAFE_ACTION = "unsafe_action"
+    INCOMPLETE_EXECUTION = "incomplete_execution"
+    UNINTENDED_STATE_CHANGE = "unintended_state_change"
+    NO_MATERIAL_DELTA_DETECTED = "no_material_delta_detected"
+
+
+class DeltaSeverity(str, Enum):
+    """Severity band for a single delta record."""
+
+    NONE = "none"
+    MINOR = "minor"
+    MATERIAL = "material"
+    SEVERE = "severe"
+
+
 class ForensicCaseState(str, Enum):
     """User-visible lifecycle state for a persisted single-run forensic case."""
 

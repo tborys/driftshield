@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session as DBSession
 from driftshield.api.auth import require_api_key
 from driftshield.api.dependencies import get_db
 from driftshield.api.schemas import (
+    ClassifiabilityInputsResponse,
+    DeltaRecordResponse,
     ExplanationPayloadResponse,
     ForensicFeedbackCreateRequest,
     ForensicFeedbackResponse,
@@ -16,6 +18,8 @@ from driftshield.api.schemas import (
     GraphResponse,
     IntegrityStatusResponse,
     PaginatedResponse,
+    ProvenanceResponse,
+    QualificationResponse,
     SessionDetail,
     SessionExplanationItemResponse,
     SessionExplanationsResponse,
@@ -26,6 +30,7 @@ from driftshield.api.schemas import (
     ValidationResponse,
 )
 from driftshield.core.models import RiskClassification
+from driftshield.core.visibility import apply_visibility
 from driftshield.db.models import (
     AnalystValidationModel,
     DecisionNodeModel,
@@ -214,7 +219,51 @@ def _extract_canonical_analysis(session: SessionModel) -> dict[str, Any] | None:
     payload = metadata.get("canonical_analysis")
     if not isinstance(payload, dict):
         return None
-    return payload
+    # The OSS API serves a single public tier. Apply visibility here so the raw
+    # stored dict can never bypass the boundary on its way out.
+    return apply_visibility(payload, tier="oss")
+
+
+def _qualification_response(canonical: dict[str, Any] | None) -> QualificationResponse | None:
+    if not canonical:
+        return None
+    block = canonical.get("qualification")
+    if not isinstance(block, dict):
+        return None
+    inputs = block.get("classifiability_inputs")
+    return QualificationResponse(
+        qualification_state=block.get("qualification_state"),
+        qualification_reasons=[
+            str(reason) for reason in block.get("qualification_reasons", []) if isinstance(reason, str)
+        ],
+        qualified_at=block.get("qualified_at"),
+        classifiability_inputs=(
+            ClassifiabilityInputsResponse(**inputs) if isinstance(inputs, dict) else None
+        ),
+        qualification_schema_version=block.get("qualification_schema_version"),
+    )
+
+
+def _provenance_environment_response(canonical: dict[str, Any] | None) -> ProvenanceResponse | None:
+    if not canonical:
+        return None
+    block = canonical.get("provenance_environment")
+    if not isinstance(block, dict):
+        return None
+    return ProvenanceResponse(
+        provenance_confidence=block.get("provenance_confidence"),
+        environment_class=block.get("environment_class"),
+        environment_source=block.get("environment_source"),
+    )
+
+
+def _delta_record_responses(canonical: dict[str, Any] | None) -> list[DeltaRecordResponse]:
+    if not canonical:
+        return []
+    records = canonical.get("delta_records")
+    if not isinstance(records, list):
+        return []
+    return [DeltaRecordResponse(**record) for record in records if isinstance(record, dict)]
 
 
 def _feedback_response(
@@ -424,7 +473,10 @@ def get_session(
         risk_summary=_risk_summary(nodes),
         explanations=_session_explanations(nodes),
         signature_match=_extract_signature_match(session),
-        canonical_analysis=_extract_canonical_analysis(session),
+        canonical_analysis=(canonical := _extract_canonical_analysis(session)),
+        qualification=_qualification_response(canonical),
+        provenance_environment=_provenance_environment_response(canonical),
+        delta_records=_delta_record_responses(canonical),
     )
 
 

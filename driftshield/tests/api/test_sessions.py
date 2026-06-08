@@ -558,3 +558,94 @@ def test_create_session_validation_for_missing_session_returns_404(client, auth_
         json=payload,
     )
     assert resp.status_code == 404
+
+
+@pytest.fixture
+def session_with_qualification(db_session):
+    session_id = uuid.uuid4()
+    db_session.add(
+        SessionModel(
+            id=session_id,
+            agent_id="qual-agent",
+            started_at=datetime.now(timezone.utc),
+            status="completed",
+            parser_version="claude_code@1",
+            ingested_at=datetime.now(timezone.utc),
+            metadata_json={
+                "canonical_analysis": {
+                    "analysis_session": {"session_id": str(session_id)},
+                    "normalized_events": [{"event_id": "n1", "missing_fields": []}],
+                    "expected_vs_actual_delta": {"delta_types": ["missing_required_action"]},
+                    "extraction_quality_summary": {"overall_quality_band": "high"},
+                    "qualification": {
+                        "qualification_state": "qualified_failure",
+                        "qualification_reasons": ["debug_reason"],
+                        "qualified_at": "2026-06-08T12:00:00+00:00",
+                        "classifiability_inputs": {
+                            "extraction_quality_band": "high",
+                            "coverage_ratio": 0.9,
+                            "event_count": 1,
+                            "has_expected_actual_delta": True,
+                            "ambiguity_count": 0,
+                        },
+                        "qualification_schema_version": "qualification-v1",
+                        "qualification_policy_version": "qualification-policy-v1",
+                    },
+                    "provenance_environment": {
+                        "provenance_confidence": "user_claimed",
+                        "environment_class": "production",
+                        "environment_source": "submitter_declared",
+                    },
+                    "delta_records": [
+                        {
+                            "delta_type": "missing_output",
+                            "delta_severity": "material",
+                            "expected_ref": "n1",
+                            "actual_ref": None,
+                            "delta_summary": "A required output was missing.",
+                            "delta_confidence": 0.8,
+                        }
+                    ],
+                }
+            },
+        )
+    )
+    db_session.flush()
+    return session_id
+
+
+def test_get_session_applies_oss_visibility_to_canonical_analysis(
+    client, auth_headers, session_with_qualification
+):
+    response = client.get(
+        f"/api/sessions/{session_with_qualification}", headers=auth_headers
+    )
+    assert response.status_code == 200
+    body = response.json()
+
+    canonical = body["canonical_analysis"]
+    qualification = canonical["qualification"]
+    # oss-visible
+    assert qualification["qualification_state"] == "qualified_failure"
+    # internal_only and teams fields are stripped from the raw dict
+    assert "qualification_policy_version" not in qualification
+    assert "qualification_reasons" not in qualification
+    assert "classifiability_inputs" not in qualification
+    prov = canonical["provenance_environment"]
+    assert prov == {"environment_class": "production"}
+    # delta records survive in full at the oss tier
+    assert canonical["delta_records"][0]["delta_type"] == "missing_output"
+
+
+def test_get_session_populates_typed_qualification_blocks(
+    client, auth_headers, session_with_qualification
+):
+    response = client.get(
+        f"/api/sessions/{session_with_qualification}", headers=auth_headers
+    )
+    body = response.json()
+    assert body["qualification"]["qualification_state"] == "qualified_failure"
+    # internal_only field never reaches the typed response model
+    assert "qualification_policy_version" not in body["qualification"]
+    assert body["provenance_environment"]["environment_class"] == "production"
+    assert body["delta_records"][0]["delta_severity"] == "material"

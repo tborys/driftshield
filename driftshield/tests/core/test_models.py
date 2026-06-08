@@ -5,12 +5,87 @@ from uuid import uuid4
 
 from driftshield.core.models import (
     CanonicalEvent,
+    DeltaSeverity,
+    DeltaType,
+    EnvironmentClass,
+    EnvironmentSource,
     EventType,
+    ProvenanceConfidence,
+    QualificationState,
     RiskClassification,
     Session,
     SessionStatus,
 )
 from driftshield.core.normalization import normalize_events
+
+
+class TestQualificationEnums:
+    def test_qualification_state_closed_set(self):
+        assert {state.value for state in QualificationState} == {
+            "analysed",
+            "classifiable",
+            "unclassified",
+            "not_classifiable",
+            "qualified_failure",
+        }
+
+    def test_provenance_confidence_closed_set(self):
+        assert {value.value for value in ProvenanceConfidence} == {
+            "connector_verified",
+            "user_claimed",
+            "inferred",
+            "unknown",
+        }
+
+    def test_environment_class_closed_set_never_defaults_production(self):
+        # The closed set is exactly five values. "unknown" is the absence state.
+        assert {value.value for value in EnvironmentClass} == {
+            "production",
+            "staging",
+            "test",
+            "demo",
+            "unknown",
+        }
+
+    def test_environment_source_closed_set(self):
+        assert {value.value for value in EnvironmentSource} == {
+            "connector",
+            "submitter_declared",
+            "inferred",
+            "absent",
+        }
+
+    def test_delta_type_closed_eight_values(self):
+        assert {value.value for value in DeltaType} == {
+            "missing_output",
+            "incorrect_output",
+            "contradictory_output",
+            "invalid_schema",
+            "unsafe_action",
+            "incomplete_execution",
+            "unintended_state_change",
+            "no_material_delta_detected",
+        }
+
+    def test_delta_severity_closed_set(self):
+        assert {value.value for value in DeltaSeverity} == {
+            "none",
+            "minor",
+            "material",
+            "severe",
+        }
+
+    def test_all_new_enums_are_string_enums(self):
+        for enum_cls in (
+            QualificationState,
+            ProvenanceConfidence,
+            EnvironmentClass,
+            EnvironmentSource,
+            DeltaType,
+            DeltaSeverity,
+        ):
+            for member in enum_cls:
+                assert isinstance(member.value, str)
 
 
 class TestEventType:
