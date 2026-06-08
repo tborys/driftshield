@@ -72,6 +72,39 @@ class SignatureMatchSummaryResponse(BaseModel):
     raw: dict[str, Any] | None = None
 
 
+class ClassifiabilityInputsResponse(BaseModel):
+    extraction_quality_band: str | None = None
+    coverage_ratio: float | None = None
+    event_count: int | None = None
+    has_expected_actual_delta: bool | None = None
+    ambiguity_count: int | None = None
+
+
+class QualificationResponse(BaseModel):
+    qualification_state: str | None = None
+    qualification_reasons: list[str] = Field(default_factory=list)
+    qualified_at: datetime | None = None
+    classifiability_inputs: ClassifiabilityInputsResponse | None = None
+    qualification_schema_version: str | None = None
+    # qualification_policy_version is internal_only; the visibility serializer
+    # strips it before this model is ever populated for a public response.
+
+
+class ProvenanceResponse(BaseModel):
+    provenance_confidence: str | None = None
+    environment_class: str | None = None
+    environment_source: str | None = None
+
+
+class DeltaRecordResponse(BaseModel):
+    delta_type: str | None = None
+    delta_severity: str | None = None
+    expected_ref: str | None = None
+    actual_ref: str | None = None
+    delta_summary: str | None = None
+    delta_confidence: float | None = None
+
+
 class SessionDetail(SessionSummary):
     total_events: int = 0
     flagged_events: int = 0
@@ -79,6 +112,9 @@ class SessionDetail(SessionSummary):
     explanations: SessionExplanationsResponse | None = None
     signature_match: SignatureMatchSummaryResponse | None = None
     canonical_analysis: dict[str, Any] | None = None
+    qualification: QualificationResponse | None = None
+    provenance_environment: ProvenanceResponse | None = None
+    delta_records: list[DeltaRecordResponse] = Field(default_factory=list)
 
 
 class GraphNodeResponse(BaseModel):
