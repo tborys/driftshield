@@ -14,6 +14,7 @@ from driftshield.core.models import (
 )
 from driftshield.core.normalization import normalize_events
 from driftshield.core.visibility import (
+    KNOWN_CLASSIFIABILITY_INPUTS_FIELDS,
     KNOWN_DELTA_RECORD_FIELDS,
     KNOWN_PROVENANCE_ENV_FIELDS,
     KNOWN_QUALIFICATION_FIELDS,
@@ -289,6 +290,9 @@ def test_build_canonical_analysis_emits_qualification_block_for_clean_run():
     inputs = qualification["classifiability_inputs"]
     assert inputs["extraction_quality_band"] in {"high", "usable", "degraded", "insufficient_for_matching"}
     assert isinstance(inputs["has_expected_actual_delta"], bool)
+    # Completeness guard extends to nested classifiability_inputs children: a new
+    # nested field added to the emitter without a registry entry fails here.
+    assert set(inputs.keys()) == KNOWN_CLASSIFIABILITY_INPUTS_FIELDS
 
 
 def test_build_canonical_analysis_high_quality_with_material_delta_is_qualified_failure():

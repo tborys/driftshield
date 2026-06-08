@@ -1,6 +1,7 @@
 """Tier-aware visibility enforcement for the qualification/provenance/delta seam."""
 
 from driftshield.core.visibility import (
+    KNOWN_CLASSIFIABILITY_INPUTS_FIELDS,
     KNOWN_DELTA_RECORD_FIELDS,
     KNOWN_PROVENANCE_ENV_FIELDS,
     KNOWN_QUALIFICATION_FIELDS,
@@ -59,6 +60,14 @@ class TestRegistryCompleteness:
         for field in KNOWN_DELTA_RECORD_FIELDS:
             assert visibility_class_for("delta_records.[]", field) is not None, field
 
+    def test_every_known_classifiability_input_field_has_a_class(self):
+        # Nested fields inside classifiability_inputs must be individually
+        # registered, not covered only by the parent object's class.
+        for field in KNOWN_CLASSIFIABILITY_INPUTS_FIELDS:
+            assert (
+                visibility_class_for("qualification.classifiability_inputs", field) is not None
+            ), field
+
     def test_registry_only_uses_valid_tier_names(self):
         valid = {"oss", "teams", "enterprise", "internal_only"}
         for path, tier in VISIBILITY_REGISTRY.items():
@@ -112,6 +121,17 @@ class TestApplyVisibilityHigherTiers:
         assert filtered["qualification"]["classifiability_inputs"]["extraction_quality_band"] == "high"
         assert filtered["provenance_environment"]["provenance_confidence"] == "user_claimed"
 
+    def test_unregistered_nested_classifiability_field_is_stripped(self):
+        # A future nested field with no registry entry must NOT leak through the
+        # parent object's tier gate. Unregistered nested fields are withheld
+        # rather than exposed.
+        canonical = _sample_canonical()
+        canonical["qualification"]["classifiability_inputs"]["secret_diagnostic"] = "LEAK"
+        for tier in ("oss", "teams", "enterprise", "internal_only"):
+            filtered = apply_visibility(canonical, tier=tier)
+            inputs = filtered["qualification"].get("classifiability_inputs", {})
+            assert "secret_diagnostic" not in inputs, tier
+
     def test_teams_still_strips_internal_only(self):
         filtered = apply_visibility(_sample_canonical(), tier="teams")
         assert "qualification_policy_version" not in filtered["qualification"]
@@ -146,3 +166,7 @@ class TestEmittedFieldsMatchRegistry:
     def test_delta_record_emitted_fields_match_known_set(self):
         emitted = set(_sample_canonical()["delta_records"][0].keys())
         assert emitted == KNOWN_DELTA_RECORD_FIELDS
+
+    def test_classifiability_inputs_emitted_fields_match_known_set(self):
+        emitted = set(_sample_canonical()["qualification"]["classifiability_inputs"].keys())
+        assert emitted == KNOWN_CLASSIFIABILITY_INPUTS_FIELDS

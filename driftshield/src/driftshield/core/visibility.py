@@ -38,6 +38,13 @@ VISIBILITY_REGISTRY: dict[str, str] = {
     "qualification.classifiability_inputs": "teams",
     "qualification.qualification_schema_version": "teams",
     "qualification.qualification_policy_version": "internal_only",
+    # nested classifiability_inputs children (registered individually so a future
+    # nested field cannot ride the parent object's class unclassified)
+    "qualification.classifiability_inputs.extraction_quality_band": "teams",
+    "qualification.classifiability_inputs.coverage_ratio": "teams",
+    "qualification.classifiability_inputs.event_count": "teams",
+    "qualification.classifiability_inputs.has_expected_actual_delta": "teams",
+    "qualification.classifiability_inputs.ambiguity_count": "teams",
     # provenance + environment block
     "provenance_environment.provenance_confidence": "teams",
     "provenance_environment.environment_class": "oss",
@@ -81,6 +88,29 @@ KNOWN_DELTA_RECORD_FIELDS: frozenset[str] = frozenset(
         "delta_confidence",
     }
 )
+KNOWN_CLASSIFIABILITY_INPUTS_FIELDS: frozenset[str] = frozenset(
+    {
+        "extraction_quality_band",
+        "coverage_ratio",
+        "event_count",
+        "has_expected_actual_delta",
+        "ambiguity_count",
+    }
+)
+
+# Dot-paths whose value is itself a dict block to be stripped field-by-field
+# (not treated as a single leaf). Recursing here closes the gap where a nested
+# field would otherwise ride its parent object's class unclassified.
+_NESTED_BLOCK_PATHS: frozenset[str] = frozenset(
+    {
+        "qualification.classifiability_inputs",
+    }
+)
+
+# Unregistered nested fields are withheld rather than exposed: a nested field with
+# no class is treated as above every tier, so it never leaks while waiting to be
+# classified. The build-side completeness test surfaces it as a hard failure.
+_WITHHELD_RANK = max(_TIER_RANK.values()) + 1
 
 
 def visibility_class_for(block: str, field: str) -> str | None:
@@ -96,8 +126,25 @@ def _tier_rank(tier: str) -> int:
 def _strip_block(block: dict[str, Any], *, prefix: str, tier_rank: int) -> dict[str, Any]:
     out: dict[str, Any] = {}
     for key, value in block.items():
-        required = VISIBILITY_REGISTRY.get(f"{prefix}.{key}", _DEFAULT_TIER)
-        if tier_rank >= _tier_rank(required):
+        path = f"{prefix}.{key}"
+        required = VISIBILITY_REGISTRY.get(path, _DEFAULT_TIER)
+        if tier_rank < _tier_rank(required):
+            continue
+        if path in _NESTED_BLOCK_PATHS and isinstance(value, dict):
+            out[key] = _strip_nested_block(value, prefix=path, tier_rank=tier_rank)
+        else:
+            out[key] = value
+    return out
+
+
+def _strip_nested_block(block: dict[str, Any], *, prefix: str, tier_rank: int) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for key, value in block.items():
+        registered = VISIBILITY_REGISTRY.get(f"{prefix}.{key}")
+        # An unregistered nested field is withheld at every tier so it can never
+        # leak before being classified.
+        required_rank = _tier_rank(registered) if registered is not None else _WITHHELD_RANK
+        if tier_rank >= required_rank:
             out[key] = value
     return out
 
