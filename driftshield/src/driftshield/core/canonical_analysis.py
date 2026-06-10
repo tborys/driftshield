@@ -34,7 +34,8 @@ _NON_QUALIFYING_INTEGRITY = {"corrupted_but_usable"}
 
 # Declared environment values trusted verbatim. Anything outside this set falls to
 # inference; absence falls to unknown. Never silently defaults to production.
-_DECLARED_ENVIRONMENTS = {
+# Public so the CLI validates submitter-declared values against the same closed set.
+DECLARED_ENVIRONMENTS = {
     EnvironmentClass.PRODUCTION.value,
     EnvironmentClass.STAGING.value,
     EnvironmentClass.TEST.value,
@@ -319,7 +320,7 @@ def _environment_classification(
     provenance: IngestProvenance | None,
 ) -> tuple[EnvironmentClass, EnvironmentSource]:
     declared = session.metadata.get("environment") if isinstance(session.metadata, dict) else None
-    if isinstance(declared, str) and declared in _DECLARED_ENVIRONMENTS:
+    if isinstance(declared, str) and declared in DECLARED_ENVIRONMENTS:
         return EnvironmentClass(declared), EnvironmentSource.SUBMITTER_DECLARED
 
     source_path = provenance.source_path if provenance else None

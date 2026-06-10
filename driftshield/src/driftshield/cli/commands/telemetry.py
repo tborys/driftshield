@@ -9,6 +9,8 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
+from driftshield.core.canonical_analysis import DECLARED_ENVIRONMENTS
+from driftshield.core.models import EnvironmentClass
 from driftshield.intake_contract import (
     DEFAULT_WORKFLOW_REFERENCE,
     REDACTION_MANIFEST_VERSION,
@@ -39,7 +41,11 @@ from driftshield.remote_upload import (
     submit_oss_via_presigned_upload,
     submit_teams_via_presigned_upload,
 )
-from driftshield.telemetry import TelemetryService, validate_outcome_status
+from driftshield.telemetry import (
+    TelemetryService,
+    effective_oss_intake_url,
+    validate_outcome_status,
+)
 
 console = Console(force_terminal=True)
 app = typer.Typer(help="Manage opt-in telemetry.")
@@ -59,6 +65,11 @@ def telemetry_status(
         "event_stream_path": config.event_stream_path,
         "remote_enabled": config.remote_intake_url is not None,
         "remote_intake_url": config.remote_intake_url,
+        "remote_opt_out": config.remote_opt_out,
+        # The URL an OSS-lane submission will actually use right now: the
+        # configured override, the baked community default, or null after
+        # remote-disable.
+        "effective_oss_intake_url": effective_oss_intake_url(config),
     }
     if json_output:
         typer.echo(json.dumps(payload))
@@ -102,9 +113,12 @@ def telemetry_remote_enable(
 
 @app.command("remote-disable")
 def telemetry_remote_disable() -> None:
-    """Clear remote intake configuration. Local telemetry capture is unaffected."""
+    """Opt out of remote submission entirely. Local telemetry capture is unaffected."""
     TelemetryService().remote_disable()
-    console.print("Remote submission configuration cleared.")
+    console.print(
+        "Remote submission disabled. The baked community default no longer "
+        "applies; run `telemetry remote-enable` to re-enable."
+    )
 
 
 @app.command("submit-session")
@@ -172,12 +186,30 @@ def telemetry_submit_session(
             "transcripts upload via presigned storage on either tier."
         ),
     ),
+    environment: str | None = typer.Option(
+        None,
+        "--environment",
+        help=(
+            "Declared run environment for the community (oss) lane: "
+            "production, staging, test, or demo. Community opt-in declares "
+            "production by default; pass this only for the uncommon "
+            "non-production contribution."
+        ),
+    ),
 ) -> None:
     """Build a phase3g.v1 envelope from a finished session JSON and POST once to the OSS intake URL.
 
     The OSS lane is unauthenticated. No X-API-Key header is sent, no installation_id
     or consent_state is included in the request. The server binds the persisted row
-    to the in-stack OSS fallback installation + consent.
+    to the in-stack OSS fallback installation + consent. When no intake URL is
+    configured, the OSS lane submits to the baked-in community intake URL, so
+    community opt-in needs no prior ``remote-enable``. An explicit
+    ``telemetry remote-disable`` opts out of the baked default too.
+
+    Community opt-in is the act of declaring the run real: on the oss lane the
+    declared environment defaults to ``production`` unless the session JSON or
+    ``--environment`` says otherwise. The server records it as a
+    submitter-declared value; the server itself never defaults to production.
 
     ``workflow_reference`` precedence: --workflow-reference flag, then
     session JSON's ``workflow_reference`` field, then ``"default"``. Distinct
@@ -225,13 +257,45 @@ def telemetry_submit_session(
             typer.echo(json.dumps(manifest_payload, indent=2))
         return
 
-    config = TelemetryService().load_config()
-    if not config.remote_intake_url:
-        console.print(
-            "[red]Error:[/red] Remote submission is not configured. "
-            "Run `driftshield telemetry remote-enable --intake-url URL` first."
-        )
+    resolved_tier = tier.strip().lower()
+    if resolved_tier not in {"oss", "teams"}:
+        console.print("[red]Error:[/red] --tier must be 'oss' or 'teams'.")
         raise typer.Exit(1)
+
+    resolved_environment: str | None = None
+    if environment is not None:
+        resolved_environment = environment.strip().lower()
+        if resolved_environment not in DECLARED_ENVIRONMENTS:
+            valid = ", ".join(sorted(DECLARED_ENVIRONMENTS))
+            console.print(
+                f"[red]Error:[/red] --environment must be one of: {valid}."
+            )
+            raise typer.Exit(1)
+        if resolved_tier != "oss":
+            console.print(
+                "[red]Error:[/red] --environment applies to the community "
+                "(oss) lane only."
+            )
+            raise typer.Exit(1)
+
+    config = TelemetryService().load_config()
+    if resolved_tier == "oss":
+        intake_url = effective_oss_intake_url(config)
+        if intake_url is None:
+            console.print(
+                "[red]Error:[/red] Remote submission is disabled "
+                "(`telemetry remote-disable`). Run `driftshield telemetry "
+                "remote-enable --intake-url URL` to re-enable."
+            )
+            raise typer.Exit(1)
+    else:
+        intake_url = config.remote_intake_url
+        if intake_url is None:
+            console.print(
+                "[red]Error:[/red] Remote submission is not configured. "
+                "Run `driftshield telemetry remote-enable --intake-url URL` first."
+            )
+            raise typer.Exit(1)
 
     resolved_workflow_reference = workflow_reference
     if resolved_workflow_reference is None:
@@ -262,11 +326,6 @@ def telemetry_submit_session(
             )
             raise typer.Exit(code=2)
 
-    resolved_tier = tier.strip().lower()
-    if resolved_tier not in {"oss", "teams"}:
-        console.print("[red]Error:[/red] --tier must be 'oss' or 'teams'.")
-        raise typer.Exit(1)
-
     teams_api_key: str | None = None
     if resolved_tier == "teams":
         teams_api_key = os.environ.get("DRIFTSHIELD_API_KEY") or os.environ.get(
@@ -278,6 +337,22 @@ def telemetry_submit_session(
                 "(or API_KEY) in the environment."
             )
             raise typer.Exit(1)
+
+    # Community opt-in is the production declaration: stamp the declared
+    # environment before redaction so it rides both the inline and the
+    # presigned lanes. An environment already declared in the session JSON
+    # is kept; --environment wins over everything.
+    if resolved_tier == "oss":
+        metadata = payload.get("metadata")
+        if not isinstance(metadata, dict):
+            # The envelope contract expects a metadata mapping; a malformed
+            # value cannot carry the declared environment.
+            metadata = {}
+            payload["metadata"] = metadata
+        if resolved_environment is not None:
+            metadata["environment"] = resolved_environment
+        else:
+            metadata.setdefault("environment", EnvironmentClass.PRODUCTION.value)
 
     # Redact once to measure the canonical size (uncapped) and decide the
     # lane. The size-capped SubmissionEnvelope model is only built on the
@@ -323,7 +398,7 @@ def telemetry_submit_session(
             assert teams_api_key is not None
             result = submit_teams_via_presigned_upload(
                 config=TeamsUploadConfig(
-                    intake_url=config.remote_intake_url, api_key=teams_api_key
+                    intake_url=intake_url, api_key=teams_api_key
                 ),
                 payload=redacted_payload,
                 workflow_reference=resolved_workflow_reference,
@@ -332,7 +407,7 @@ def telemetry_submit_session(
             )
         elif is_large:
             result = submit_oss_via_presigned_upload(
-                config=OssUploadConfig(intake_url=config.remote_intake_url),
+                config=OssUploadConfig(intake_url=intake_url),
                 payload=redacted_payload,
                 workflow_reference=resolved_workflow_reference,
                 file_name=path.name,
@@ -358,9 +433,7 @@ def telemetry_submit_session(
                     "Inspect the payload with --dry-run-redaction first."
                 )
                 raise typer.Exit(1) from exc
-            submission_config = OssRemoteSubmissionConfig(
-                intake_url=config.remote_intake_url
-            )
+            submission_config = OssRemoteSubmissionConfig(intake_url=intake_url)
             result = post_oss_submission(
                 config=submission_config, submission=submission
             )
