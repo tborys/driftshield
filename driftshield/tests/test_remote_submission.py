@@ -512,3 +512,62 @@ def test_redact_call_site_passes_only_payload():
     assert "signature_summary" not in inner_payload
     assert inner_payload["session_id"] == "sess-1"
     assert inner_payload["metadata"] == {"foo": "bar"}
+
+
+def test_derive_oss_inline_submit_url_from_canonical_intake():
+    from driftshield.remote_submission import derive_oss_inline_submit_url
+
+    assert (
+        derive_oss_inline_submit_url("https://api.example/v1/intake")
+        == "https://api.example/v1/oss/submissions"
+    )
+
+
+def test_derive_oss_inline_submit_url_idempotent_on_oss_route():
+    from driftshield.remote_submission import derive_oss_inline_submit_url
+
+    assert (
+        derive_oss_inline_submit_url("https://api.example/v1/oss/submissions")
+        == "https://api.example/v1/oss/submissions"
+    )
+    assert (
+        derive_oss_inline_submit_url("https://api.example/v1/oss/submissions/")
+        == "https://api.example/v1/oss/submissions"
+    )
+
+
+def test_derive_oss_inline_submit_url_appends_to_bare_base():
+    from driftshield.remote_submission import derive_oss_inline_submit_url
+
+    assert (
+        derive_oss_inline_submit_url("https://api.example")
+        == "https://api.example/v1/oss/submissions"
+    )
+
+
+def test_post_oss_submission_routes_v1_intake_to_oss_submissions():
+    """The canonical /v1/intake base must NOT be hit by the inline OSS POST:
+    that route is the authenticated intake and 422s on unauthenticated inline
+    submits. The inline lane derives the OSS route from the same base."""
+    captured: dict[str, Any] = {}
+
+    def fake_opener(req: Any) -> _FakeHttpResponse:
+        captured["url"] = req.full_url
+        return _FakeHttpResponse(
+            json.dumps(
+                {"submission_id": "sub_abc", "processing_status": "received"}
+            ).encode("utf-8"),
+            headers={SERVER_CONTRACT_VERSION_HEADER: SUPPORTED_CONTRACT_VERSION},
+        )
+
+    submission = build_oss_submission_request(
+        source_session_id="sess-1",
+        payload={"session_id": "sess-1"},
+    )
+    post_oss_submission(
+        config=OssRemoteSubmissionConfig(intake_url="https://api.example/v1/intake"),
+        submission=submission,
+        opener=fake_opener,
+    )
+
+    assert captured["url"] == "https://api.example/v1/oss/submissions"

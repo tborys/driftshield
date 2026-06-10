@@ -1518,3 +1518,50 @@ def test_status_reports_effective_oss_intake_url(tmp_path, monkeypatch):
     enabled = json.loads(runner.invoke(app, ["telemetry", "status", "--json"]).stdout)
     assert enabled["remote_opt_out"] is False
     assert enabled["effective_oss_intake_url"] == _OSS_TEST_INTAKE_URL
+
+
+def test_zero_config_inline_oss_posts_to_live_oss_route(tmp_path, monkeypatch):
+    """End to end through the real transport seam: zero-config community
+    opt-in must POST the inline envelope to the unauthenticated OSS route
+    derived from the baked canonical base, never to /v1/intake verbatim
+    (which 422s on unauthenticated inline submits)."""
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    session_path = _write_session(tmp_path, {"session_id": "sess-1"})
+
+    captured = {}
+
+    class _FakeResp:
+        def __init__(self, body: bytes) -> None:
+            self._body = body
+            self.headers = {}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return None
+
+        def read(self) -> bytes:
+            return self._body
+
+    def fake_urlopen(req):
+        captured["url"] = req.full_url
+        captured["headers"] = dict(req.headers)
+        return _FakeResp(
+            json.dumps(
+                {"submission_id": "sub_abc", "processing_status": "received"}
+            ).encode("utf-8")
+        )
+
+    monkeypatch.setattr(
+        "driftshield.remote_submission.request.urlopen", fake_urlopen
+    )
+
+    result = runner.invoke(
+        app,
+        ["telemetry", "submit-session", "--path", str(session_path), "--tier", "oss"],
+    )
+
+    assert result.exit_code == 0
+    assert captured["url"] == "https://api.driftshield.ai/v1/oss/submissions"
+    assert "X-api-key" not in captured["headers"]

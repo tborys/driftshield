@@ -24,6 +24,7 @@ from driftshield.remote_submission import (
     SERVER_CONTRACT_VERSION_HEADER,
     OssSubmissionResult,
     RemoteSubmissionError,
+    derive_intake_base_url,
 )
 
 
@@ -33,25 +34,10 @@ from driftshield.remote_submission import (
 # envelope cap while sending anything substantial via S3.
 INLINE_PAYLOAD_THRESHOLD_BYTES = 200 * 1024
 
-_OSS_SUBMIT_SUFFIXES = ("/v1/intake", "/v1/oss/submissions")
 _PRESIGN_PATH = "/v1/oss/uploads/presign"
 _FINALISE_PATH = "/v1/oss/uploads/finalise"
 _TEAMS_PRESIGN_PATH = "/v1/teams/uploads/presign"
 _TEAMS_FINALISE_PATH = "/v1/teams/uploads/finalise"
-
-
-def derive_intake_base_url(intake_url: str) -> str:
-    """Strip the known submit suffix from a configured intake URL.
-
-    The configured ``remote_intake_url`` ends with ``/v1/intake`` or
-    ``/v1/oss/submissions``; strip it so the presign + finalise paths can
-    be appended to the same host without double-pathing.
-    """
-    trimmed = intake_url.rstrip("/")
-    for suffix in _OSS_SUBMIT_SUFFIXES:
-        if trimmed.endswith(suffix):
-            return trimmed[: -len(suffix)]
-    return trimmed
 
 
 def _post_json(
