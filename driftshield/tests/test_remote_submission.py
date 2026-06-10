@@ -23,6 +23,7 @@ from driftshield.remote_submission import (
     build_oss_submission_request,
     post_oss_submission,
     redact_payload,
+    redact_payload_with_manifest,
 )
 
 
@@ -571,3 +572,134 @@ def test_post_oss_submission_routes_v1_intake_to_oss_submissions():
     )
 
     assert captured["url"] == "https://api.example/v1/oss/submissions"
+
+
+def _openclaw_event(event_type: str, data: dict[str, Any] | None = None) -> dict[str, Any]:
+    return {
+        "type": event_type,
+        "runId": "run-1",
+        "traceId": "trace-1",
+        "schemaVersion": 1,
+        "seq": 1,
+        "source": "runtime",
+        "sessionId": "8ad36b0f-9181-4961-9263-770f657db9f5",
+        "provider": "openai-codex",
+        "modelId": "gpt-5.4",
+        "modelApi": "openai-codex-responses",
+        "data": data or {},
+    }
+
+
+def _openclaw_payload() -> dict[str, Any]:
+    return {
+        "session_id": "8ad36b0f-9181-4961-9263-770f657db9f5",
+        "events": [
+            _openclaw_event("session.started", {"agentId": "engineering", "trigger": "cron"}),
+            _openclaw_event("prompt.submitted", {"prompt": "run the heartbeat"}),
+            _openclaw_event("session.ended", {"status": "success"}),
+        ],
+    }
+
+
+def test_detect_shape_openclaw_trajectory():
+    from driftshield.remote_submission import detect_shape
+
+    assert detect_shape(_openclaw_payload()) == "openclaw_trajectory"
+
+
+def test_detect_shape_claude_code_lines_still_detect():
+    from driftshield.remote_submission import detect_shape
+
+    payload = {
+        "session_id": "sess-1",
+        "events": [
+            {"type": "assistant", "sessionId": "sess-1", "message": {"content": []}},
+            {"type": "user", "sessionId": "sess-1", "message": {"content": []}},
+        ],
+    }
+    assert detect_shape(payload) == "claude_code"
+
+
+def test_detect_shape_unrecognisable_events_are_not_claude_code():
+    """Arbitrary line-delimited JSON without the type discriminator must not
+    wave through the unknown-shape redaction guard as claude_code."""
+    from driftshield.remote_submission import detect_shape
+
+    payload = {"events": [{"foo": 1}, {"bar": 2}]}
+    assert detect_shape(payload) is None
+
+
+def test_openclaw_payload_submits_without_force_unknown_shape():
+    submission = build_oss_submission_request(
+        source_session_id="sess-oc",
+        payload=_openclaw_payload(),
+    )
+    assert submission.envelope.payload["events"]
+
+
+def test_derive_openclaw_provenance_extracts_agent_and_model():
+    from driftshield.remote_submission import derive_openclaw_provenance
+
+    provenance = derive_openclaw_provenance(_openclaw_payload())
+    assert provenance == {
+        "agent_id": "openclaw:engineering",
+        "model_name": "openai-codex/gpt-5.4",
+    }
+
+
+def test_derive_openclaw_provenance_empty_for_other_shapes():
+    from driftshield.remote_submission import derive_openclaw_provenance
+
+    assert derive_openclaw_provenance({"session_id": "sess-1"}) == {}
+    assert (
+        derive_openclaw_provenance(
+            {"events": [{"type": "assistant", "message": {}}]}
+        )
+        == {}
+    )
+
+
+def test_openclaw_content_keys_redacted():
+    """ruleset.v2: OpenClaw prompt/response/tool free text never rides the
+    envelope. The keys are dropped with recorded entries."""
+    payload = {
+        "session_id": "sess-oc",
+        "events": [
+            _openclaw_event(
+                "context.compiled",
+                {
+                    "prompt": "secret prompt text",
+                    "systemPrompt": "you are an agent with these tools",
+                    "imagesCount": 0,
+                },
+            ),
+            _openclaw_event(
+                "trace.artifacts",
+                {
+                    "assistantTexts": ["model reply"],
+                    "toolMetas": [{"toolName": "exec", "meta": "rm -rf notes"}],
+                    "messagingToolSentTexts": ["sent message"],
+                    "messagesSnapshot": [{"role": "user"}],
+                    "finalPromptText": "final prompt",
+                    "finalStatus": "success",
+                },
+            ),
+        ],
+    }
+    result = redact_payload_with_manifest(payload)
+    events = result.payload["events"]
+    assert "prompt" not in events[0]["data"]
+    assert "systemPrompt" not in events[0]["data"]
+    assert events[0]["data"]["imagesCount"] == 0
+    for key in (
+        "assistantTexts",
+        "toolMetas",
+        "messagingToolSentTexts",
+        "messagesSnapshot",
+        "finalPromptText",
+    ):
+        assert key not in events[1]["data"]
+    assert events[1]["data"]["finalStatus"] == "success"
+    dropped_paths = {e.path for e in result.entries if e.category == "dropped_key"}
+    assert "events[0].data.prompt" in dropped_paths
+    assert "events[1].data.assistantTexts" in dropped_paths

@@ -48,7 +48,7 @@ def _load(name: str) -> dict[str, object]:
 
 def test_module_pins_redactor_and_ruleset_versions():
     assert REDACTOR_VERSION.startswith("recursive-redactor.v2")
-    assert REDACTION_RULESET_VERSION == "ruleset.v1"
+    assert REDACTION_RULESET_VERSION == "ruleset.v2"
 
 
 def test_aws_access_key_redacted_anywhere():

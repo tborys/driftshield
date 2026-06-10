@@ -37,7 +37,7 @@ from driftshield.intake_contract import REQUIRED_REDACTION_FIELDS
 
 
 REDACTOR_VERSION = "recursive-redactor.v2.0.0"
-REDACTION_RULESET_VERSION = "ruleset.v1"
+REDACTION_RULESET_VERSION = "ruleset.v2"
 
 _TOOL_IO_KEYS: frozenset[str] = frozenset(
     {
@@ -101,8 +101,37 @@ _FAILURE_BODY_KEYS: frozenset[str] = frozenset(
     }
 )
 
+# OpenClaw trajectory content keys (ruleset.v2).
+#
+# OpenClaw runtime trajectories carry the conversation and tool surface
+# under their own key names, which the v1 ruleset did not cover: the
+# generic rules redacted path-shaped strings and ``_TOOL_IO_KEYS`` values
+# inside them, but the free-text prompt/response bodies survived. None of
+# these keys feed the deterministic matcher, so dropping them costs no
+# matcher signal:
+#  * ``prompt`` / ``systemPrompt`` / ``finalPromptText``  submitted prompt
+#    text and the compiled system prompt (tool inventories, agent config)
+#  * ``assistantTexts``       model response bodies
+#  * ``messagesSnapshot``     full message-history snapshot
+#  * ``messagingToolSentTexts``  outbound messages sent via messaging tools
+#  * ``toolMetas``            per-tool-call free-text meta (command lines)
+_OPENCLAW_CONTENT_KEYS: frozenset[str] = frozenset(
+    {
+        "prompt",
+        "systemPrompt",
+        "finalPromptText",
+        "assistantTexts",
+        "messagesSnapshot",
+        "messagingToolSentTexts",
+        "toolMetas",
+    }
+)
+
 _DROPPED_KEYS: frozenset[str] = (
-    REQUIRED_REDACTION_FIELDS | _PROMPT_RESPONSE_KEYS | _FAILURE_BODY_KEYS
+    REQUIRED_REDACTION_FIELDS
+    | _PROMPT_RESPONSE_KEYS
+    | _FAILURE_BODY_KEYS
+    | _OPENCLAW_CONTENT_KEYS
 )
 
 

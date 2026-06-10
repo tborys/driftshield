@@ -1565,3 +1565,96 @@ def test_zero_config_inline_oss_posts_to_live_oss_route(tmp_path, monkeypatch):
     assert result.exit_code == 0
     assert captured["url"] == "https://api.driftshield.ai/v1/oss/submissions"
     assert "X-api-key" not in captured["headers"]
+
+
+def test_submit_session_openclaw_trajectory_stamps_real_provenance(
+    tmp_path, monkeypatch
+):
+    """An OpenClaw trajectory submitted with no provenance flags carries the
+    harness/agent and driving provider/model derived from the trajectory."""
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    event = {
+        "type": "session.started",
+        "runId": "run-1",
+        "traceId": "trace-1",
+        "schemaVersion": 1,
+        "seq": 1,
+        "source": "runtime",
+        "provider": "openai-codex",
+        "modelId": "gpt-5.4",
+        "data": {"agentId": "engineering"},
+    }
+    session_path = _write_session(
+        tmp_path, {"session_id": "sess-oc", "events": [event]}
+    )
+
+    captured = {}
+
+    def fake_post(*, config, submission, opener=None):  # noqa: ARG001
+        captured["agent_id"] = submission.envelope.agent_id
+        captured["model_name"] = submission.envelope.model_name
+        return _ok_result()
+
+    monkeypatch.setattr(
+        "driftshield.cli.commands.telemetry.post_oss_submission", fake_post
+    )
+
+    result = runner.invoke(
+        app,
+        ["telemetry", "submit-session", "--path", str(session_path), "--tier", "oss"],
+    )
+
+    assert result.exit_code == 0
+    assert captured["agent_id"] == "openclaw:engineering"
+    assert captured["model_name"] == "openai-codex/gpt-5.4"
+
+
+def test_submit_session_explicit_provenance_flags_win_over_derived(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    event = {
+        "type": "session.started",
+        "runId": "run-1",
+        "traceId": "trace-1",
+        "schemaVersion": 1,
+        "seq": 1,
+        "source": "runtime",
+        "provider": "openai-codex",
+        "modelId": "gpt-5.4",
+        "data": {"agentId": "engineering"},
+    }
+    session_path = _write_session(
+        tmp_path, {"session_id": "sess-oc", "events": [event]}
+    )
+
+    captured = {}
+
+    def fake_post(*, config, submission, opener=None):  # noqa: ARG001
+        captured["agent_id"] = submission.envelope.agent_id
+        captured["model_name"] = submission.envelope.model_name
+        return _ok_result()
+
+    monkeypatch.setattr(
+        "driftshield.cli.commands.telemetry.post_oss_submission", fake_post
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "telemetry",
+            "submit-session",
+            "--path",
+            str(session_path),
+            "--tier",
+            "oss",
+            "--agent-id",
+            "my-agent",
+            "--model-name",
+            "my-model",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["agent_id"] == "my-agent"
+    assert captured["model_name"] == "my-model"
