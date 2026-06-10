@@ -73,8 +73,12 @@ def derive_oss_inline_submit_url(intake_url: str) -> str:
 _DEFAULT_SOURCE_SYSTEM = "driftshield-oss"
 
 
+# Top-level key hints for the shapes recognisable from the payload's key-set
+# alone. The two events-carrying shapes (openclaw_trajectory and claude_code)
+# are NOT in this table: both arrive as a ``payload["events"]`` list, so they
+# are told apart by probing the event records themselves in
+# :func:`detect_shape`.
 _KNOWN_SHAPE_HINTS: dict[str, frozenset[str]] = {
-    "claude_code": frozenset({"events"}),
     "claude_desktop": frozenset({"conversation", "messages"}),
     "codex": frozenset({"session", "turns"}),
     "openai_chat": frozenset({"choices", "model"}),
@@ -82,6 +86,36 @@ _KNOWN_SHAPE_HINTS: dict[str, frozenset[str]] = {
     "crewai": frozenset({"crew", "tasks"}),
     "generic_session": frozenset({"session_id"}),
 }
+
+# OpenClaw runtime trajectory events carry this envelope on every record
+# (run/trace correlation + schema version), which native Claude Code JSONL
+# lines never do. Probed before the claude_code fallback so OpenClaw
+# trajectories stop mislabelling as claude_code.
+_OPENCLAW_EVENT_KEYS: frozenset[str] = frozenset(
+    {"runId", "traceId", "schemaVersion", "seq", "source"}
+)
+
+
+def _looks_like_openclaw_trajectory(events: Any) -> bool:
+    if not isinstance(events, list) or len(events) == 0:
+        return False
+    probed = [event for event in events[:8] if isinstance(event, dict)]
+    if len(probed) == 0:
+        return False
+    return all(_OPENCLAW_EVENT_KEYS.issubset(event.keys()) for event in probed)
+
+
+def _looks_like_claude_code_events(events: Any) -> bool:
+    # Native Claude Code JSONL lines all carry a string ``type``
+    # discriminator (user / assistant / summary / system). Requiring it
+    # stops arbitrary line-delimited JSON from waving through the
+    # unknown-shape redaction guard as claude_code.
+    if not isinstance(events, list) or len(events) == 0:
+        return False
+    return any(
+        isinstance(event, dict) and isinstance(event.get("type"), str)
+        for event in events
+    )
 
 
 class UnknownTranscriptShapeError(ValueError):
@@ -110,14 +144,67 @@ def detect_shape(payload: dict[str, Any]) -> str | None:
     Detection is best-effort and heuristic. It exists so the CLI can refuse
     to submit payloads the recursive redactor was not designed against,
     rather than silently under-redacting them.
+
+    Events-carrying payloads are content-probed: OpenClaw runtime
+    trajectories detect as ``openclaw_trajectory``, native Claude Code
+    lines as ``claude_code``. An events list matching neither probe is not
+    claude_code; it falls to the key-hint table (and then to unknown).
     """
     if not isinstance(payload, dict):
         return None
+    events = payload.get("events")
+    if isinstance(events, list) and len(events) > 0:
+        if _looks_like_openclaw_trajectory(events):
+            return "openclaw_trajectory"
+        if _looks_like_claude_code_events(events):
+            return "claude_code"
     keys = set(payload.keys())
     for shape, required in _KNOWN_SHAPE_HINTS.items():
         if required.issubset(keys):
             return shape
     return None
+
+
+def derive_openclaw_provenance(payload: dict[str, Any]) -> dict[str, str]:
+    """Best-effort real provenance from an OpenClaw trajectory payload.
+
+    OpenClaw trajectory events carry the driving provider/model
+    (``provider`` / ``modelId``) and the agent name
+    (``data.agentId``) on the runtime records. Returns ``agent_id`` /
+    ``model_name`` values for the envelope, or an empty dict when the
+    payload is not an OpenClaw trajectory. Callers apply explicit flags
+    first; this only fills gaps.
+    """
+    events = payload.get("events")
+    if not _looks_like_openclaw_trajectory(events):
+        return {}
+    agent_suffix: str | None = None
+    provider: str | None = None
+    model_id: str | None = None
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        if provider is None and isinstance(event.get("provider"), str):
+            provider = event["provider"]
+        if model_id is None and isinstance(event.get("modelId"), str):
+            model_id = event["modelId"]
+        data = event.get("data")
+        if (
+            agent_suffix is None
+            and isinstance(data, dict)
+            and isinstance(data.get("agentId"), str)
+        ):
+            agent_suffix = data["agentId"]
+        if provider is not None and model_id is not None and agent_suffix is not None:
+            break
+    provenance: dict[str, str] = {
+        "agent_id": "openclaw" if agent_suffix is None else f"openclaw:{agent_suffix}",
+    }
+    if model_id is not None:
+        provenance["model_name"] = (
+            model_id if provider is None else f"{provider}/{model_id}"
+        )
+    return provenance
 
 
 def redact_payload_with_manifest(payload: dict[str, Any]) -> RedactionResult:
@@ -173,8 +260,9 @@ def build_oss_submission_request(
     """Build an unauthenticated OSS submission request.
 
     ``force_unknown_shape`` defaults to False. The recursive redactor was
-    designed against the six known transcript shapes listed in
-    :data:`_KNOWN_SHAPE_HINTS`; an unrecognised top-level shape raises
+    designed against the known transcript shapes (the key-hint shapes in
+    :data:`_KNOWN_SHAPE_HINTS` plus the two events-probed shapes,
+    openclaw_trajectory and claude_code); an unrecognised shape raises
     :class:`UnknownTranscriptShapeError` unless the caller passes
     ``force_unknown_shape=True``.
 
@@ -318,6 +406,9 @@ __all__ = [
     "UnknownTranscriptShapeError",
     "build_oss_submission_request",
     "build_redacted_payload",
+    "derive_intake_base_url",
+    "derive_openclaw_provenance",
+    "derive_oss_inline_submit_url",
     "detect_shape",
     "post_oss_submission",
     "redact_payload",

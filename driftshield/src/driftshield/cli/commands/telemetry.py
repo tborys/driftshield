@@ -30,6 +30,7 @@ from driftshield.remote_submission import (
     UnknownTranscriptShapeError,
     build_oss_submission_request,
     build_redacted_payload,
+    derive_openclaw_provenance,
     detect_shape,
     post_oss_submission,
     redact_payload_with_manifest,
@@ -337,6 +338,15 @@ def telemetry_submit_session(
                 "(or API_KEY) in the environment."
             )
             raise typer.Exit(1)
+
+    # Real provenance for OpenClaw trajectories: the harness/agent and the
+    # driving provider/model come from the trajectory itself when the caller
+    # did not pass explicit values. Explicit flags always win.
+    derived_provenance = derive_openclaw_provenance(payload)
+    if agent_id is None:
+        agent_id = derived_provenance.get("agent_id")
+    if model_name is None:
+        model_name = derived_provenance.get("model_name")
 
     # Community opt-in is the production declaration: stamp the declared
     # environment before redaction so it rides both the inline and the
