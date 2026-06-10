@@ -13,6 +13,11 @@ from typing import Any
 
 _VALID_OUTCOME_STATUSES = {"matched", "unclassified", "not_classifiable"}
 
+# Canonical community intake endpoint. The OSS lane submits here when no
+# remote_intake_url has been configured, so community opt-in is zero-config.
+# An explicit `telemetry remote-enable --intake-url ...` always overrides.
+DEFAULT_COMMUNITY_INTAKE_URL = "https://api.driftshield.ai/v1/intake"
+
 
 @dataclass(slots=True)
 class TelemetryConfig:

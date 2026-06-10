@@ -29,6 +29,16 @@
 - When preparing a prompt for another agent, make it autonomous by default.
 - Tell the agent to inspect the issue and codebase first, produce a concrete spec and plan, then implement, verify and summarise the result without waiting for a human in the loop.
 
+## Community signature opt-in
+
+- After analysing a finished run locally, opt its signature run into the community pool:
+  `driftshield telemetry submit-session --path <session.json> --tier oss`
+- No setup is needed. The community intake URL is baked in as the default; `remote-enable` is only for pointing at a different intake.
+- `--tier oss` is the unauthenticated community lane. No API key is sent.
+- Opting in declares the run as a production run by default. Do not pass `--environment` in the normal path.
+- Only the redacted, community-safe envelope leaves the machine.
+- Override note: a non-production contribution can pass `--environment staging|test|demo`, but this is the uncommon case, not the documented path.
+
 ## Review guidelines
 
 - For pull request reviews, use the repo-local review skill at `.agents/skills/driftshield-pr-review`.
