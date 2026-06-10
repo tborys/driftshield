@@ -38,6 +38,37 @@ from driftshield.recursive_redactor import (
 
 SERVER_CONTRACT_VERSION_HEADER = "X-DriftShield-Contract-Version"
 
+# Known submit suffixes a configured (or baked) intake URL may carry. Routes
+# are derived from the base so one canonical intake URL serves every lane.
+_OSS_SUBMIT_SUFFIXES = ("/v1/intake", "/v1/oss/submissions")
+
+# The live route for the unauthenticated inline OSS submission. POSTing the
+# inline body to /v1/intake instead hits the authenticated intake route and
+# fails with 422 missing installation_id.
+OSS_INLINE_SUBMIT_PATH = "/v1/oss/submissions"
+
+
+def derive_intake_base_url(intake_url: str) -> str:
+    """Strip the known submit suffix from a configured intake URL.
+
+    The configured ``remote_intake_url`` ends with ``/v1/intake`` or
+    ``/v1/oss/submissions``; strip it so per-lane paths can be appended to
+    the same host without double-pathing.
+    """
+    trimmed = intake_url.rstrip("/")
+    for suffix in _OSS_SUBMIT_SUFFIXES:
+        if trimmed.endswith(suffix):
+            return trimmed[: -len(suffix)]
+    return trimmed
+
+
+def derive_oss_inline_submit_url(intake_url: str) -> str:
+    """Resolve the inline OSS submission endpoint from any intake URL shape.
+
+    Idempotent for URLs already ending in ``/v1/oss/submissions``.
+    """
+    return derive_intake_base_url(intake_url) + OSS_INLINE_SUBMIT_PATH
+
 
 _DEFAULT_SOURCE_SYSTEM = "driftshield-oss"
 
@@ -240,12 +271,14 @@ def post_oss_submission(
 ) -> OssSubmissionResult:
     """Single unauthenticated POST to /v1/oss/submissions. No retry on failure.
 
-    No X-API-Key header. No Authorization header. The intake URL is taken
-    verbatim from TelemetryConfig.remote_intake_url.
+    No X-API-Key header. No Authorization header. The endpoint is derived
+    from ``config.intake_url`` (a ``/v1/intake`` or ``/v1/oss/submissions``
+    suffix is normalised to the inline OSS route), so the canonical
+    community intake URL works for the inline lane too.
     """
     body = submission.model_dump_json().encode("utf-8")
     req = request.Request(
-        config.intake_url,
+        derive_oss_inline_submit_url(config.intake_url),
         data=body,
         method="POST",
         headers={
