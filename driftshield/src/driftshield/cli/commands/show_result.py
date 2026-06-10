@@ -8,7 +8,7 @@ from urllib import error, request
 import typer
 from rich.console import Console
 
-from driftshield.telemetry import TelemetryService
+from driftshield.telemetry import TelemetryService, effective_oss_intake_url
 
 
 console = Console(force_terminal=True)
@@ -19,20 +19,29 @@ def show_result(
     intake_url: str | None = typer.Option(
         None,
         "--intake-url",
-        help="Override the intake URL. Defaults to the value persisted by `telemetry remote-enable`.",
+        help=(
+            "Override the intake URL. Defaults to the value persisted by "
+            "`telemetry remote-enable`, falling back to the baked community "
+            "intake URL."
+        ),
     ),
     json_output: bool = typer.Option(False, "--json", help="Print the raw JSON response."),
 ) -> None:
-    """Fetch the OSS-safe result triple for a submission from the configured intake URL."""
+    """Fetch the OSS-safe result triple for a submission from the configured intake URL.
+
+    Zero-config like ``telemetry submit-session --tier oss``: with nothing
+    configured the baked community intake URL is used, so submit followed by
+    show-result needs no ``remote-enable``. After ``telemetry remote-disable``
+    the baked default does not apply; an explicit ``--intake-url`` always works.
+    """
     base_url = intake_url
     if base_url is None:
-        config = TelemetryService().load_config()
-        base_url = config.remote_intake_url
+        base_url = effective_oss_intake_url(TelemetryService().load_config())
     if not base_url:
         console.print(
-            "[red]Error:[/red] No intake URL configured. "
-            "Run `driftshield telemetry remote-enable --intake-url URL` first, "
-            "or pass --intake-url."
+            "[red]Error:[/red] Remote submission is disabled "
+            "(`telemetry remote-disable`). Run `driftshield telemetry "
+            "remote-enable --intake-url URL` to re-enable, or pass --intake-url."
         )
         raise typer.Exit(1)
 

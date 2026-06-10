@@ -29,6 +29,10 @@ class TelemetryConfig:
     remote_intake_url: str | None = None
     remote_api_key: str | None = None
     remote_installation_id: str | None = None
+    # Explicit opt-out from remote submission. Distinguishes "never configured"
+    # (community default applies on the OSS lane) from "user ran remote-disable"
+    # (no remote target at all, baked default included).
+    remote_opt_out: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,6 +66,7 @@ class TelemetryService:
             remote_intake_url=_optional_string(data.get("remote_intake_url")),
             remote_api_key=_optional_string(data.get("remote_api_key")),
             remote_installation_id=_optional_string(data.get("remote_installation_id")),
+            remote_opt_out=bool(data.get("remote_opt_out", False)),
         )
 
     def enable(self) -> TelemetryConfig:
@@ -117,6 +122,7 @@ class TelemetryService:
             raise ValueError("intake_url must not be empty")
         config = self.load_config()
         config.remote_intake_url = intake_url_clean
+        config.remote_opt_out = False
         # Migrate legacy auth fields out of the on-disk config on first use.
         config.remote_api_key = None
         config.remote_installation_id = None
@@ -126,10 +132,17 @@ class TelemetryService:
         return config
 
     def remote_disable(self) -> TelemetryConfig:
+        """Clear remote configuration and opt out of remote submission.
+
+        The opt-out is persisted so the OSS lane's baked community default
+        does not apply either: after remote-disable, no submission target
+        exists until remote-enable runs again.
+        """
         config = self.load_config()
         config.remote_intake_url = None
         config.remote_api_key = None
         config.remote_installation_id = None
+        config.remote_opt_out = True
         if not config.event_stream_path:
             config.event_stream_path = str(self._default_stream_path)
         self._save_config(config)
@@ -202,6 +215,19 @@ class TelemetryService:
         stream_path.parent.mkdir(parents=True, exist_ok=True)
         with stream_path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(asdict(event), sort_keys=True) + "\n")
+
+
+def effective_oss_intake_url(config: TelemetryConfig) -> str | None:
+    """Resolve the URL the OSS lane will use.
+
+    A configured override wins; otherwise the baked community default applies,
+    unless the user explicitly opted out via remote-disable (then None).
+    """
+    if config.remote_intake_url:
+        return config.remote_intake_url
+    if config.remote_opt_out:
+        return None
+    return DEFAULT_COMMUNITY_INTAKE_URL
 
 
 def _telemetry_home() -> Path:

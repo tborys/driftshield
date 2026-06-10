@@ -42,8 +42,8 @@ from driftshield.remote_upload import (
     submit_teams_via_presigned_upload,
 )
 from driftshield.telemetry import (
-    DEFAULT_COMMUNITY_INTAKE_URL,
     TelemetryService,
+    effective_oss_intake_url,
     validate_outcome_status,
 )
 
@@ -65,6 +65,11 @@ def telemetry_status(
         "event_stream_path": config.event_stream_path,
         "remote_enabled": config.remote_intake_url is not None,
         "remote_intake_url": config.remote_intake_url,
+        "remote_opt_out": config.remote_opt_out,
+        # The URL an OSS-lane submission will actually use right now: the
+        # configured override, the baked community default, or null after
+        # remote-disable.
+        "effective_oss_intake_url": effective_oss_intake_url(config),
     }
     if json_output:
         typer.echo(json.dumps(payload))
@@ -108,9 +113,12 @@ def telemetry_remote_enable(
 
 @app.command("remote-disable")
 def telemetry_remote_disable() -> None:
-    """Clear remote intake configuration. Local telemetry capture is unaffected."""
+    """Opt out of remote submission entirely. Local telemetry capture is unaffected."""
     TelemetryService().remote_disable()
-    console.print("Remote submission configuration cleared.")
+    console.print(
+        "Remote submission disabled. The baked community default no longer "
+        "applies; run `telemetry remote-enable` to re-enable."
+    )
 
 
 @app.command("submit-session")
@@ -195,7 +203,8 @@ def telemetry_submit_session(
     or consent_state is included in the request. The server binds the persisted row
     to the in-stack OSS fallback installation + consent. When no intake URL is
     configured, the OSS lane submits to the baked-in community intake URL, so
-    community opt-in needs no prior ``remote-enable``.
+    community opt-in needs no prior ``remote-enable``. An explicit
+    ``telemetry remote-disable`` opts out of the baked default too.
 
     Community opt-in is the act of declaring the run real: on the oss lane the
     declared environment defaults to ``production`` unless the session JSON or
@@ -270,15 +279,23 @@ def telemetry_submit_session(
             raise typer.Exit(1)
 
     config = TelemetryService().load_config()
-    intake_url = config.remote_intake_url
-    if intake_url is None and resolved_tier == "oss":
-        intake_url = DEFAULT_COMMUNITY_INTAKE_URL
-    if intake_url is None:
-        console.print(
-            "[red]Error:[/red] Remote submission is not configured. "
-            "Run `driftshield telemetry remote-enable --intake-url URL` first."
-        )
-        raise typer.Exit(1)
+    if resolved_tier == "oss":
+        intake_url = effective_oss_intake_url(config)
+        if intake_url is None:
+            console.print(
+                "[red]Error:[/red] Remote submission is disabled "
+                "(`telemetry remote-disable`). Run `driftshield telemetry "
+                "remote-enable --intake-url URL` to re-enable."
+            )
+            raise typer.Exit(1)
+    else:
+        intake_url = config.remote_intake_url
+        if intake_url is None:
+            console.print(
+                "[red]Error:[/red] Remote submission is not configured. "
+                "Run `driftshield telemetry remote-enable --intake-url URL` first."
+            )
+            raise typer.Exit(1)
 
     resolved_workflow_reference = workflow_reference
     if resolved_workflow_reference is None:

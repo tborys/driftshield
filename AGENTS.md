@@ -33,7 +33,7 @@
 
 - After analysing a finished run locally, opt its signature run into the community pool:
   `driftshield telemetry submit-session --path <session.json> --tier oss`
-- No setup is needed. The community intake URL is baked in as the default; `remote-enable` is only for pointing at a different intake.
+- No setup is needed. The community intake URL is baked in as the default; `remote-enable` is only for pointing at a different intake. `telemetry remote-disable` opts out entirely, baked default included.
 - `--tier oss` is the unauthenticated community lane. No API key is sent.
 - Opting in declares the run as a production run by default. Do not pass `--environment` in the normal path.
 - Only the redacted, community-safe envelope leaves the machine.

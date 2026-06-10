@@ -1436,3 +1436,85 @@ def test_community_lane_payload_classifies_production_submitter_declared(
     env_class, env_source = _environment_classification(session, None)
     assert env_class is EnvironmentClass.PRODUCTION
     assert env_source is EnvironmentSource.SUBMITTER_DECLARED
+
+
+# ---------------------------------------------------------------------------
+# remote-disable is an explicit opt-out: the baked default must not apply
+# ---------------------------------------------------------------------------
+
+
+def test_remote_disable_blocks_community_default(tmp_path, monkeypatch):
+    """After remote-disable, the OSS lane has no target: the baked default
+    must not resurrect remote submission behind the user's back."""
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    runner.invoke(app, ["telemetry", "remote-disable"])
+    session_path = _write_session(tmp_path, {"session_id": "sess-1"})
+
+    submitted = {"called": False}
+
+    def fake_post(*, config, submission, opener=None):  # noqa: ARG001
+        submitted["called"] = True
+        return _ok_result()
+
+    monkeypatch.setattr(
+        "driftshield.cli.commands.telemetry.post_oss_submission", fake_post
+    )
+
+    result = runner.invoke(
+        app,
+        ["telemetry", "submit-session", "--path", str(session_path), "--tier", "oss"],
+    )
+
+    assert result.exit_code == 1
+    assert "disabled" in result.stdout.lower()
+    assert submitted["called"] is False
+
+
+def test_remote_enable_after_disable_restores_submission(tmp_path, monkeypatch):
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    runner.invoke(app, ["telemetry", "remote-disable"])
+    runner.invoke(app, _remote_enable_argv())
+    session_path = _write_session(tmp_path, {"session_id": "sess-1"})
+
+    captured = {}
+
+    def fake_post(*, config, submission, opener=None):  # noqa: ARG001
+        captured["intake_url"] = config.intake_url
+        return _ok_result()
+
+    monkeypatch.setattr(
+        "driftshield.cli.commands.telemetry.post_oss_submission", fake_post
+    )
+
+    result = runner.invoke(
+        app,
+        ["telemetry", "submit-session", "--path", str(session_path), "--tier", "oss"],
+    )
+
+    assert result.exit_code == 0
+    assert captured["intake_url"] == _OSS_TEST_INTAKE_URL
+
+    config = TelemetryService().load_config()
+    assert config.remote_opt_out is False
+
+
+def test_status_reports_effective_oss_intake_url(tmp_path, monkeypatch):
+    """status must reflect what an OSS submit will actually do in all three
+    states: zero-config (baked default), opted out (null), configured."""
+    from driftshield.telemetry import DEFAULT_COMMUNITY_INTAKE_URL
+
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+
+    fresh = json.loads(runner.invoke(app, ["telemetry", "status", "--json"]).stdout)
+    assert fresh["remote_opt_out"] is False
+    assert fresh["effective_oss_intake_url"] == DEFAULT_COMMUNITY_INTAKE_URL
+
+    runner.invoke(app, ["telemetry", "remote-disable"])
+    disabled = json.loads(runner.invoke(app, ["telemetry", "status", "--json"]).stdout)
+    assert disabled["remote_opt_out"] is True
+    assert disabled["effective_oss_intake_url"] is None
+
+    runner.invoke(app, _remote_enable_argv())
+    enabled = json.loads(runner.invoke(app, ["telemetry", "status", "--json"]).stdout)
+    assert enabled["remote_opt_out"] is False
+    assert enabled["effective_oss_intake_url"] == _OSS_TEST_INTAKE_URL

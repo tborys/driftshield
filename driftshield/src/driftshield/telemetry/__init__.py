@@ -5,6 +5,7 @@ from driftshield.telemetry.service import (
     TelemetryConfig,
     TelemetryEvent,
     TelemetryService,
+    effective_oss_intake_url,
     validate_outcome_status,
 )
 
@@ -13,5 +14,6 @@ __all__ = [
     "TelemetryConfig",
     "TelemetryEvent",
     "TelemetryService",
+    "effective_oss_intake_url",
     "validate_outcome_status",
 ]

@@ -183,13 +183,68 @@ def test_show_result_overrides_intake_url(tmp_path, monkeypatch):
     assert captured["url"] == "https://override.example.test/v1/oss/submissions/sub_abc"
 
 
-def test_show_result_fails_when_no_url_configured_or_provided(tmp_path, monkeypatch):
+def test_show_result_zero_config_uses_community_default(tmp_path, monkeypatch):
+    """With nothing configured, show-result derives from the baked community URL."""
+    from driftshield.telemetry import DEFAULT_COMMUNITY_INTAKE_URL
+
     monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+
+    captured: dict[str, Any] = {}
+
+    def fake_urlopen(req: Any) -> _FakeHttpResponse:
+        captured["url"] = req.full_url
+        return _FakeHttpResponse(
+            json.dumps({
+                "submission_id": "sub_abc",
+                "processing_status": "processed",
+                "signature_label": None,
+                "signature_family": None,
+                "confidence_band": None,
+            }).encode("utf-8")
+        )
+
+    monkeypatch.setattr("driftshield.cli.commands.show_result.request.urlopen", fake_urlopen)
+
+    result = runner.invoke(app, ["show-result", "sub_abc"])
+
+    assert result.exit_code == 0
+    expected_base = DEFAULT_COMMUNITY_INTAKE_URL.removesuffix("/v1/intake")
+    assert captured["url"] == f"{expected_base}/v1/oss/submissions/sub_abc"
+
+
+def test_show_result_fails_after_remote_disable(tmp_path, monkeypatch):
+    """remote-disable opts out of the baked default; show-result has no target."""
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    runner.invoke(app, ["telemetry", "remote-disable"])
 
     result = runner.invoke(app, ["show-result", "sub_abc"])
 
     assert result.exit_code == 1
-    assert "no intake url configured" in result.stdout.lower()
+    assert "disabled" in result.stdout.lower()
+
+
+def test_show_result_intake_url_flag_works_after_remote_disable(tmp_path, monkeypatch):
+    """An explicit --intake-url is per-invocation intent and wins over the opt-out."""
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    runner.invoke(app, ["telemetry", "remote-disable"])
+
+    captured: dict[str, Any] = {}
+
+    def fake_urlopen(req: Any) -> _FakeHttpResponse:
+        captured["url"] = req.full_url
+        return _FakeHttpResponse(
+            json.dumps({"submission_id": "sub_abc", "processing_status": "processed"}).encode("utf-8")
+        )
+
+    monkeypatch.setattr("driftshield.cli.commands.show_result.request.urlopen", fake_urlopen)
+
+    result = runner.invoke(
+        app,
+        ["show-result", "sub_abc", "--intake-url", "https://override.example.test/v1/intake"],
+    )
+
+    assert result.exit_code == 0
+    assert captured["url"] == "https://override.example.test/v1/oss/submissions/sub_abc"
 
 
 def test_show_result_404_renders_not_found(tmp_path, monkeypatch):
@@ -238,3 +293,58 @@ def test_show_result_non_json_response(tmp_path, monkeypatch):
 
     assert result.exit_code == 1
     assert "non-json" in result.stdout.lower()
+
+
+def test_zero_config_submit_then_show_result_roundtrip(tmp_path, monkeypatch):
+    """The full community happy path needs no remote-enable: submit-session
+    resolves to the baked default and show-result fetches from the same base."""
+    from driftshield.intake_contract import IntakeSubmissionResponse
+    from driftshield.remote_submission import OssSubmissionResult
+    from driftshield.telemetry import DEFAULT_COMMUNITY_INTAKE_URL
+
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    session_path = tmp_path / "session.json"
+    session_path.write_text(json.dumps({"session_id": "sess-1"}), encoding="utf-8")
+
+    captured: dict[str, Any] = {}
+
+    def fake_post(*, config, submission, opener=None):  # noqa: ARG001
+        captured["submit_url"] = config.intake_url
+        return OssSubmissionResult(
+            response=IntakeSubmissionResponse(
+                submission_id="sub_rt1", processing_status="received"
+            ),
+            server_contract_version="phase3g.v1",
+        )
+
+    monkeypatch.setattr(
+        "driftshield.cli.commands.telemetry.post_oss_submission", fake_post
+    )
+
+    submit = runner.invoke(
+        app,
+        ["telemetry", "submit-session", "--path", str(session_path), "--tier", "oss"],
+    )
+    assert submit.exit_code == 0
+    assert "sub_rt1" in submit.stdout
+    assert captured["submit_url"] == DEFAULT_COMMUNITY_INTAKE_URL
+
+    def fake_urlopen(req: Any) -> _FakeHttpResponse:
+        captured["result_url"] = req.full_url
+        return _FakeHttpResponse(
+            json.dumps({
+                "submission_id": "sub_rt1",
+                "processing_status": "processed",
+                "signature_label": "drift_signature_v1",
+                "signature_family": "tool_misuse",
+                "confidence_band": "high",
+            }).encode("utf-8")
+        )
+
+    monkeypatch.setattr("driftshield.cli.commands.show_result.request.urlopen", fake_urlopen)
+
+    shown = runner.invoke(app, ["show-result", "sub_rt1"])
+    assert shown.exit_code == 0
+    assert "sub_rt1" in shown.stdout
+    expected_base = DEFAULT_COMMUNITY_INTAKE_URL.removesuffix("/v1/intake")
+    assert captured["result_url"] == f"{expected_base}/v1/oss/submissions/sub_rt1"
