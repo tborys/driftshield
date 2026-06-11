@@ -357,7 +357,20 @@ class OpenClawTrajectoryParser:
                 continue
             if isinstance(entry, dict):
                 records.append(entry)
-        return records
+        # The runtime stamps a monotonic ``seq`` on every record, but the
+        # file itself can be emitted or concatenated out of order. The event
+        # chain (parent links, ordering, synthetic timestamps) must follow
+        # ``seq``, not file order. A record without a usable seq keeps its
+        # file position as the key; the stable sort leaves all-unseq'd files
+        # in file order.
+        def _sort_key(pair: tuple[int, dict[str, Any]]) -> tuple[int, int]:
+            index, record = pair
+            seq = record.get("seq")
+            if isinstance(seq, int) and seq >= 0:
+                return (seq, index)
+            return (index, index)
+
+        return [record for _, record in sorted(enumerate(records), key=_sort_key)]
 
     def _base_time(self, records: list[dict[str, Any]]) -> datetime:
         """Earliest ``data.capturedAt`` in the file, else now.

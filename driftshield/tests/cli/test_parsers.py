@@ -176,3 +176,34 @@ class TestOpenClawTrajectoryAnalysisSeam:
         assert summary is not None
         assert summary.schema_version
         assert isinstance(summary.matches, list)
+
+    def test_sniff_tolerates_corrupt_leading_lines(self, tmp_path):
+        """A banner or corrupt first line must not force a false claude_code
+        classification (reviewer repro on PR 140)."""
+        path = tmp_path / "session.jsonl"
+        path.write_text(
+            "not json\n" + TestDetectOpenClawTrajectory._RECORD + "\n",
+            encoding="utf-8",
+        )
+
+        assert detect_parser(path) == "openclaw_trajectory"
+
+    def test_sniff_corrupt_line_then_claude_code_record_stays_claude_code(
+        self, tmp_path
+    ):
+        path = tmp_path / "session.jsonl"
+        path.write_text(
+            'not json\n{"type":"assistant","sessionId":"s","message":{}}\n',
+            encoding="utf-8",
+        )
+
+        assert detect_parser(path) == "claude_code"
+
+    def test_sniff_gives_up_after_line_limit(self, tmp_path):
+        path = tmp_path / "session.jsonl"
+        path.write_text(
+            "garbage\n" * 30 + TestDetectOpenClawTrajectory._RECORD + "\n",
+            encoding="utf-8",
+        )
+
+        assert detect_parser(path) == "claude_code"

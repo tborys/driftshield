@@ -46,25 +46,34 @@ _OPENCLAW_TRAJECTORY_KEYS = frozenset(
 )
 
 
-def _sniff_openclaw_trajectory(path: Path) -> bool:
-    """Peek the first parseable line for the trajectory record envelope.
+# How many leading lines the sniffer inspects before giving up. Bounds the
+# read on large files while tolerating a banner/preamble or corrupt lines.
+_SNIFF_LINE_LIMIT = 25
 
-    Tolerates unreadable files (detection then falls back to the suffix
-    rules), so non-existent paths keep their historical detection result.
+
+def _sniff_openclaw_trajectory(path: Path) -> bool:
+    """Probe the leading lines for the trajectory record envelope.
+
+    Mirrors the parser's tolerance: undecodable lines are skipped, not
+    treated as a verdict. The verdict comes from the first line that parses
+    to a JSON object — trajectory envelope keys present or not. Unreadable
+    files return False so non-existent paths keep their historical
+    detection result.
     """
     try:
         with path.open("r", encoding="utf-8") as handle:
-            for raw_line in handle:
+            for line_number, raw_line in enumerate(handle):
+                if line_number >= _SNIFF_LINE_LIMIT:
+                    return False
                 line = raw_line.strip()
                 if not line:
                     continue
                 try:
                     entry = json.loads(line)
                 except json.JSONDecodeError:
-                    return False
-                return isinstance(entry, dict) and _OPENCLAW_TRAJECTORY_KEYS.issubset(
-                    entry.keys()
-                )
+                    continue
+                if isinstance(entry, dict):
+                    return _OPENCLAW_TRAJECTORY_KEYS.issubset(entry.keys())
     except OSError:
         return False
     return False

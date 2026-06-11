@@ -205,3 +205,44 @@ class TestOpenClawTrajectoryParser:
 
     def test_source_type(self):
         assert OpenClawTrajectoryParser().source_type == "openclaw_trajectory"
+
+    def test_out_of_order_records_are_sorted_by_seq(self):
+        """A trajectory emitted or concatenated out of file order must still
+        produce the seq-ordered event chain (reviewer repro on PR 140)."""
+        records = [
+            _record(
+                "model.completed", 4, {"assistantTexts": ["done"], "aborted": False}
+            ),
+            _record("prompt.submitted", 3, {"prompt": "do the thing"}),
+            _record("session.started", 0, {"agentId": "engineering"}),
+        ]
+        content = "\n".join(json.dumps(record) for record in records)
+
+        events = OpenClawTrajectoryParser().parse(content)
+
+        assert [event.action for event in events] == [
+            "session_started",
+            "user_message",
+            "model_completed",
+        ]
+        timestamps = [event.timestamp for event in events]
+        assert timestamps == sorted(timestamps)
+        # The parent chain follows seq order, not file order.
+        assert events[1].parent_event_id == events[0].id
+        assert events[2].parent_event_id == events[1].id
+
+    def test_records_without_seq_keep_file_order(self):
+        records = [
+            _record("session.started", 0, {"agentId": "engineering"}),
+            _record("prompt.submitted", 1, {"prompt": "first"}),
+        ]
+        for record in records:
+            del record["seq"]
+        content = "\n".join(json.dumps(record) for record in records)
+
+        events = OpenClawTrajectoryParser().parse(content)
+
+        assert [event.action for event in events] == [
+            "session_started",
+            "user_message",
+        ]
