@@ -93,3 +93,117 @@ class TestDetectParser:
 
     def test_unknown_format_returns_none(self):
         assert detect_parser(Path("unknown.xyz")) is None
+
+
+class TestDetectOpenClawTrajectory:
+    _RECORD = (
+        '{"type":"session.started","runId":"run-1","traceId":"trace-1",'
+        '"schemaVersion":1,"seq":0,"source":"runtime",'
+        '"sessionId":"8ad36b0f-9181-4961-9263-770f657db9f5",'
+        '"data":{"agentId":"engineering"}}'
+    )
+
+    def test_detects_trajectory_suffix(self, tmp_path):
+        path = tmp_path / "8ad36b0f.trajectory.jsonl"
+        path.touch()
+
+        assert detect_parser(path) == "openclaw_trajectory"
+
+    def test_detects_trajectory_content_in_plain_jsonl(self, tmp_path):
+        path = tmp_path / "session.jsonl"
+        path.write_text(self._RECORD + "\n", encoding="utf-8")
+
+        assert detect_parser(path) == "openclaw_trajectory"
+
+    def test_plain_jsonl_without_trajectory_envelope_stays_claude_code(
+        self, tmp_path
+    ):
+        path = tmp_path / "session.jsonl"
+        path.write_text(
+            '{"type":"assistant","sessionId":"s","message":{}}\n', encoding="utf-8"
+        )
+
+        assert detect_parser(path) == "claude_code"
+
+    def test_missing_jsonl_file_keeps_claude_code_fallback(self):
+        assert detect_parser(Path("does-not-exist.jsonl")) == "claude_code"
+
+    def test_get_parser_resolves_openclaw_trajectory(self):
+        parser = get_parser("openclaw_trajectory")
+        assert parser.source_type == "openclaw_trajectory"
+
+
+class TestOpenClawTrajectoryAnalysisSeam:
+    def test_signature_summary_builds_from_trajectory_file(self, tmp_path):
+        """--include-analysis works end to end on a trajectory: the parser is
+        detected, events parse, and the matcher produces a summary object
+        (zero matches is a valid outcome for a clean run)."""
+        import json as _json
+
+        from driftshield.cli._signature_summary import (
+            build_signature_summary_from_session,
+        )
+
+        def record(record_type, seq, data):
+            return {
+                "type": record_type,
+                "runId": "run-1",
+                "traceId": "trace-1",
+                "schemaVersion": 1,
+                "seq": seq,
+                "source": "runtime",
+                "sessionId": "8ad36b0f-9181-4961-9263-770f657db9f5",
+                "data": data,
+            }
+
+        records = [
+            record("session.started", 0, {"agentId": "engineering", "trigger": "cron"}),
+            record("prompt.submitted", 1, {"prompt": "run the heartbeat"}),
+            record(
+                "model.completed",
+                2,
+                {"timedOut": True, "assistantTexts": []},
+            ),
+            record("session.ended", 3, {"status": "error"}),
+        ]
+        path = tmp_path / "run.trajectory.jsonl"
+        path.write_text(
+            "\n".join(_json.dumps(r) for r in records) + "\n", encoding="utf-8"
+        )
+
+        summary = build_signature_summary_from_session(path)
+
+        assert summary is not None
+        assert summary.schema_version
+        assert isinstance(summary.matches, list)
+
+    def test_sniff_tolerates_corrupt_leading_lines(self, tmp_path):
+        """A banner or corrupt first line must not force a false claude_code
+        classification (reviewer repro on PR 140)."""
+        path = tmp_path / "session.jsonl"
+        path.write_text(
+            "not json\n" + TestDetectOpenClawTrajectory._RECORD + "\n",
+            encoding="utf-8",
+        )
+
+        assert detect_parser(path) == "openclaw_trajectory"
+
+    def test_sniff_corrupt_line_then_claude_code_record_stays_claude_code(
+        self, tmp_path
+    ):
+        path = tmp_path / "session.jsonl"
+        path.write_text(
+            'not json\n{"type":"assistant","sessionId":"s","message":{}}\n',
+            encoding="utf-8",
+        )
+
+        assert detect_parser(path) == "claude_code"
+
+    def test_sniff_gives_up_after_line_limit(self, tmp_path):
+        path = tmp_path / "session.jsonl"
+        path.write_text(
+            "garbage\n" * 30 + TestDetectOpenClawTrajectory._RECORD + "\n",
+            encoding="utf-8",
+        )
+
+        assert detect_parser(path) == "claude_code"
