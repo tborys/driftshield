@@ -135,6 +135,160 @@ def test_clean_run_has_no_matches() -> None:
     assert out["signature_summary"]["matches"] == []
 
 
+# --------------------------------------------------------------------------- #
+# Trajectory tool-failure extraction parity (intel#228)
+#
+# A genuine structural tool failure in an OpenClaw trajectory must reach the same
+# verdict a claude_code transcript with the equivalent failure reaches. The real
+# captured prod payload is a user abort, which stays honestly unclassified.
+# --------------------------------------------------------------------------- #
+
+
+def _trajectory(events: list[dict]) -> str:
+    return json.dumps(
+        {
+            "events": events,
+            "metadata": {"environment": "test"},
+            "session_id": "00000000-0000-0000-0000-0000000000aa",
+        }
+    )
+
+
+def _traj_record(seq: int, record_type: str, data: dict) -> dict:
+    return {
+        "ts": f"2026-05-03T05:25:{seq:02d}.000Z",
+        "seq": seq,
+        "type": record_type,
+        "data": data,
+        "runId": "00000000-0000-0000-0000-0000000000bb",
+        "source": "runtime",
+        "modelId": "gpt-5.4",
+        "traceId": "00000000-0000-0000-0000-0000000000aa",
+        "schemaVersion": 1,
+        "sessionId": "00000000-0000-0000-0000-0000000000aa",
+        "sessionKey": "k",
+        "sourceSeq": seq,
+        "modelApi": "openai-codex-responses",
+    }
+
+
+def _claude_code_lines(lines: list[dict]) -> str:
+    return "\n".join(json.dumps(line) for line in lines)
+
+
+# The same logical failure expressed in both formats: a tool the runtime ran
+# returned an error, then the run claimed completion without recovering.
+_TRAJECTORY_TOOL_FAILURE = _trajectory(
+    [
+        _traj_record(4, "prompt.submitted", {"prompt": "Run the build and finish."}),
+        _traj_record(5, "model.completed", {"assistantTexts": ["Running the build."]}),
+        _traj_record(
+            6,
+            "trace.artifacts",
+            {
+                "finalStatus": "success",
+                "toolMetas": [{"toolName": "exec", "meta": "make build", "isError": True}],
+            },
+        ),
+        _traj_record(7, "model.completed", {"assistantTexts": ["All done, build complete."]}),
+        _traj_record(8, "session.ended", {"status": "success"}),
+    ]
+)
+
+_CLAUDE_CODE_TOOL_FAILURE = _claude_code_lines(
+    [
+        {
+            "sessionId": "s1",
+            "type": "user",
+            "timestamp": "2026-03-01T11:00:00Z",
+            "message": {"role": "user", "content": [{"type": "text", "text": "Run the build and finish."}]},
+        },
+        {
+            "sessionId": "s1",
+            "type": "assistant",
+            "timestamp": "2026-03-01T11:00:01Z",
+            "message": {"model": "c", "content": [{"type": "tool_use", "id": "t1", "name": "bash", "input": {"command": "make build"}}]},
+        },
+        {
+            "sessionId": "s1",
+            "type": "user",
+            "timestamp": "2026-03-01T11:00:02Z",
+            "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "is_error": True, "content": "error: build failed"}]},
+        },
+        {
+            "sessionId": "s1",
+            "type": "assistant",
+            "timestamp": "2026-03-01T11:00:03Z",
+            "message": {"model": "c", "content": [{"type": "text", "text": "All done, build complete."}]},
+        },
+    ]
+)
+
+
+def test_trajectory_tool_failure_qualifies_and_matches() -> None:
+    out = analyse(_TRAJECTORY_TOOL_FAILURE)
+    assert out["source_format"] == "openclaw_trajectory"
+    assert out["qualification"]["qualification_state"] == "qualified_failure"
+    matches = out["signature_summary"]["matches"]
+    assert len(matches) >= 1
+    mechanisms = {m["signature_id"] for m in matches}
+    assert "mechanism:tool_misuse" in mechanisms
+
+
+def test_trajectory_and_claude_code_tool_failure_reach_same_state() -> None:
+    # Verdict parity across parsers: the same logical failure must produce the
+    # same qualification_state, whichever format carried it.
+    traj_out = analyse(_TRAJECTORY_TOOL_FAILURE)
+    cc_out = analyse(_CLAUDE_CODE_TOOL_FAILURE, source="claude_code")
+    assert (
+        traj_out["qualification"]["qualification_state"]
+        == cc_out["qualification"]["qualification_state"]
+        == "qualified_failure"
+    )
+    assert {m["signature_id"] for m in cc_out["signature_summary"]["matches"]} >= {"mechanism:tool_misuse"}
+    assert {m["signature_id"] for m in traj_out["signature_summary"]["matches"]} >= {"mechanism:tool_misuse"}
+
+
+def test_trajectory_abort_stays_unclassified_with_no_match() -> None:
+    # An aborted run carries is_error on the model/session events but no failed
+    # tool. It must stay honestly unclassified, never a fabricated tool match.
+    aborted = _trajectory(
+        [
+            _traj_record(4, "prompt.submitted", {"prompt": "do x"}),
+            _traj_record(
+                5,
+                "model.completed",
+                {"aborted": True, "externalAbort": True, "error": "prompt error", "is_error": True},
+            ),
+            _traj_record(6, "trace.artifacts", {"finalStatus": "error", "toolMetas": []}),
+            _traj_record(7, "session.ended", {"status": "error", "error": "run aborted", "aborted": True}),
+        ]
+    )
+    out = analyse(aborted)
+    assert out["qualification"]["qualification_state"] == "unclassified"
+    assert out["signature_summary"]["matches"] == []
+
+
+def test_trajectory_thin_telemetry_stays_unclassified() -> None:
+    # A thin success trajectory (telemetry, no failed tool) carries no material
+    # delta and must not be forced into a match.
+    thin = _trajectory(
+        [
+            _traj_record(4, "prompt.submitted", {"prompt": "summarise the log"}),
+            _traj_record(5, "model.completed", {"assistantTexts": ["Summary done."]}),
+            _traj_record(
+                6,
+                "trace.artifacts",
+                {"finalStatus": "success", "toolMetas": [{"toolName": "read", "meta": "open log"}]},
+            ),
+            _traj_record(7, "session.ended", {"status": "success"}),
+        ]
+    )
+    out = analyse(thin)
+    assert out["qualification"]["qualification_state"] == "unclassified"
+    assert out["signature_summary"]["matches"] == []
+
+
 @pytest.mark.parametrize(
     "source", ["codex_desktop", "claude_desktop"]
 )

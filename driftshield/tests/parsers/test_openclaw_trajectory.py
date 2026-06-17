@@ -160,6 +160,83 @@ class TestOpenClawTrajectoryParser:
         assert ended.outputs["error"] == "session ended with status error"
         assert ended.failure_context is not None
 
+    def test_tool_meta_is_error_surfaces_failure_context(self):
+        # A toolMetas entry the runtime marked as failed must reach the canonical
+        # event as a failed tool, not a clean pending call. Without this the
+        # deterministic matcher never sees a failed tool_result and a genuine
+        # trajectory tool failure stays unclassified (intel#228).
+        records = [
+            _record("prompt.submitted", 0, {"prompt": "run the build"}),
+            _record(
+                "trace.artifacts",
+                1,
+                {
+                    "finalStatus": "success",
+                    "toolMetas": [
+                        {"toolName": "exec", "meta": "make build", "isError": True},
+                    ],
+                },
+            ),
+        ]
+        events = OpenClawTrajectoryParser().parse(
+            "\n".join(json.dumps(record) for record in records)
+        )
+
+        tool = next(e for e in events if e.action == "exec")
+        assert tool.event_type == EventType.TOOL_CALL
+        assert tool.outputs.get("is_error") is True
+        assert tool.failure_context is not None
+        assert tool.failure_context["status"] == "error"
+
+    def test_tool_meta_error_string_surfaces_failure_context(self):
+        # The runtime may stamp the failure as an explicit error string rather
+        # than a boolean flag. Either structural signal must surface.
+        records = [
+            _record(
+                "trace.artifacts",
+                0,
+                {
+                    "finalStatus": "success",
+                    "toolMetas": [
+                        {"toolName": "exec", "meta": "run", "error": "exit code 1"},
+                    ],
+                },
+            ),
+        ]
+        events = OpenClawTrajectoryParser().parse(
+            "\n".join(json.dumps(record) for record in records)
+        )
+
+        tool = next(e for e in events if e.action == "exec")
+        assert tool.outputs.get("error") == "exit code 1"
+        assert tool.outputs.get("is_error") is True
+        assert tool.failure_context is not None
+
+    def test_successful_tool_meta_carries_no_failure_context(self):
+        # Tools the runtime did not mark as failed must stay clean: surfacing a
+        # failure only on the failed entry, never on a success.
+        records = [
+            _record(
+                "trace.artifacts",
+                0,
+                {
+                    "finalStatus": "success",
+                    "toolMetas": [
+                        {"toolName": "exec", "meta": "ls", "isError": False},
+                        {"toolName": "read", "meta": "open file"},
+                    ],
+                },
+            ),
+        ]
+        events = OpenClawTrajectoryParser().parse(
+            "\n".join(json.dumps(record) for record in records)
+        )
+
+        for action in ("exec", "read"):
+            tool = next(e for e in events if e.action == action)
+            assert tool.failure_context is None
+            assert "is_error" not in tool.outputs
+
     def test_failed_final_status_emits_run_outcome_event(self):
         records = [
             _record(
