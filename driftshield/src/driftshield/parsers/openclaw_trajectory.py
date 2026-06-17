@@ -229,6 +229,13 @@ class OpenClawTrajectoryParser:
                 meta = entry.get("meta")
                 if isinstance(meta, str) and meta.strip():
                     inputs["meta"] = meta.strip()
+                # A toolMetas entry the runtime marked as failed must reach the
+                # canonical event as a failed tool, not a clean pending call.
+                # ``normalize_events`` derives ``failure_context`` from
+                # outputs.error / outputs.is_error, which in turn drives the
+                # deterministic matcher's failed-tool path. The signal is the
+                # runtime's own structural flag/string, not scrubbed free text.
+                outputs = self._tool_meta_outputs(entry)
                 event = self._event(
                     session_id=session_id,
                     timestamp=timestamp + timedelta(microseconds=offset),
@@ -237,7 +244,7 @@ class OpenClawTrajectoryParser:
                     action=tool_name,
                     parent_id=parent_id,
                     inputs=inputs,
-                    outputs={},
+                    outputs=outputs,
                     semantic_category=self.TOOL_CATEGORY_MAP.get(action_key, "other"),
                 )
                 events.append(event)
@@ -288,6 +295,50 @@ class OpenClawTrajectoryParser:
             outputs=outputs,
             semantic_category="session",
         )
+
+    @staticmethod
+    def _tool_meta_outputs(entry: dict[str, Any]) -> dict[str, Any]:
+        """Surface a per-tool failure from a toolMetas entry, if present.
+
+        The runtime marks a failed tool either with an ``isError`` boolean, an
+        explicit ``error`` / ``errorMessage`` string, or a non-success
+        ``status`` / non-zero ``exitCode``. Any of these is a structural failure
+        signal that survives redaction. A successful tool returns no outputs, so
+        it stays a clean call and carries no failure_context.
+        """
+        error = OpenClawTrajectoryParser._tool_meta_error_text(entry)
+        is_error = entry.get("isError") is True or error is not None
+        status = entry.get("status")
+        if (
+            not is_error
+            and isinstance(status, str)
+            and status.strip()
+            and status.strip().lower() not in {"success", "ok", "completed", "done"}
+        ):
+            is_error = True
+        exit_code = entry.get("exitCode")
+        if not is_error and isinstance(exit_code, int) and exit_code != 0:
+            is_error = True
+
+        if not is_error:
+            return {}
+
+        outputs: dict[str, Any] = {"is_error": True}
+        if error is None and isinstance(status, str) and status.strip():
+            error = f"tool reported status {status.strip()}"
+        if error is None and isinstance(exit_code, int) and exit_code != 0:
+            error = f"tool exited with code {exit_code}"
+        if error is not None:
+            outputs["error"] = error
+        return outputs
+
+    @staticmethod
+    def _tool_meta_error_text(entry: dict[str, Any]) -> str | None:
+        for key in ("error", "errorMessage"):
+            value = entry.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return None
 
     @staticmethod
     def _failure_reason(data: dict[str, Any]) -> str | None:

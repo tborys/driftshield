@@ -397,6 +397,23 @@ def _refine_delta_records(
             }
         )
 
+    if "tool_execution_failure" in delta_types and DeltaType.INCOMPLETE_EXECUTION.value not in seen:
+        seen.add(DeltaType.INCOMPLETE_EXECUTION.value)
+        failed_tool_ref = next(
+            (str(event.id) for event in result.events if _is_failed_tool_event(event) and str(event.id) in known_ids),
+            None,
+        )
+        records.append(
+            {
+                "delta_type": DeltaType.INCOMPLETE_EXECUTION.value,
+                "delta_severity": DeltaSeverity.MATERIAL.value,
+                "expected_ref": _resolve_ref(failed_tool_ref, known_ids),
+                "actual_ref": None,
+                "delta_summary": "A tool reported a failure that the run did not recover before completing.",
+                "delta_confidence": delta_confidence,
+            }
+        )
+
     if not records:
         # A material delta_type was present but did not map to a per-event flag
         # (for example, an unresolved ambiguity). Emit one honest record.
@@ -1001,9 +1018,56 @@ def _delta_types(result: AnalysisResult) -> list[str]:
         delta_types.append("retrieval_failure_or_omission")
     if summary.get("policy_divergence"):
         delta_types.append("wrong_action")
+    if _unrecovered_tool_failure(result.events):
+        delta_types.append("tool_execution_failure")
     if result.candidate_break_point and not result.candidate_break_point.is_identified and result.flagged_events:
         delta_types.append("unresolved_ambiguity")
     return sorted(set(delta_types))
+
+
+def _is_failed_tool_event(event: CanonicalEvent) -> bool:
+    """A tool/handoff call the run itself reported as failed.
+
+    Keyed on the structural tool outcome (``tool_activity.status`` /
+    ``failure_context`` set by normalisation from the run's own error flag), not
+    on scrubbed free text. An aborted or timed-out model turn lands on an
+    OUTPUT/system event, not a tool event, so it is not counted here.
+    """
+    if event.event_type not in {EventType.TOOL_CALL, EventType.HANDOFF}:
+        return False
+    if (event.tool_activity or {}).get("status") == "error":
+        return True
+    return bool(event.failure_context and event.failure_context.get("status") == "error")
+
+
+def _unrecovered_tool_failure(events: list[CanonicalEvent]) -> bool:
+    """True when a failed tool call was not followed by a recovering tool call.
+
+    A failed tool the run recovered from is not a material delta, but recovery
+    needs structural evidence: a later tool that actually *completed*
+    (``tool_activity.status == "completed"``), not merely a later tool that was
+    present. A trajectory's successful toolMetas normalise to ``pending`` (the
+    runtime carries no per-tool result body), so a failed trajectory tool
+    followed by more pending tools is still an unrecovered failure, not a
+    recovery. A failed tool with no later completed tool is a genuine execution
+    failure: the structural shape the deterministic matcher recognises as
+    ``tool_misuse``. Surfacing it as a material delta lets the run qualify, the
+    same way a claude_code transcript with the equivalent tool failure does.
+    """
+    last_failure_index: int | None = None
+    for index, event in enumerate(events):
+        if _is_failed_tool_event(event):
+            last_failure_index = index
+    if last_failure_index is None:
+        return False
+    for event in events[last_failure_index + 1 :]:
+        if (
+            event.event_type in {EventType.TOOL_CALL, EventType.HANDOFF}
+            and not _is_failed_tool_event(event)
+            and (event.tool_activity or {}).get("status") == "completed"
+        ):
+            return False
+    return True
 
 
 def _severity_hint(result: AnalysisResult) -> str:
