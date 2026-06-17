@@ -1041,14 +1041,18 @@ def _is_failed_tool_event(event: CanonicalEvent) -> bool:
 
 
 def _unrecovered_tool_failure(events: list[CanonicalEvent]) -> bool:
-    """True when a failed tool call was not followed by a successful tool call.
+    """True when a failed tool call was not followed by a recovering tool call.
 
-    A failed tool the run recovered from (a later successful tool invocation) is
-    not a material delta. A failed tool with no later successful tool is a
-    genuine, unrecovered execution failure: the structural shape the
-    deterministic matcher recognises as ``tool_misuse``. Surfacing it as a
-    material delta lets the run qualify, the same way a claude_code transcript
-    with the equivalent tool failure does.
+    A failed tool the run recovered from is not a material delta, but recovery
+    needs structural evidence: a later tool that actually *completed*
+    (``tool_activity.status == "completed"``), not merely a later tool that was
+    present. A trajectory's successful toolMetas normalise to ``pending`` (the
+    runtime carries no per-tool result body), so a failed trajectory tool
+    followed by more pending tools is still an unrecovered failure, not a
+    recovery. A failed tool with no later completed tool is a genuine execution
+    failure: the structural shape the deterministic matcher recognises as
+    ``tool_misuse``. Surfacing it as a material delta lets the run qualify, the
+    same way a claude_code transcript with the equivalent tool failure does.
     """
     last_failure_index: int | None = None
     for index, event in enumerate(events):
@@ -1057,7 +1061,11 @@ def _unrecovered_tool_failure(events: list[CanonicalEvent]) -> bool:
     if last_failure_index is None:
         return False
     for event in events[last_failure_index + 1 :]:
-        if event.event_type in {EventType.TOOL_CALL, EventType.HANDOFF} and not _is_failed_tool_event(event):
+        if (
+            event.event_type in {EventType.TOOL_CALL, EventType.HANDOFF}
+            and not _is_failed_tool_event(event)
+            and (event.tool_activity or {}).get("status") == "completed"
+        ):
             return False
     return True
 

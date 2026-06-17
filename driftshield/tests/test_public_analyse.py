@@ -289,6 +289,76 @@ def test_trajectory_thin_telemetry_stays_unclassified() -> None:
     assert out["signature_summary"]["matches"] == []
 
 
+def test_trajectory_failed_tool_followed_by_pending_tool_still_qualifies() -> None:
+    # Regression: a trajectory's successful toolMetas normalise to pending (no
+    # per-tool result body). A failed tool followed by another, merely-present
+    # pending tool must NOT be read as recovery; the genuine failure must still
+    # qualify. (Reviewer finding on the first cut of this fix.)
+    failed_then_pending = _trajectory(
+        [
+            _traj_record(4, "prompt.submitted", {"prompt": "Build, then read the log."}),
+            _traj_record(
+                6,
+                "trace.artifacts",
+                {
+                    "finalStatus": "success",
+                    "toolMetas": [
+                        {"toolName": "exec", "meta": "make build", "isError": True},
+                        {"toolName": "read", "meta": "open log"},
+                    ],
+                },
+            ),
+            _traj_record(7, "model.completed", {"assistantTexts": ["All done."]}),
+            _traj_record(8, "session.ended", {"status": "success"}),
+        ]
+    )
+    out = analyse(failed_then_pending)
+    assert out["qualification"]["qualification_state"] == "qualified_failure"
+    assert {m["signature_id"] for m in out["signature_summary"]["matches"]} >= {"mechanism:tool_misuse"}
+
+
+def test_claude_code_failed_tool_recovered_by_completed_tool_is_unclassified() -> None:
+    # The recovery exclusion is real, but recovery needs a structurally
+    # completed tool, not a merely-present one. A failed tool followed by a tool
+    # that actually returned a successful result is recovered, not a delta.
+    recovered = _claude_code_lines(
+        [
+            {
+                "sessionId": "s1",
+                "type": "assistant",
+                "timestamp": "2026-03-01T11:00:01Z",
+                "message": {"model": "c", "content": [{"type": "tool_use", "id": "t1", "name": "bash", "input": {"command": "make build"}}]},
+            },
+            {
+                "sessionId": "s1",
+                "type": "user",
+                "timestamp": "2026-03-01T11:00:02Z",
+                "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "is_error": True, "content": "error: build failed"}]},
+            },
+            {
+                "sessionId": "s1",
+                "type": "assistant",
+                "timestamp": "2026-03-01T11:00:03Z",
+                "message": {"model": "c", "content": [{"type": "tool_use", "id": "t2", "name": "bash", "input": {"command": "make build --fix"}}]},
+            },
+            {
+                "sessionId": "s1",
+                "type": "user",
+                "timestamp": "2026-03-01T11:00:04Z",
+                "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t2", "content": "build succeeded"}]},
+            },
+            {
+                "sessionId": "s1",
+                "type": "assistant",
+                "timestamp": "2026-03-01T11:00:05Z",
+                "message": {"model": "c", "content": [{"type": "text", "text": "Fixed and built."}]},
+            },
+        ]
+    )
+    out = analyse(recovered, source="claude_code")
+    assert out["qualification"]["qualification_state"] == "unclassified"
+
+
 @pytest.mark.parametrize(
     "source", ["codex_desktop", "claude_desktop"]
 )
