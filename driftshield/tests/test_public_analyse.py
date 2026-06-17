@@ -23,6 +23,19 @@ _CONSTRAINT_VIOLATION = FIXTURES / "dogfood" / "constraint_violation_session.jso
 _POLICY_DIVERGENCE = FIXTURES / "dogfood" / "policy_divergence_session.jsonl"
 _CLEAN = FIXTURES / "dogfood" / "clean_session.jsonl"
 
+# One fixture per supported parser, mapping the file to the source name
+# ``auto`` detection must return. Pins the "any supported source + auto-detect"
+# contract so a new parser added to cli.parsers without a sniffer is caught.
+_SOURCE_FIXTURES = {
+    "openclaw_trajectory": _REAL_TRAJECTORY,
+    "claude_code": _CLAUDE_CODE,
+    "codex_cli": FIXTURES / "sample_codex_cli_session.jsonl",
+    "codex_desktop": FIXTURES / "sample_codex_desktop_session.json",
+    "claude_desktop": FIXTURES / "sample_claude_desktop_session.json",
+    "crewai": FIXTURES / "sample_crewai_session.json",
+    "langchain": FIXTURES / "sample_langchain_session.json",
+}
+
 
 # --------------------------------------------------------------------------- #
 # Content based source detection (the cloud has no file path to key on)
@@ -52,6 +65,30 @@ def test_detect_returns_none_for_unrecognised_content() -> None:
     assert detect_source('{"hello": "world"}') is None
     assert detect_source("not json at all") is None
     assert detect_source("") is None
+
+
+@pytest.mark.parametrize("expected,fixture", list(_SOURCE_FIXTURES.items()))
+def test_auto_detect_covers_every_supported_parser(expected: str, fixture: Path) -> None:
+    # The "any supported source + auto-detect" contract: every parser in
+    # cli.parsers must be reachable via source="auto", not just the three
+    # original detections. A supported source that falls through to raw is a
+    # silent failure (the bug this whole change set fixes).
+    body = fixture.read_text()
+    assert detect_source(body) == expected
+    out = analyse(body)  # auto
+    assert out["source_format"] == expected
+    assert out["event_count"] > 0  # parsed, not degraded to raw/not_classifiable
+
+
+def test_auto_detect_set_matches_parser_registry() -> None:
+    # Guard against adding a parser without a sniffer + fixture here.
+    from driftshield.cli.parsers import PARSERS
+
+    # ``openclaw`` shares the session-transcript path; it is exercised via the
+    # detection unit test rather than a separate fixture.
+    covered = set(_SOURCE_FIXTURES) | {"openclaw"}
+    missing = set(PARSERS) - covered
+    assert not missing, f"parsers without auto-detect coverage: {sorted(missing)}"
 
 
 # --------------------------------------------------------------------------- #
@@ -96,6 +133,23 @@ def test_policy_divergence_run_qualifies_and_matches() -> None:
 def test_clean_run_has_no_matches() -> None:
     out = analyse(_CLEAN.read_text())
     assert out["signature_summary"]["matches"] == []
+
+
+@pytest.mark.parametrize(
+    "source", ["codex_desktop", "claude_desktop"]
+)
+def test_desktop_single_object_parses_when_pretty_printed(source: str) -> None:
+    # Regression: LocalChatTranscriptParser.parse() previously routed a
+    # pretty-printed single JSON object (newline present) to the JSONL path and
+    # raised. A content based caller (analyse) must handle both pretty and
+    # minified single-object transcripts.
+    pretty = _SOURCE_FIXTURES[source].read_text()
+    assert "\n" in pretty  # the fixture is pretty-printed
+    out_pretty = analyse(pretty, source=source)
+    minified = json.dumps(json.loads(pretty), separators=(",", ":"))
+    out_min = analyse(minified, source=source)
+    assert out_pretty["event_count"] > 0
+    assert out_pretty["event_count"] == out_min["event_count"]
 
 
 # --------------------------------------------------------------------------- #

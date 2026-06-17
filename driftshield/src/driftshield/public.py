@@ -113,32 +113,85 @@ def _scan_json_objects(lines: list[str]) -> list[dict[str, Any]]:
     return objects
 
 
+def _detect_single_document(whole: Any) -> str | None:
+    """Detect formats that ship as one JSON document (object or array).
+
+    Covers the OpenClaw trajectory wrapper, the LangChain run array, and the
+    CrewAI / Codex-desktop / Claude-desktop single-object transcripts. JSONL
+    formats return ``None`` here and are handled by the line scanner.
+    """
+    # LangChain: a top-level array of run objects carrying run_type + trace_id.
+    if isinstance(whole, list):
+        first = next((e for e in whole if isinstance(e, dict)), None)
+        if first is not None and (
+            "run_type" in first or ("trace_id" in first and "inputs" in first)
+        ):
+            return "langchain"
+        return None
+
+    if not isinstance(whole, dict):
+        return None
+
+    # OpenClaw trajectory wrapper: {"events": [ {type: session.started, ...} ]}.
+    events = whole.get("events")
+    if isinstance(events, list) and events:
+        first = next((e for e in events if isinstance(e, dict)), None)
+        if first is not None and (
+            first.get("type") in _TRAJECTORY_EVENT_TYPES
+            or _OPENCLAW_TRAJECTORY_KEYS.issubset(first.keys())
+        ):
+            return "openclaw_trajectory"
+
+    # CrewAI: a crew run object with tasks[] keyed on run_id / crew_name.
+    if "tasks" in whole and ("crew_name" in whole or "run_id" in whole):
+        return "crewai"
+
+    # Codex / Claude desktop: a single-session object with a messages[] array.
+    # They differ by message content shape: desktop-codex uses a content LIST of
+    # {type,text} parts; claude-desktop uses a content STRING. ``session_id``
+    # leans Claude desktop, a bare ``id`` leans Codex desktop, but content shape
+    # is the reliable discriminator.
+    messages = whole.get("messages")
+    if isinstance(messages, list) and messages:
+        first_msg = next((m for m in messages if isinstance(m, dict)), None)
+        if first_msg is not None and "role" in first_msg:
+            sample = next(
+                (m.get("content") for m in messages if isinstance(m, dict) and m.get("content") is not None),
+                None,
+            )
+            if isinstance(sample, list):
+                return "codex_desktop"
+            if isinstance(sample, str):
+                return "claude_desktop"
+            # Fall back to the id key when no content is present to inspect.
+            return "claude_desktop" if "session_id" in whole else "codex_desktop"
+
+    return None
+
+
 def detect_source(content: str) -> str | None:
     """Detect the transcript source from content alone.
 
     Returns a parser name from ``cli.parsers.PARSERS`` or ``None`` when no
     format is recognised (the caller then treats the body as ``raw``). Content
     based counterpart to ``cli.parsers.detect_parser``; the cloud has no file
-    path to key on.
+    path to key on. Covers every parser in ``cli.parsers.PARSERS`` so
+    ``analyse(..., source="auto")`` never silently degrades a supported source
+    to ``raw``.
     """
     text = content.strip()
     if not text:
         return None
 
-    # 1. Single object OpenClaw trajectory wrapper: {"events": [ {type: ...} ]}.
+    # 1. Single JSON document formats (object or array).
     try:
         whole = json.loads(text)
     except json.JSONDecodeError:
         whole = None
-    if isinstance(whole, dict):
-        events = whole.get("events")
-        if isinstance(events, list) and events:
-            first = next((e for e in events if isinstance(e, dict)), None)
-            if first is not None and (
-                first.get("type") in _TRAJECTORY_EVENT_TYPES
-                or _OPENCLAW_TRAJECTORY_KEYS.issubset(first.keys())
-            ):
-                return "openclaw_trajectory"
+    if whole is not None:
+        single = _detect_single_document(whole)
+        if single is not None:
+            return single
 
     # 2. JSONL formats. Scan several leading objects; a transcript can open with
     # a non-identifying record before the line that names the format.
@@ -155,8 +208,8 @@ def detect_source(content: str) -> str | None:
         return "openclaw_trajectory"
 
     # Claude Code: records keyed on sessionId + parentUuid + message, or its
-    # distinctive line types. Checked before the bare-type OpenClaw probe
-    # because Claude Code also emits ``user``/``assistant`` types.
+    # distinctive line types. Checked before the bare-type probes because Claude
+    # Code also emits ``user``/``assistant`` types.
     if (
         types & {"file-history-snapshot", "progress", "summary"}
         or any(
@@ -168,8 +221,15 @@ def detect_source(content: str) -> str | None:
     ):
         return "claude_code"
 
+    # Codex CLI: JSONL with a session_meta record or message lines keyed on
+    # session_id (not Claude Code's sessionId/parentUuid envelope).
+    if "session_meta" in types or any(
+        "session_id" in obj and obj.get("type") in {"session_meta", "message"} for obj in objects
+    ):
+        return "codex_cli"
+
     # OpenClaw session transcript: lifecycle/message records keyed on a bare
-    # type, without Claude Code's sessionId/parentUuid envelope.
+    # type, without the Codex/Claude envelopes above.
     if types & {"session", "message", "custom"}:
         return "openclaw"
 
