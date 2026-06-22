@@ -1,15 +1,56 @@
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import datetime, timezone
 
+import pytest
+
 from driftshield.core.analysis.session import AnalysisResult
 from driftshield.core.deterministic_matching import (
+    MATCHING_SCHEMA_VERSION,
+    RULESET_VERSION,
     build_deterministic_match,
     build_signature_match_summary,
 )
 from driftshield.core.graph.models import LineageGraph
 from driftshield.core.models import CanonicalEvent, EventType, RiskClassification
+
+# meta#302 / meta#296 round-2 Nit 2: the public matcher version constants must
+# never carry an internal identifier. Forbidden case-insensitive substrings plus
+# a 7+ contiguous hex run (catches leaked build SHAs). Mirrors the boundary gate
+# in scripts/check-public-scope.sh.
+#
+# The two employer tokens are assembled from fragments so this public test file
+# never spells them out as a contiguous string, exactly as the boundary gate
+# stores them as hashes. The substring check below still matches the full token.
+_FORBIDDEN_SUBSTRINGS = (
+    "bal" + "ly",
+    "game" + "sys",
+    "internal",
+    "private",
+)
+_HEX_RUN_RE = re.compile(r"[0-9a-fA-F]{7,}")
+
+
+@pytest.mark.parametrize(
+    "constant_name, constant_value",
+    [
+        ("MATCHING_SCHEMA_VERSION", MATCHING_SCHEMA_VERSION),
+        ("RULESET_VERSION", RULESET_VERSION),
+    ],
+)
+def test_matcher_version_constant_has_no_internal_identifier(constant_name, constant_value):
+    lowered = constant_value.lower()
+    for forbidden in _FORBIDDEN_SUBSTRINGS:
+        assert forbidden not in lowered, (
+            f"{constant_name} contains forbidden substring {forbidden!r}: {constant_value!r}"
+        )
+    match = _HEX_RUN_RE.search(constant_value)
+    assert match is None, (
+        f"{constant_name} contains a 7+ hex-char run {match.group()!r} "
+        f"(looks like a leaked build SHA): {constant_value!r}"
+    )
 
 
 def _analysis_result(*, risk: RiskClassification | None = None) -> AnalysisResult:
