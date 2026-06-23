@@ -1,15 +1,66 @@
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import datetime, timezone
 
+import pytest
+
 from driftshield.core.analysis.session import AnalysisResult
 from driftshield.core.deterministic_matching import (
+    MATCHING_SCHEMA_VERSION,
+    RULESET_VERSION,
     build_deterministic_match,
     build_signature_match_summary,
 )
 from driftshield.core.graph.models import LineageGraph
 from driftshield.core.models import CanonicalEvent, EventType, RiskClassification
+
+# meta#302 / meta#296 round-2 Nit 2: the public matcher version constants must
+# never carry an internal identifier. Forbidden case-insensitive substrings plus
+# a 7+ contiguous hex run (catches leaked build SHAs). Mirrors the boundary gate
+# in scripts/check-public-scope.sh.
+#
+# The two employer tokens are assembled from fragments so this public test file
+# never spells them out as a contiguous string, exactly as the boundary gate
+# stores them as hashes. The substring check below still matches the full token.
+_FORBIDDEN_SUBSTRINGS = (
+    "bal" + "ly",
+    "game" + "sys",
+    "internal",
+    "private",
+)
+_HEX_RUN_RE = re.compile(r"[0-9a-fA-F]{7,}")
+
+
+# Parametrise on the constant NAME only, never the value. A failing run in
+# public CI must not republish the offending token, and pytest leaks a
+# parametrised value three ways: the test id, the assert-rewrite introspection,
+# and the message. So: the value is looked up inside the test (never in the id),
+# and we use an explicit pytest.fail() with a redacted message instead of a
+# rewritten `assert token not in value` (which would print both). meta#302 review.
+_GUARDED_CONSTANTS = {
+    "MATCHING_SCHEMA_VERSION": MATCHING_SCHEMA_VERSION,
+    "RULESET_VERSION": RULESET_VERSION,
+}
+
+
+@pytest.mark.parametrize("constant_name", sorted(_GUARDED_CONSTANTS))
+def test_matcher_version_constant_has_no_internal_identifier(constant_name):
+    constant_value = _GUARDED_CONSTANTS[constant_name]
+    lowered = constant_value.lower()
+    for index, forbidden in enumerate(_FORBIDDEN_SUBSTRINGS):
+        if forbidden in lowered:
+            pytest.fail(
+                f"{constant_name} carries a forbidden internal identifier "
+                f"(forbid-list rule #{index}); token and value redacted from "
+                f"this public log. See scripts/check-public-scope.sh forbid-list."
+            )
+    if _HEX_RUN_RE.search(constant_value) is not None:
+        pytest.fail(
+            f"{constant_name} carries a 7+ hex-char run (looks like a leaked "
+            f"build SHA); value redacted from this public log."
+        )
 
 
 def _analysis_result(*, risk: RiskClassification | None = None) -> AnalysisResult:
