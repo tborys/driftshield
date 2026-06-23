@@ -175,17 +175,23 @@ def check_matcher_constants() -> None:
 
         value = node.value.value
         lowered = value.lower()
+        # Never echo the matched token or value: this output lands in public CI
+        # logs, and printing the identifier would publish the very string the
+        # guard keeps off public surfaces (meta#302 review). Report the constant
+        # and the violation category only.
         for name in sorted(guarded):
-            for forbidden in MATCHER_FORBIDDEN_SUBSTRINGS:
+            for index, forbidden in enumerate(MATCHER_FORBIDDEN_SUBSTRINGS):
                 if forbidden in lowered:
                     violations.append(
                         (MATCHER_CONSTANTS_FILE, node.lineno,
-                         f"matcher constant {name} carries internal identifier '{forbidden}'")
+                         f"matcher constant {name} carries a forbidden internal "
+                         f"identifier (forbid-list rule #{index}); token redacted")
                     )
             if MATCHER_HEX_RUN_RE.search(value):
                 violations.append(
                     (MATCHER_CONSTANTS_FILE, node.lineno,
-                     f"matcher constant {name} carries a 7+ hex-char run (looks like a build SHA)")
+                     f"matcher constant {name} carries a 7+ hex-char run "
+                     f"(looks like a build SHA); value redacted")
                 )
 
 

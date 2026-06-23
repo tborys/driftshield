@@ -33,24 +33,34 @@ _FORBIDDEN_SUBSTRINGS = (
 _HEX_RUN_RE = re.compile(r"[0-9a-fA-F]{7,}")
 
 
-@pytest.mark.parametrize(
-    "constant_name, constant_value",
-    [
-        ("MATCHING_SCHEMA_VERSION", MATCHING_SCHEMA_VERSION),
-        ("RULESET_VERSION", RULESET_VERSION),
-    ],
-)
-def test_matcher_version_constant_has_no_internal_identifier(constant_name, constant_value):
+# Parametrise on the constant NAME only, never the value. A failing run in
+# public CI must not republish the offending token, and pytest leaks a
+# parametrised value three ways: the test id, the assert-rewrite introspection,
+# and the message. So: the value is looked up inside the test (never in the id),
+# and we use an explicit pytest.fail() with a redacted message instead of a
+# rewritten `assert token not in value` (which would print both). meta#302 review.
+_GUARDED_CONSTANTS = {
+    "MATCHING_SCHEMA_VERSION": MATCHING_SCHEMA_VERSION,
+    "RULESET_VERSION": RULESET_VERSION,
+}
+
+
+@pytest.mark.parametrize("constant_name", sorted(_GUARDED_CONSTANTS))
+def test_matcher_version_constant_has_no_internal_identifier(constant_name):
+    constant_value = _GUARDED_CONSTANTS[constant_name]
     lowered = constant_value.lower()
-    for forbidden in _FORBIDDEN_SUBSTRINGS:
-        assert forbidden not in lowered, (
-            f"{constant_name} contains forbidden substring {forbidden!r}: {constant_value!r}"
+    for index, forbidden in enumerate(_FORBIDDEN_SUBSTRINGS):
+        if forbidden in lowered:
+            pytest.fail(
+                f"{constant_name} carries a forbidden internal identifier "
+                f"(forbid-list rule #{index}); token and value redacted from "
+                f"this public log. See scripts/check-public-scope.sh forbid-list."
+            )
+    if _HEX_RUN_RE.search(constant_value) is not None:
+        pytest.fail(
+            f"{constant_name} carries a 7+ hex-char run (looks like a leaked "
+            f"build SHA); value redacted from this public log."
         )
-    match = _HEX_RUN_RE.search(constant_value)
-    assert match is None, (
-        f"{constant_name} contains a 7+ hex-char run {match.group()!r} "
-        f"(looks like a leaked build SHA): {constant_value!r}"
-    )
 
 
 def _analysis_result(*, risk: RiskClassification | None = None) -> AnalysisResult:
