@@ -9,12 +9,6 @@ import typer
 from rich.console import Console
 
 from driftshield.cli._submit import run_submit
-from driftshield.cli._signature_summary import build_signature_summary_from_session
-from driftshield.remote_submission import post_oss_submission
-from driftshield.remote_upload import (
-    submit_oss_via_presigned_upload,
-    submit_teams_via_presigned_upload,
-)
 from driftshield.telemetry import (
     TelemetryService,
     effective_oss_intake_url,
@@ -205,10 +199,6 @@ def telemetry_submit_session(
         include_analysis=include_analysis,
         tier=tier,
         environment=environment,
-        _post_oss_submission=post_oss_submission,
-        _submit_oss_via_presigned_upload=submit_oss_via_presigned_upload,
-        _submit_teams_via_presigned_upload=submit_teams_via_presigned_upload,
-        _build_signature_summary_from_session=build_signature_summary_from_session,
     )
 
 

@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Callable
 
 import typer
 from rich.console import Console
@@ -67,19 +66,8 @@ def run_submit(
     include_analysis: bool,
     tier: str,
     environment: str | None,
-    # Callable overrides — used by tests that monkeypatch via the telemetry
-    # module's namespace.  callers that do not need to swap these out should
-    # leave them as None so the module-level defaults are used.
-    _post_oss_submission: Callable | None = None,
-    _submit_oss_via_presigned_upload: Callable | None = None,
-    _submit_teams_via_presigned_upload: Callable | None = None,
-    _build_signature_summary_from_session: Callable | None = None,
 ) -> None:
     """Build a phase3g.v1 envelope from a finished session JSON and POST once to the OSS intake URL."""
-    _post = _post_oss_submission if _post_oss_submission is not None else post_oss_submission
-    _oss_presigned = _submit_oss_via_presigned_upload if _submit_oss_via_presigned_upload is not None else submit_oss_via_presigned_upload
-    _teams_presigned = _submit_teams_via_presigned_upload if _submit_teams_via_presigned_upload is not None else submit_teams_via_presigned_upload
-    _build_summary = _build_signature_summary_from_session if _build_signature_summary_from_session is not None else build_signature_summary_from_session
 
     try:
         payload = load_session_payload(path)
@@ -173,7 +161,7 @@ def run_submit(
     summary = None
     if include_analysis:
         try:
-            summary = _build_summary(path)
+            summary = build_signature_summary_from_session(path)
         except Exception as exc:  # noqa: BLE001
             typer.echo(
                 "error: --include-analysis specified but "
@@ -270,7 +258,7 @@ def run_submit(
     try:
         if resolved_tier == "teams":
             assert teams_api_key is not None
-            result = _teams_presigned(
+            result = submit_teams_via_presigned_upload(
                 config=TeamsUploadConfig(
                     intake_url=intake_url, api_key=teams_api_key
                 ),
@@ -280,7 +268,7 @@ def run_submit(
                 provenance=provenance,
             )
         elif is_large:
-            result = _oss_presigned(
+            result = submit_oss_via_presigned_upload(
                 config=OssUploadConfig(intake_url=intake_url),
                 payload=redacted_payload,
                 workflow_reference=resolved_workflow_reference,
@@ -308,7 +296,7 @@ def run_submit(
                 )
                 raise typer.Exit(1) from exc
             submission_config = OssRemoteSubmissionConfig(intake_url=intake_url)
-            result = _post(
+            result = post_oss_submission(
                 config=submission_config, submission=submission
             )
     except RemoteSubmissionError as exc:
