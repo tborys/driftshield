@@ -95,13 +95,19 @@ def test_submit_session_hidden_from_help():
 
 
 def test_submit_session_emits_deprecation(tmp_path, monkeypatch):
+    # Use a local runner so we can inspect separated streams independently.
+    # Click 8.2+ always separates stderr; CliRunner() needs no extra arguments.
+    local_runner = CliRunner()
     monkeypatch.setattr("driftshield.cli._submit.post_oss_submission", _fake_post_ok(monkeypatch))
     monkeypatch.setenv("DRIFTSHIELD_TELEMETRY_HOME", str(tmp_path / "tele"))
     session = _write_session(tmp_path)
-    result = runner.invoke(app, ["telemetry", "submit-session", "--path", str(session)])
+    result = local_runner.invoke(app, ["telemetry", "submit-session", "--path", str(session)])
     assert result.exit_code == 0, result.output
-    assert "deprecated" in result.output.lower()
-    assert "driftshield submit" in result.output
+    # Deprecation notice must appear on stderr.
+    assert "deprecated" in result.stderr.lower()
+    assert "driftshield submit" in result.stderr
+    # Stdout stays clean for scripting — no deprecation text on stdout.
+    assert "deprecated" not in result.stdout.lower()
 
 
 def test_submit_teams_tier_uses_authenticated_presigned_upload(tmp_path, monkeypatch):
