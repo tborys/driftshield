@@ -8,6 +8,9 @@ The current OSS transport is intentionally simple:
 - events are appended to a local NDJSON stream under `DRIFTSHIELD_HOME/telemetry/` or `~/.driftshield/telemetry/`
 - this keeps the consent boundary, event inventory, and smoke path testable before broader instrumentation lands
 
+Uploading a session for hosted investigation is a separate action. Use `driftshield submit`
+for that. Telemetry opt-in does not trigger or gate uploads.
+
 ## Consent boundary
 
 - default state: disabled
@@ -66,7 +69,7 @@ Current OSS emission path:
 - the `/api/ingest` flow now emits one `analysis_result` event for newly analysed runs when telemetry is enabled
 - deduplicated re-ingest responses do not emit a second `analysis_result` event
 
-## CLI smoke path
+## CLI reference
 
 ```bash
 # show current consent state
@@ -74,6 +77,9 @@ DRIFTSHIELD_HOME=/tmp/driftshield driftshield telemetry status
 
 # opt in and register this install
 DRIFTSHIELD_HOME=/tmp/driftshield driftshield telemetry enable
+
+# opt out
+DRIFTSHIELD_HOME=/tmp/driftshield driftshield telemetry disable
 
 # emit one heartbeat
 DRIFTSHIELD_HOME=/tmp/driftshield driftshield telemetry heartbeat
@@ -83,7 +89,30 @@ DRIFTSHIELD_HOME=/tmp/driftshield driftshield telemetry emit-analysis \
   --outcome-status matched \
   --match-count 1 \
   --primary-mechanism-id coverage_gap
+
+# configure or clear the OSS intake URL override
+DRIFTSHIELD_HOME=/tmp/driftshield driftshield telemetry remote-enable --intake-url <url>
+DRIFTSHIELD_HOME=/tmp/driftshield driftshield telemetry remote-disable
 ```
+
+## Uploading sessions
+
+Uploading a session to DriftShield for hosted investigation is done with `driftshield submit`,
+not via the telemetry commands. The client redacts the transcript locally before upload.
+
+OSS community lane:
+
+```bash
+driftshield submit --path <session.json>
+```
+
+Teams lane (requires `DRIFTSHIELD_API_KEY`):
+
+```bash
+DRIFTSHIELD_API_KEY=... driftshield submit --path <session.json> --tier teams
+```
+
+Pass `--include-analysis` to attach the local matcher verdict to the submission.
 
 ## Out of scope
 
