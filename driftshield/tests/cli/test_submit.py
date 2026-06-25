@@ -73,6 +73,37 @@ def test_submit_help_has_no_telemetry_framing():
     assert "telemetry" not in result.output.lower()
 
 
+def _fake_post_ok(monkeypatch):
+    """Return a fake_post callable that satisfies driftshield.cli._submit.post_oss_submission."""
+    def fake_post(*, config, submission):
+        class _Resp:
+            submission_id = "sub_test"
+            processing_status = "received"
+
+        class _Result:
+            response = _Resp()
+            server_contract_version = None
+
+        return _Result()
+
+    return fake_post
+
+
+def test_submit_session_hidden_from_help():
+    result = runner.invoke(app, ["telemetry", "--help"])
+    assert "submit-session" not in result.output
+
+
+def test_submit_session_emits_deprecation(tmp_path, monkeypatch):
+    monkeypatch.setattr("driftshield.cli._submit.post_oss_submission", _fake_post_ok(monkeypatch))
+    monkeypatch.setenv("DRIFTSHIELD_TELEMETRY_HOME", str(tmp_path / "tele"))
+    session = _write_session(tmp_path)
+    result = runner.invoke(app, ["telemetry", "submit-session", "--path", str(session)])
+    assert result.exit_code == 0, result.output
+    assert "deprecated" in result.output.lower()
+    assert "driftshield submit" in result.output
+
+
 def test_submit_teams_tier_uses_authenticated_presigned_upload(tmp_path, monkeypatch):
     captured = {}
 

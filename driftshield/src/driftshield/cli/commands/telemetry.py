@@ -89,7 +89,7 @@ def telemetry_remote_disable() -> None:
     )
 
 
-@app.command("submit-session")
+@app.command("submit-session", hidden=True)
 def telemetry_submit_session(
     path: Path = typer.Option(..., "--path", help="JSON file with the finished session payload."),
     source_session_id: str | None = typer.Option(
@@ -184,6 +184,11 @@ def telemetry_submit_session(
     workflow references are what let downstream analysis tell repeat workflows
     apart; leaving every submission on ``"default"`` hides that signal.
     """
+    typer.echo(
+        "Deprecated: `telemetry submit-session` is renamed to `driftshield submit`. "
+        "Please use `driftshield submit`.",
+        err=True,
+    )
     run_submit(
         path=path,
         source_session_id=source_session_id,
