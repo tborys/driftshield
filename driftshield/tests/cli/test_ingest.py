@@ -199,7 +199,7 @@ def test_build_multipart_body_uses_basename_for_uploaded_filename():
     assert str(transcript) not in decoded
 
 
-def test_build_multipart_body_includes_teams_context_and_source_connector_metadata():
+def test_build_multipart_body_includes_oss_tier_and_source_connector_metadata():
     transcript = FIXTURES_DIR / "sample_claude_code_session.jsonl"
 
     body = _build_multipart_body(
@@ -207,9 +207,7 @@ def test_build_multipart_body_includes_teams_context_and_source_connector_metada
         file_path=transcript,
         parser="claude_code",
         submission_context=SubmissionContext(
-            submission_tier="teams",
-            tenant_id="tenant-acme",
-            workspace_id="workspace-core",
+            submission_tier="oss",
             workflow_reference="wf-triage",
             project_reference="proj-risk",
             source_connector=SourceConnectorMetadata(
@@ -223,11 +221,9 @@ def test_build_multipart_body_includes_teams_context_and_source_connector_metada
 
     decoded = body.decode("utf-8", errors="ignore")
     assert 'name="submission_tier"' in decoded
-    assert "teams" in decoded
-    assert 'name="tenant_id"' in decoded
-    assert "tenant-acme" in decoded
-    assert 'name="workspace_id"' in decoded
-    assert "workspace-core" in decoded
+    assert "oss" in decoded
+    assert 'name="tenant_id"' not in decoded
+    assert 'name="workspace_id"' not in decoded
     assert 'name="workflow_reference"' in decoded
     assert "wf-triage" in decoded
     assert 'name="project_reference"' in decoded
@@ -237,127 +233,16 @@ def test_build_multipart_body_includes_teams_context_and_source_connector_metada
     assert '"display_name": "Core Claude"' in decoded
 
 
-def test_build_submission_context_rejects_teams_without_tenant_id():
-    with pytest.raises(ValueError, match="tenant_id is required"):
-        build_submission_context(
-            api_url="https://driftshield.example",
-            api_key="secret-key",
-            submission_tier="teams",
-            tenant_id=None,
-            workspace_id=None,
-            workflow_reference=None,
-            project_reference=None,
-            source_connector=SourceConnectorMetadata(),
-        )
+def test_ingest_has_no_teams_options():
+    result = runner.invoke(app, ["ingest", "--help"])
+    assert "--submission-tier" not in result.output
+    assert "--tenant-id" not in result.output
+    assert "--workspace-id" not in result.output
 
 
-def test_build_submission_context_uses_server_resolved_tenant_values(monkeypatch):
-    def fake_resolve(*, api_url: str, api_key: str, tenant_id: str, workspace_id: str | None):
-        assert api_url == "https://driftshield.example"
-        assert api_key == "secret-key"
-        assert tenant_id == "tenant-claimed"
-        assert workspace_id == "workspace-claimed"
-        return {
-            "tenant_id": "tenant-resolved",
-            "workspace_id": "workspace-resolved",
-            "service_identity_id": "svc_123",
-        }
-
-    monkeypatch.setattr(
-        "driftshield.cli.commands.ingest.resolve_teams_submission_context",
-        fake_resolve,
-    )
-
-    context = build_submission_context(
-        api_url="https://driftshield.example",
-        api_key="secret-key",
-        submission_tier="teams",
-        tenant_id="tenant-claimed",
-        workspace_id="workspace-claimed",
-        workflow_reference="wf-1",
-        project_reference="proj-1",
-        source_connector=SourceConnectorMetadata(connector_id="connector-1"),
-    )
-
-    assert context == SubmissionContext(
-        submission_tier="teams",
-        tenant_id="tenant-resolved",
-        workspace_id="workspace-resolved",
-        workflow_reference="wf-1",
-        project_reference="proj-1",
-        source_connector=SourceConnectorMetadata(connector_id="connector-1"),
-    )
-
-
-def test_ingest_teams_submission_uses_server_resolved_context(monkeypatch):
-    captured: dict[str, object] = {}
-
-    def fake_build_submission_context(**kwargs):
-        captured["build_kwargs"] = kwargs
-        return SubmissionContext(
-            submission_tier="teams",
-            tenant_id="tenant-resolved",
-            workspace_id="workspace-resolved",
-        )
-
-    def fake_post_ingest(*, target_url: str, api_key: str, file_path: Path, parser: str, submission_context: SubmissionContext):
-        captured["post"] = {
-            "target_url": target_url,
-            "api_key": api_key,
-            "file_path": file_path,
-            "parser": parser,
-            "submission_context": submission_context,
-        }
-        return DummyResponse()._payload
-
-    monkeypatch.setenv("DRIFTSHIELD_API_URL", "https://driftshield.example")
-    monkeypatch.setenv("DRIFTSHIELD_API_KEY", "secret-key")
-    monkeypatch.setattr("driftshield.cli.commands.ingest.build_submission_context", fake_build_submission_context)
-    monkeypatch.setattr("driftshield.cli.commands.ingest.post_ingest", fake_post_ingest)
-
-    transcript = FIXTURES_DIR / "sample_claude_code_session.jsonl"
-    result = runner.invoke(
-        app,
-        [
-            "ingest",
-            "--path",
-            str(transcript),
-            "--submission-tier",
-            "teams",
-            "--tenant-id",
-            "tenant-claimed",
-            "--workspace-id",
-            "workspace-claimed",
-        ],
-    )
-
-    assert result.exit_code == 0
-    assert captured["build_kwargs"] == {
-        "api_url": "https://driftshield.example",
-        "api_key": "secret-key",
-        "submission_tier": "teams",
-        "tenant_id": "tenant-claimed",
-        "workspace_id": "workspace-claimed",
-        "workflow_reference": None,
-        "project_reference": None,
-        "source_connector": SourceConnectorMetadata(
-            connector_id=None,
-            source_type=None,
-            display_name=None,
-            parser_name=None,
-        ),
-    }
-    assert captured["post"] == {
-        "target_url": "https://driftshield.example/api/ingest",
-        "api_key": "secret-key",
-        "file_path": transcript,
-        "parser": "claude_code",
-        "submission_context": SubmissionContext(
-            submission_tier="teams",
-            tenant_id="tenant-resolved",
-            workspace_id="workspace-resolved",
-        ),
-    }
+def test_resolve_teams_submission_context_is_gone():
+    import driftshield.cli.commands.ingest as ingest_mod
+    assert not hasattr(ingest_mod, "resolve_teams_submission_context")
 
 
 # ---------------------------------------------------------------------------
