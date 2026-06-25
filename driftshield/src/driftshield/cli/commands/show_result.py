@@ -15,7 +15,7 @@ console = Console(force_terminal=True)
 
 
 def show_result(
-    submission_id: str = typer.Argument(..., help="Submission ID returned by `telemetry submit-session`."),
+    submission_id: str = typer.Argument(..., help="Submission ID returned by `driftshield submit`."),
     intake_url: str | None = typer.Option(
         None,
         "--intake-url",
@@ -29,7 +29,7 @@ def show_result(
 ) -> None:
     """Fetch the OSS-safe result triple for a submission from the configured intake URL.
 
-    Zero-config like ``telemetry submit-session --tier oss``: with nothing
+    Zero-config like ``driftshield submit --tier oss``: with nothing
     configured the baked community intake URL is used, so submit followed by
     show-result needs no ``remote-enable``. After ``telemetry remote-disable``
     the baked default does not apply; an explicit ``--intake-url`` always works.
