@@ -27,3 +27,77 @@ def _write_session(tmp_path: Path) -> Path:
 def test_run_submit_importable_and_callable():
     from driftshield.cli._submit import run_submit
     assert callable(run_submit)
+
+
+_OSS_TEST_INTAKE_URL = "https://snidz3uiv5.execute-api.eu-west-2.amazonaws.com/v1/oss/submissions"
+
+
+def _remote_enable_argv(*, intake_url: str = _OSS_TEST_INTAKE_URL) -> list[str]:
+    return ["telemetry", "remote-enable", "--intake-url", intake_url]
+
+
+def test_submit_oss_inline_redacts_and_posts(tmp_path, monkeypatch):
+    captured = {}
+
+    def fake_post(*, config, submission):
+        captured["intake_url"] = config.intake_url
+        captured["request"] = submission
+
+        class _Resp:
+            submission_id = "sub_test"
+            processing_status = "received"
+
+        class _Result:
+            response = _Resp()
+            server_contract_version = None
+
+        return _Result()
+
+    monkeypatch.setattr("driftshield.cli._submit.post_oss_submission", fake_post)
+    monkeypatch.setenv("DRIFTSHIELD_TELEMETRY_HOME", str(tmp_path / "tele"))
+    session = _write_session(tmp_path)
+
+    result = runner.invoke(app, ["submit", "--path", str(session)])
+    assert result.exit_code == 0, result.output
+    assert "sub_test" in result.output
+
+
+def test_submit_appears_in_help():
+    result = runner.invoke(app, ["--help"])
+    assert "submit" in result.output
+
+
+def test_submit_help_has_no_telemetry_framing():
+    result = runner.invoke(app, ["submit", "--help"])
+    assert result.exit_code == 0
+    assert "telemetry" not in result.output.lower()
+
+
+def test_submit_teams_tier_uses_authenticated_presigned_upload(tmp_path, monkeypatch):
+    captured = {}
+
+    def fake_teams_upload(*, config, payload, workflow_reference, file_name, provenance):
+        captured["api_key"] = config.api_key
+        captured["intake_url"] = config.intake_url
+
+        class _Resp:
+            submission_id = "sub_teams"
+            processing_status = "received"
+
+        class _Result:
+            response = _Resp()
+            server_contract_version = None
+
+        return _Result()
+
+    monkeypatch.setattr(
+        "driftshield.cli._submit.submit_teams_via_presigned_upload", fake_teams_upload
+    )
+    monkeypatch.setenv("DRIFTSHIELD_API_KEY", "test-key")
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    runner.invoke(app, _remote_enable_argv())
+    session = _write_session(tmp_path)
+    result = runner.invoke(app, ["submit", "--path", str(session), "--tier", "teams"])
+    assert result.exit_code == 0, result.output
+    assert captured["api_key"] == "test-key"
+    assert "sub_teams" in result.output
