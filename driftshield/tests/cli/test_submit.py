@@ -29,7 +29,7 @@ def test_run_submit_importable_and_callable():
     assert callable(run_submit)
 
 
-_OSS_TEST_INTAKE_URL = "https://snidz3uiv5.execute-api.eu-west-2.amazonaws.com/v1/oss/submissions"
+_OSS_TEST_INTAKE_URL = "https://intake.example.test/v1/oss/submissions"
 
 
 def _remote_enable_argv(*, intake_url: str = _OSS_TEST_INTAKE_URL) -> list[str]:

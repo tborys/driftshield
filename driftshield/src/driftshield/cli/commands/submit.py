@@ -91,6 +91,7 @@ def submit(
     default --tier oss for the unauthenticated community lane. Pass
     --include-analysis to attach the local matcher verdict so the hosted
     investigation matches what you get locally."""
+
     run_submit(
         path=path,
         source_session_id=source_session_id,
@@ -107,3 +108,4 @@ def submit(
         tier=tier,
         environment=environment,
     )
+
