@@ -165,7 +165,7 @@ def telemetry_submit_session(
         ),
     ),
 ) -> None:
-    """Build a phase3g.v1 envelope from a finished session JSON and POST once to the OSS intake URL.
+    """Build a phase3g.v1 envelope from a finished session JSON and POST once to the configured intake URL (OSS community lane or authenticated Teams lane).
 
     The OSS lane is unauthenticated. No X-API-Key header is sent, no installation_id
     or consent_state is included in the request. The server binds the persisted row

@@ -167,16 +167,14 @@ source .venv/bin/activate
 DRIFTSHIELD_API_KEY=... driftshield submit --path <session.json> --tier teams
 ```
 
-Pass `--include-analysis` to attach the local matcher verdict. This lets the hosted
-DriftShield investigation match what you see locally:
+Pass `--include-analysis` to attach the local matcher verdict. The hosted investigation then uses the same verdict your local matcher produced:
 
 ```bash
 driftshield submit --path <session.json> --include-analysis
 ```
 
-The hosted intel layer persists the investigation and serves the investigation surface.
-Teams customers upload via this command; no separate configuration is needed beyond
-the API key.
+The hosted intel layer persists the investigation and makes it available on the investigation surface.
+Teams customers set `DRIFTSHIELD_API_KEY` and pass `--tier teams`; no other configuration is needed.
 
 ### 5. Run the full local stack
 

@@ -67,7 +67,7 @@ def run_submit(
     tier: str,
     environment: str | None,
 ) -> None:
-    """Build a phase3g.v1 envelope from a finished session JSON and POST once to the OSS intake URL."""
+    """Build a phase3g.v1 envelope from a finished session JSON and POST once to the configured intake URL (OSS community lane or authenticated Teams lane)."""
 
     try:
         payload = load_session_payload(path)
