@@ -1336,12 +1336,25 @@ def test_submit_session_rejects_invalid_environment(tmp_path, monkeypatch):
     assert submitted["called"] is False
 
 
-def test_submit_session_environment_flag_rejected_on_teams_tier(tmp_path, monkeypatch):
-    """--environment is a community-lane flag; teams behaviour stays untouched."""
+def test_submit_session_environment_flag_accepted_on_teams_tier(tmp_path, monkeypatch):
+    """--environment now applies to the teams lane too (mirror of the oss lane):
+    an explicit value overrides the production default and is stamped on the
+    payload metadata so the hosted investigation reaches recurrence-eligibility."""
     monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
     monkeypatch.setenv("DRIFTSHIELD_API_KEY", "ds_teams_key")
     runner.invoke(app, _remote_enable_argv())
     session_path = _write_session(tmp_path, {"session_id": "sess-1"})
+
+    captured = {}
+
+    def fake_teams(*, config, payload, workflow_reference, file_name, mode="file", provenance=None, opener=None):  # noqa: ARG001
+        captured["metadata"] = payload.get("metadata")
+        return _ok_result()
+
+    monkeypatch.setattr(
+        "driftshield.cli._submit.submit_teams_via_presigned_upload",
+        fake_teams,
+    )
 
     result = runner.invoke(
         app,
@@ -1353,16 +1366,18 @@ def test_submit_session_environment_flag_rejected_on_teams_tier(tmp_path, monkey
             "--tier",
             "teams",
             "--environment",
-            "production",
+            "staging",
         ],
     )
 
-    assert result.exit_code == 1
-    assert "oss" in result.stdout
+    assert result.exit_code == 0
+    assert captured["metadata"]["environment"] == "staging"
 
 
-def test_submit_session_teams_tier_does_not_stamp_environment(tmp_path, monkeypatch):
-    """The production default is community-lane only; teams payloads stay as-is."""
+def test_submit_session_teams_tier_defaults_environment_to_production(tmp_path, monkeypatch):
+    """A teams submission with no --environment now defaults to production
+    (mirror of the oss lane), so the hosted investigation lands a declared
+    production environment instead of an undeclared run."""
     monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
     monkeypatch.setenv("DRIFTSHIELD_API_KEY", "ds_teams_key")
     runner.invoke(app, _remote_enable_argv())
@@ -1387,7 +1402,39 @@ def test_submit_session_teams_tier_does_not_stamp_environment(tmp_path, monkeypa
     )
 
     assert result.exit_code == 0
-    assert "environment" not in captured["metadata"]
+    assert captured["metadata"]["environment"] == "production"
+    # Pre-existing metadata is preserved alongside the declared environment.
+    assert captured["metadata"]["foo"] == "bar"
+
+
+def test_submit_session_teams_tier_keeps_environment_declared_in_session(tmp_path, monkeypatch):
+    """An environment already declared in the session JSON is kept; the
+    production default only fills in when none is declared (mirror of oss)."""
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    monkeypatch.setenv("DRIFTSHIELD_API_KEY", "ds_teams_key")
+    runner.invoke(app, _remote_enable_argv())
+    session_path = _write_session(
+        tmp_path, {"session_id": "sess-1", "metadata": {"environment": "test"}}
+    )
+
+    captured = {}
+
+    def fake_teams(*, config, payload, workflow_reference, file_name, mode="file", provenance=None, opener=None):  # noqa: ARG001
+        captured["metadata"] = payload.get("metadata")
+        return _ok_result()
+
+    monkeypatch.setattr(
+        "driftshield.cli._submit.submit_teams_via_presigned_upload",
+        fake_teams,
+    )
+
+    result = runner.invoke(
+        app,
+        ["telemetry", "submit-session", "--path", str(session_path), "--tier", "teams"],
+    )
+
+    assert result.exit_code == 0
+    assert captured["metadata"]["environment"] == "test"
 
 
 def test_community_lane_payload_classifies_production_submitter_declared(

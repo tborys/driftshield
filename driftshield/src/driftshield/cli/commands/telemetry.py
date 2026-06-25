@@ -158,10 +158,9 @@ def telemetry_submit_session(
         None,
         "--environment",
         help=(
-            "Declared run environment for the community (oss) lane: "
-            "production, staging, test, or demo. Community opt-in declares "
-            "production by default; pass this only for the uncommon "
-            "non-production contribution."
+            "Declared run environment: production, staging, test, or demo. "
+            "Both lanes declare production by default; pass this only for the "
+            "uncommon non-production contribution."
         ),
     ),
 ) -> None:
