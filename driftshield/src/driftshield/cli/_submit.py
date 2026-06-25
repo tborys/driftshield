@@ -124,12 +124,6 @@ def run_submit(
                 f"[red]Error:[/red] --environment must be one of: {valid}."
             )
             raise typer.Exit(1)
-        if resolved_tier != "oss":
-            console.print(
-                "[red]Error:[/red] --environment applies to the community "
-                "(oss) lane only."
-            )
-            raise typer.Exit(1)
 
     config = TelemetryService().load_config()
     if resolved_tier == "oss":
@@ -200,21 +194,23 @@ def run_submit(
     if model_name is None:
         model_name = derived_provenance.get("model_name")
 
-    # Community opt-in is the production declaration: stamp the declared
-    # environment before redaction so it rides both the inline and the
-    # presigned lanes. An environment already declared in the session JSON
-    # is kept; --environment wins over everything.
-    if resolved_tier == "oss":
-        metadata = payload.get("metadata")
-        if not isinstance(metadata, dict):
-            # The envelope contract expects a metadata mapping; a malformed
-            # value cannot carry the declared environment.
-            metadata = {}
-            payload["metadata"] = metadata
-        if resolved_environment is not None:
-            metadata["environment"] = resolved_environment
-        else:
-            metadata.setdefault("environment", EnvironmentClass.PRODUCTION.value)
+    # Submitting is the production declaration on both lanes: stamp the declared
+    # environment before redaction so it rides both the inline and the presigned
+    # lanes. An environment already declared in the session JSON is kept;
+    # --environment wins over everything. Both tiers default to production (an
+    # explicit non-production contribution is the uncommon case), so the hosted
+    # investigation always lands a declared environment rather than an
+    # undeclared run.
+    metadata = payload.get("metadata")
+    if not isinstance(metadata, dict):
+        # The envelope contract expects a metadata mapping; a malformed
+        # value cannot carry the declared environment.
+        metadata = {}
+        payload["metadata"] = metadata
+    if resolved_environment is not None:
+        metadata["environment"] = resolved_environment
+    else:
+        metadata.setdefault("environment", EnvironmentClass.PRODUCTION.value)
 
     # Redact once to measure the canonical size (uncapped) and decide the
     # lane. The size-capped SubmissionEnvelope model is only built on the
