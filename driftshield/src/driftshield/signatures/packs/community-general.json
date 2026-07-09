@@ -2,7 +2,7 @@
   "schema_version": "1.0.0",
   "pack_metadata": {
     "name": "community-general",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "description": "General-purpose DriftShield community signatures.",
     "pack_kind": "community",
     "family_coverage": [
