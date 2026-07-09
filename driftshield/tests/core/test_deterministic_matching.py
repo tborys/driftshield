@@ -206,6 +206,168 @@ def test_deterministic_matching_marks_ambiguity_and_degraded_quality():
     assert all("quality_degraded" in candidate["confidence_notes"] for candidate in payload["candidate_signatures"])
 
 
+def test_deterministic_matching_surfaces_policy_divergence_candidates():
+    canonical_analysis = {
+        "analysis_session": {"integrity_status": "complete", "source_provenance": {"source_type": "claude_code"}},
+        "normalized_events": [
+            {
+                "event_id": "evt-tool",
+                "sequence_index": 0,
+                "event_family": "tool_call",
+                "structured_payload": {"tool_category": "vcs"},
+            },
+            {
+                "event_id": "evt-out",
+                "sequence_index": 1,
+                "event_family": "output_emission",
+                "structured_payload": {},
+            },
+        ],
+        "run_context": {},
+        "policy_and_instruction_context": {
+            "system_constraints": [{"constraint": "Never force-push to a shared branch."}],
+            "developer_constraints": [],
+            "user_constraints": [],
+            "derived_operational_constraints": [],
+            "conflict_or_shadowing_notes": [],
+        },
+        "expected_vs_actual_delta": {"delta_types": ["wrong_action"], "supporting_event_ids": ["evt-tool"]},
+        "extraction_quality_summary": {"overall_quality_band": "usable", "ordering_confidence": 1.0, "ambiguity_count": 0},
+    }
+
+    payload = build_deterministic_match(canonical_analysis=canonical_analysis, result=_analysis_result())
+    summary = build_signature_match_summary(payload)
+
+    assert payload["status"] == "matched"
+    assert payload["matched_rules"][0]["rule_id"] == "R-POL-001"
+    assert payload["candidate_signatures"][0]["signature_key"] == "policy_divergence"
+    assert summary["primary_mechanism_id"] == "policy_divergence"
+    assert summary["matches"][0]["signature_id"] == "mechanism:policy_divergence"
+
+
+def test_deterministic_matching_surfaces_retrieval_omission_candidates():
+    canonical_analysis = {
+        "analysis_session": {"integrity_status": "complete", "source_provenance": {"source_type": "claude_code"}},
+        "normalized_events": [
+            {
+                "event_id": "evt-out",
+                "sequence_index": 0,
+                "event_family": "output_emission",
+                "structured_payload": {},
+            },
+        ],
+        "run_context": {},
+        "policy_and_instruction_context": {
+            "system_constraints": [],
+            "developer_constraints": [],
+            "user_constraints": [],
+            "derived_operational_constraints": [],
+            "conflict_or_shadowing_notes": [],
+        },
+        "expected_vs_actual_delta": {
+            "delta_types": ["retrieval_failure_or_omission"],
+            "supporting_event_ids": ["evt-out"],
+        },
+        "extraction_quality_summary": {"overall_quality_band": "usable", "ordering_confidence": 1.0, "ambiguity_count": 0},
+    }
+
+    payload = build_deterministic_match(canonical_analysis=canonical_analysis, result=_analysis_result())
+    summary = build_signature_match_summary(payload)
+
+    assert payload["status"] == "matched"
+    assert payload["matched_rules"][0]["rule_id"] == "R-RET-001"
+    assert payload["matched_sequence_patterns"][0]["sequence_id"] == "SEQ-RET-001"
+    assert payload["candidate_signatures"][0]["signature_key"] == "retrieval_omission"
+    assert payload["extracted_features"]["retrieval_used_ignored"] is True
+    assert summary["primary_mechanism_id"] == "retrieval_omission"
+    assert summary["matches"][0]["signature_id"] == "mechanism:retrieval_omission"
+
+
+def test_deterministic_matching_does_not_flag_retrieval_omission_when_retrieval_present():
+    canonical_analysis = {
+        "analysis_session": {"integrity_status": "complete", "source_provenance": {"source_type": "claude_code"}},
+        "normalized_events": [
+            {
+                "event_id": "evt-ret",
+                "sequence_index": 0,
+                "event_family": "retrieval_query",
+                "structured_payload": {},
+            },
+            {
+                "event_id": "evt-out",
+                "sequence_index": 1,
+                "event_family": "output_emission",
+                "structured_payload": {},
+            },
+        ],
+        "run_context": {},
+        "policy_and_instruction_context": {
+            "system_constraints": [],
+            "developer_constraints": [],
+            "user_constraints": [],
+            "derived_operational_constraints": [],
+            "conflict_or_shadowing_notes": [],
+        },
+        "expected_vs_actual_delta": {
+            "delta_types": ["retrieval_failure_or_omission"],
+            "supporting_event_ids": ["evt-out"],
+        },
+        "extraction_quality_summary": {"overall_quality_band": "usable", "ordering_confidence": 1.0, "ambiguity_count": 0},
+    }
+
+    payload = build_deterministic_match(canonical_analysis=canonical_analysis, result=_analysis_result())
+
+    assert payload["extracted_features"]["retrieval_present"] is True
+    assert payload["extracted_features"]["retrieval_used_ignored"] is False
+    assert payload["candidate_signatures"] == []
+
+
+def test_deterministic_matching_surfaces_state_conflict_candidates():
+    canonical_analysis = {
+        "analysis_session": {"integrity_status": "complete", "source_provenance": {"source_type": "claude_code"}},
+        "normalized_events": [
+            {
+                "event_id": "evt-read",
+                "sequence_index": 0,
+                "event_family": "state_read",
+                "structured_payload": {},
+            },
+            {
+                "event_id": "evt-write",
+                "sequence_index": 1,
+                "event_family": "state_write",
+                "structured_payload": {
+                    "state_transition": {"state_conflict_flag": True, "state_conflict_reason": "stale_read"}
+                },
+            },
+        ],
+        "run_context": {},
+        "policy_and_instruction_context": {
+            "system_constraints": [],
+            "developer_constraints": [],
+            "user_constraints": [],
+            "derived_operational_constraints": [],
+            "conflict_or_shadowing_notes": [],
+        },
+        "expected_vs_actual_delta": {
+            "delta_types": ["unintended_state_change"],
+            "supporting_event_ids": ["evt-write"],
+        },
+        "extraction_quality_summary": {"overall_quality_band": "usable", "ordering_confidence": 1.0, "ambiguity_count": 0},
+    }
+
+    payload = build_deterministic_match(canonical_analysis=canonical_analysis, result=_analysis_result())
+    summary = build_signature_match_summary(payload)
+
+    assert payload["status"] == "matched"
+    assert payload["matched_rules"][0]["rule_id"] == "R-STA-001"
+    assert payload["matched_sequence_patterns"][0]["sequence_id"] == "SEQ-STA-001"
+    assert payload["candidate_signatures"][0]["signature_key"] == "state_conflict"
+    assert payload["extracted_features"]["state_conflict_count"] == 1
+    assert summary["primary_mechanism_id"] == "state_conflict"
+    assert summary["matches"][0]["signature_id"] == "mechanism:state_conflict"
+
+
 def test_deterministic_matching_records_contradictions_for_tool_misuse():
     canonical_analysis = {
         "analysis_session": {"integrity_status": "complete", "source_provenance": {"source_type": "claude_code"}},
