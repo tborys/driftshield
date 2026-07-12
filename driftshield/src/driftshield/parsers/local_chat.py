@@ -46,15 +46,18 @@ class LocalChatTranscriptParser:
 
     def parse(self, content: str) -> list[CanonicalEvent]:
         stripped = content.lstrip()
-        if stripped.startswith("["):
-            return normalize_events(self._parse_json(json.loads(content)), source_type=self.source_type)
-        if stripped.startswith("{"):
-            if "\n" not in stripped:
-                return normalize_events(
-                    self._parse_json(json.loads(content)),
-                    source_type=self.source_type,
-                )
-            return normalize_events(self._parse_jsonl(content), source_type=self.source_type)
+        if stripped.startswith("[") or stripped.startswith("{"):
+            # A single JSON document (object or array), pretty-printed or
+            # minified. Parse the whole body as one value; only treat it as
+            # JSONL if that fails (genuine JSONL is multiple objects, so the
+            # whole-body parse raises). The previous "{ without a newline"
+            # heuristic mis-routed pretty-printed single objects to the JSONL
+            # path and broke desktop transcript parsing.
+            try:
+                document = json.loads(content)
+            except json.JSONDecodeError:
+                return normalize_events(self._parse_jsonl(content), source_type=self.source_type)
+            return normalize_events(self._parse_json(document), source_type=self.source_type)
         return normalize_events(self._parse_jsonl(content), source_type=self.source_type)
 
     def _parse_jsonl(self, content: str) -> list[CanonicalEvent]:

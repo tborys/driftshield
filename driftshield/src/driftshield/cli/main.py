@@ -13,6 +13,7 @@ from driftshield.cli.commands.list import list_sessions
 from driftshield.cli.commands.report import report_command
 from driftshield.cli.commands.show_result import show_result
 from driftshield.cli.commands.signatures import app as signatures_app
+from driftshield.cli.commands.submit import submit
 from driftshield.cli.commands.telemetry import app as telemetry_app
 
 app = typer.Typer(
@@ -30,6 +31,7 @@ app.command(name="export-validations")(export_validations)
 app.command(name="generate-fixtures")(generate_fixtures)
 app.command()(ingest)
 app.command(name="show-result")(show_result)
+app.command()(submit)
 app.add_typer(connectors_app, name="connectors")
 app.add_typer(signatures_app, name="signatures")
 app.add_typer(telemetry_app, name="telemetry")

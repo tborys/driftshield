@@ -1,6 +1,6 @@
 """Intake submission contract (OSS side).
 
-Pydantic models for the request body that ``driftshield submit-session``
+Pydantic models for the request body that ``driftshield submit``
 sends to the configured intake server. The server validates the same
 shape and rejects with HTTP 422 when ``envelope_contract_version`` or
 ``schema_version`` are not in ``ACCEPTED_CONTRACT_VERSIONS``. Keep

@@ -1,0 +1,145 @@
+{
+  "events": [
+    {
+      "ts": "2026-05-03T05:25:01.000Z",
+      "seq": 1,
+      "data": {
+        "agentId": "engineering",
+        "trigger": "user",
+        "toolCount": 3
+      },
+      "type": "session.started",
+      "runId": "00000000-0000-0000-0000-0000000000bb",
+      "source": "runtime",
+      "modelId": "gpt-5.4",
+      "traceId": "00000000-0000-0000-0000-0000000000aa",
+      "schemaVersion": 1,
+      "sessionId": "00000000-0000-0000-0000-0000000000aa",
+      "sessionKey": "k",
+      "sourceSeq": 1,
+      "modelApi": "openai-codex-responses",
+      "workspaceDir": "<REDACTED:home_path:deadbeef>"
+    },
+    {
+      "ts": "2026-05-03T05:25:02.000Z",
+      "seq": 2,
+      "data": {
+        "provider": "openai-codex",
+        "model": "gpt-5.4",
+        "thinkLevel": "medium"
+      },
+      "type": "trace.metadata",
+      "runId": "00000000-0000-0000-0000-0000000000bb",
+      "source": "runtime",
+      "modelId": "gpt-5.4",
+      "traceId": "00000000-0000-0000-0000-0000000000aa",
+      "schemaVersion": 1,
+      "sessionId": "00000000-0000-0000-0000-0000000000aa",
+      "sessionKey": "k",
+      "sourceSeq": 2,
+      "modelApi": "openai-codex-responses",
+      "workspaceDir": "<REDACTED:home_path:deadbeef>"
+    },
+    {
+      "ts": "2026-05-03T05:25:03.000Z",
+      "seq": 3,
+      "data": {
+        "messages": []
+      },
+      "type": "context.compiled",
+      "runId": "00000000-0000-0000-0000-0000000000bb",
+      "source": "runtime",
+      "modelId": "gpt-5.4",
+      "traceId": "00000000-0000-0000-0000-0000000000aa",
+      "schemaVersion": 1,
+      "sessionId": "00000000-0000-0000-0000-0000000000aa",
+      "sessionKey": "k",
+      "sourceSeq": 3,
+      "modelApi": "openai-codex-responses",
+      "workspaceDir": "<REDACTED:home_path:deadbeef>"
+    },
+    {
+      "ts": "2026-05-03T05:25:04.000Z",
+      "seq": 4,
+      "data": {
+        "messages": []
+      },
+      "type": "prompt.submitted",
+      "runId": "00000000-0000-0000-0000-0000000000bb",
+      "source": "runtime",
+      "modelId": "gpt-5.4",
+      "traceId": "00000000-0000-0000-0000-0000000000aa",
+      "schemaVersion": 1,
+      "sessionId": "00000000-0000-0000-0000-0000000000aa",
+      "sessionKey": "k",
+      "sourceSeq": 4,
+      "modelApi": "openai-codex-responses",
+      "workspaceDir": "<REDACTED:home_path:deadbeef>"
+    },
+    {
+      "ts": "2026-05-03T05:25:05.000Z",
+      "seq": 5,
+      "data": {
+        "error": "prompt error: prompt",
+        "is_error": true,
+        "aborted": true,
+        "externalAbort": true
+      },
+      "type": "model.completed",
+      "runId": "00000000-0000-0000-0000-0000000000bb",
+      "source": "runtime",
+      "modelId": "gpt-5.4",
+      "traceId": "00000000-0000-0000-0000-0000000000aa",
+      "schemaVersion": 1,
+      "sessionId": "00000000-0000-0000-0000-0000000000aa",
+      "sessionKey": "k",
+      "sourceSeq": 5,
+      "modelApi": "openai-codex-responses",
+      "workspaceDir": "<REDACTED:home_path:deadbeef>"
+    },
+    {
+      "ts": "2026-05-03T05:25:06.000Z",
+      "seq": 6,
+      "data": {
+        "finalStatus": "error",
+        "toolMetas": []
+      },
+      "type": "trace.artifacts",
+      "runId": "00000000-0000-0000-0000-0000000000bb",
+      "source": "runtime",
+      "modelId": "gpt-5.4",
+      "traceId": "00000000-0000-0000-0000-0000000000aa",
+      "schemaVersion": 1,
+      "sessionId": "00000000-0000-0000-0000-0000000000aa",
+      "sessionKey": "k",
+      "sourceSeq": 6,
+      "modelApi": "openai-codex-responses",
+      "workspaceDir": "<REDACTED:home_path:deadbeef>"
+    },
+    {
+      "ts": "2026-05-03T05:25:07.000Z",
+      "seq": 7,
+      "data": {
+        "status": "error",
+        "error": "run aborted",
+        "aborted": true,
+        "promptError": "Reply operation aborted by user"
+      },
+      "type": "session.ended",
+      "runId": "00000000-0000-0000-0000-0000000000bb",
+      "source": "runtime",
+      "modelId": "gpt-5.4",
+      "traceId": "00000000-0000-0000-0000-0000000000aa",
+      "schemaVersion": 1,
+      "sessionId": "00000000-0000-0000-0000-0000000000aa",
+      "sessionKey": "k",
+      "sourceSeq": 7,
+      "modelApi": "openai-codex-responses",
+      "workspaceDir": "<REDACTED:home_path:deadbeef>"
+    }
+  ],
+  "metadata": {
+    "environment": "production"
+  },
+  "session_id": "00000000-0000-0000-0000-0000000000aa"
+}

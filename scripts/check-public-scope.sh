@@ -60,6 +60,15 @@ PRIVATE_INFRA_RE = re.compile(
     re.IGNORECASE,
 )
 
+# meta#302 / meta#296 round-2 Nit 2: the public matcher version constants must
+# never carry an internal identifier. Checked verbatim against a forbidden
+# substring list plus a 7+ hex-char run (catches leaked build SHAs). Mirrored by
+# the pytest guard in tests/core/test_deterministic_matching.py.
+MATCHER_CONSTANTS_FILE = "driftshield/src/driftshield/core/deterministic_matching.py"
+MATCHER_GUARDED_CONSTANTS = ("MATCHING_SCHEMA_VERSION", "RULESET_VERSION")
+MATCHER_FORBIDDEN_SUBSTRINGS = ("bally", "gamesys", "internal", "private")
+MATCHER_HEX_RUN_RE = re.compile(r"[0-9a-fA-F]{7,}")
+
 TOKEN_RE = re.compile(r"[A-Za-z0-9._:/-]+")
 PUBLIC_REPO_BASES = (
     "tborys/driftshield",
@@ -142,6 +151,51 @@ for rel_path in tracked_files:
 
         for finding in sorted(line_findings):
             violations.append((rel_path, lineno, finding))
+
+
+def check_matcher_constants() -> None:
+    import ast
+
+    path = ROOT / MATCHER_CONSTANTS_FILE
+    if not path.exists():
+        return
+
+    source = path.read_text(encoding="utf-8")
+    tree = ast.parse(source)
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign):
+            continue
+        targets = {t.id for t in node.targets if isinstance(t, ast.Name)}
+        guarded = targets & set(MATCHER_GUARDED_CONSTANTS)
+        if not guarded:
+            continue
+        if not (isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)):
+            continue
+
+        value = node.value.value
+        lowered = value.lower()
+        # Never echo the matched token or value: this output lands in public CI
+        # logs, and printing the identifier would publish the very string the
+        # guard keeps off public surfaces (meta#302 review). Report the constant
+        # and the violation category only.
+        for name in sorted(guarded):
+            for index, forbidden in enumerate(MATCHER_FORBIDDEN_SUBSTRINGS):
+                if forbidden in lowered:
+                    violations.append(
+                        (MATCHER_CONSTANTS_FILE, node.lineno,
+                         f"matcher constant {name} carries a forbidden internal "
+                         f"identifier (forbid-list rule #{index}); token redacted")
+                    )
+            if MATCHER_HEX_RUN_RE.search(value):
+                violations.append(
+                    (MATCHER_CONSTANTS_FILE, node.lineno,
+                     f"matcher constant {name} carries a 7+ hex-char run "
+                     f"(looks like a build SHA); value redacted")
+                )
+
+
+check_matcher_constants()
 
 if violations:
     for rel_path, lineno, finding in violations:

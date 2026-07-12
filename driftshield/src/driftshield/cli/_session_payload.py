@@ -1,6 +1,6 @@
 """Load a session file as the envelope payload dict.
 
-Both ``telemetry submit-session`` and ``ingest`` accept a ``--path``
+Both ``driftshield submit`` and ``ingest`` accept a ``--path``
 pointing at the user's local session. Historically the file had to be a
 single JSON object (the envelope payload). Native Claude Code sessions
 ship as JSONL: a line-delimited transcript. This helper accepts either
