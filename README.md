@@ -146,9 +146,39 @@ cd ..
 ./scripts/dev-verify.sh
 ```
 
-### 4. Run the full local stack
+### 4. Upload a session for hosted investigation
 
-The API ingest flow and web dashboard expect a local Postgres instance. The supported dev path
+`driftshield submit` is the customer upload command. The client redacts the transcript
+locally before upload. No raw transcript data leaves the machine unredacted.
+
+OSS community lane (unauthenticated):
+
+```bash
+cd driftshield
+source .venv/bin/activate
+driftshield submit --path <session.json>
+```
+
+Teams lane (authenticated; requires `DRIFTSHIELD_API_KEY`):
+
+```bash
+cd driftshield
+source .venv/bin/activate
+DRIFTSHIELD_API_KEY=... driftshield submit --path <session.json> --tier teams
+```
+
+Pass `--include-analysis` to attach the local matcher verdict. The hosted investigation then uses the same verdict your local matcher produced:
+
+```bash
+driftshield submit --path <session.json> --include-analysis
+```
+
+The hosted intel layer persists the investigation and makes it available on the investigation surface.
+Teams customers set `DRIFTSHIELD_API_KEY` and pass `--tier teams`; no other configuration is needed.
+
+### 5. Run the full local stack
+
+The local API and web dashboard expect a local Postgres instance. The supported dev path
 is `docker-compose.dev.yml`; the production `docker-compose.yml` is not the primary quickstart.
 
 Start the backend:
@@ -182,7 +212,10 @@ forensic report inline.
 
 ![DriftShield dashboard, investigation graph view](docs/media/theme-shots/after/02-investigation-desktop.png)
 
-### 5. Ingest a transcript into the local API
+### 6. Feed the local dashboard (self-host path)
+
+`driftshield ingest` uploads directly to a running local `/api/ingest` server. This is the
+self-host and vetted-integration path, not the normal customer upload path.
 
 ```bash
 cd driftshield
@@ -256,10 +289,21 @@ Risk detectors are additive. Each implements a `RiskHeuristic` interface and can
 All commands run from the `driftshield/` directory after `source .venv/bin/activate`.
 
 ```bash
-# Ingest a transcript file
-driftshield ingest --path <file.jsonl>
+# Upload a session for hosted failure investigation (OSS community lane)
+driftshield submit --path <session.json>
 
-# Ingest the latest Claude Code session
+# Upload with local matcher verdict attached (hosted investigation matches local result)
+driftshield submit --path <session.json> --include-analysis
+
+# Upload via the Teams lane (requires DRIFTSHIELD_API_KEY)
+DRIFTSHIELD_API_KEY=... driftshield submit --path <session.json> --tier teams
+
+# Inspect what the redactor would strip, without uploading
+driftshield submit --path <session.json> --dry-run-redaction
+driftshield submit --path <session.json> --show-manifest
+
+# Feed the local self-hosted dashboard (direct upload to /api/ingest)
+driftshield ingest --path <file.jsonl>
 driftshield ingest --latest
 
 # List ingested sessions

@@ -28,10 +28,23 @@ def test_builtin_community_pack_validates_and_projects_to_public_provider() -> N
         "coverage_gap",
         "verification_failure",
         "assumption_mutation",
+        "policy_divergence",
+        "retrieval_omission",
+        "state_conflict",
+        "tool_misuse",
     )
-    assert len(signatures) == 3
+    assert len(signatures) == 7
     assert signatures[0].signature_id == "SIG-COMM-001"
     assert signatures[1].severity == SignatureSeverity.HIGH
+    assert {signature.signature_id for signature in signatures} == {
+        "SIG-COMM-001",
+        "SIG-COMM-002",
+        "SIG-COMM-003",
+        "SIG-COMM-004",
+        "SIG-COMM-005",
+        "SIG-COMM-006",
+        "SIG-COMM-007",
+    }
 
 
 def test_load_community_pack_accepts_traversable_resources() -> None:
@@ -88,8 +101,21 @@ def test_builtin_pack_json_looks_like_phase_2a_contract() -> None:
         "coverage_gap",
         "verification_failure",
         "assumption_mutation",
+        "policy_divergence",
+        "retrieval_omission",
+        "state_conflict",
+        "tool_misuse",
     ]
     assert payload["signatures"][0]["signature_layer"]["pattern_hint"] == "coverage_gap"
+    first_wave_families = {"policy_divergence", "retrieval_omission", "state_conflict", "tool_misuse"}
+    covered_first_wave = {
+        signature["family_id"]
+        for signature in payload["signatures"]
+        if signature["family_id"] in first_wave_families
+    }
+    assert covered_first_wave == first_wave_families
+    for signature in payload["signatures"]:
+        assert signature["signature_layer"]["pattern_hint"] == signature["family_id"]
 
 
 @pytest.mark.parametrize(

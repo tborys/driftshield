@@ -2,13 +2,17 @@
   "schema_version": "1.0.0",
   "pack_metadata": {
     "name": "community-general",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "description": "General-purpose DriftShield community signatures.",
     "pack_kind": "community",
     "family_coverage": [
       "coverage_gap",
       "verification_failure",
-      "assumption_mutation"
+      "assumption_mutation",
+      "policy_divergence",
+      "retrieval_omission",
+      "state_conflict",
+      "tool_misuse"
     ],
     "homepage_url": "https://github.com/tborys/driftshield",
     "documentation_url": "https://github.com/tborys/driftshield/tree/main/docs"
@@ -94,6 +98,116 @@
         "planning"
       ],
       "summary": "agent switches key assumption without fresh evidence"
+    },
+    {
+      "signature_id": "SIG-COMM-004",
+      "family_id": "policy_divergence",
+      "title": "Policy Constraint Override",
+      "signature_layer": {
+        "surface": "execution",
+        "symptom": "action taken against an explicit policy constraint",
+        "suspected_root_cause": "agent proceeded despite a stated rule",
+        "pattern_hint": "policy_divergence"
+      },
+      "failure_shape": "instruct->constrain->violate",
+      "severity": "high",
+      "lexical_markers": [
+        "force",
+        "override",
+        "should not",
+        "not allowed"
+      ],
+      "temporal_constraints": [
+        "action taken after a policy constraint was stated"
+      ],
+      "tags": [
+        "community",
+        "policy",
+        "execution"
+      ],
+      "summary": "action taken against an explicit policy constraint"
+    },
+    {
+      "signature_id": "SIG-COMM-005",
+      "family_id": "retrieval_omission",
+      "title": "Answer Without Required Retrieval",
+      "signature_layer": {
+        "surface": "output",
+        "symptom": "answer asserted without required retrieval evidence",
+        "suspected_root_cause": "retrieval step required by context was skipped",
+        "pattern_hint": "retrieval_omission"
+      },
+      "failure_shape": "require_retrieval->skip->answer",
+      "severity": "medium",
+      "lexical_markers": [
+        "based on",
+        "according to",
+        "as noted"
+      ],
+      "temporal_constraints": [
+        "retrieval requirement present with no retrieval query or result before the answer"
+      ],
+      "tags": [
+        "community",
+        "retrieval",
+        "evidence"
+      ],
+      "summary": "answer asserted without required retrieval evidence"
+    },
+    {
+      "signature_id": "SIG-COMM-006",
+      "family_id": "state_conflict",
+      "title": "Conflicting State Write",
+      "signature_layer": {
+        "surface": "execution",
+        "symptom": "state write conflicts with a prior read without reconciliation",
+        "suspected_root_cause": "state was mutated without checking for a conflicting update",
+        "pattern_hint": "state_conflict"
+      },
+      "failure_shape": "read_state->write_conflicting->no_confirmation",
+      "severity": "high",
+      "lexical_markers": [
+        "overwrite",
+        "already exists",
+        "conflict"
+      ],
+      "temporal_constraints": [
+        "conflicting write follows a state read with no confirmation checkpoint"
+      ],
+      "tags": [
+        "community",
+        "state",
+        "execution"
+      ],
+      "summary": "state write conflicts with a prior read without reconciliation"
+    },
+    {
+      "signature_id": "SIG-COMM-007",
+      "family_id": "tool_misuse",
+      "title": "Tool Failure Ignored",
+      "signature_layer": {
+        "surface": "execution",
+        "symptom": "tool error was not retried before the task was marked complete",
+        "suspected_root_cause": "tool contract violation went unhandled",
+        "pattern_hint": "tool_misuse"
+      },
+      "failure_shape": "call_tool->error->complete_anyway",
+      "severity": "high",
+      "lexical_markers": [
+        "error",
+        "failed",
+        "done anyway",
+        "complete"
+      ],
+      "temporal_constraints": [
+        "completion asserted immediately after a tool error with no retry"
+      ],
+      "tags": [
+        "community",
+        "tooling",
+        "execution"
+      ],
+      "summary": "tool error was not retried before the task was marked complete"
     }
   ]
 }

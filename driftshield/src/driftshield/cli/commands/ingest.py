@@ -9,7 +9,7 @@ import os
 import uuid
 from pathlib import Path
 from typing import Any
-from urllib import error, parse, request
+from urllib import error, request
 
 import typer
 from rich.console import Console
@@ -19,8 +19,6 @@ from driftshield.cli.parsers import detect_parser
 
 
 console = Console(force_terminal=True)
-
-_VALID_SUBMISSION_TIERS = {"oss", "teams"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,8 +44,6 @@ class SourceConnectorMetadata:
 @dataclass(frozen=True, slots=True)
 class SubmissionContext:
     submission_tier: str
-    tenant_id: str | None = None
-    workspace_id: str | None = None
     workflow_reference: str | None = None
     project_reference: str | None = None
     source_connector: SourceConnectorMetadata | None = None
@@ -75,24 +71,6 @@ def ingest(
         "--parser",
         "-p",
         help="Parser to use (auto, claude_code, claude_desktop, codex_cli, codex_desktop, crewai, langchain, openclaw).",
-    ),
-    submission_tier: str = typer.Option(
-        "oss",
-        "--submission-tier",
-        help="Remote submission tier (oss or teams).",
-        envvar="DRIFTSHIELD_SUBMISSION_TIER",
-    ),
-    tenant_id: str | None = typer.Option(
-        None,
-        "--tenant-id",
-        help="Claimed tenant identifier for Teams submissions.",
-        envvar="DRIFTSHIELD_TENANT_ID",
-    ),
-    workspace_id: str | None = typer.Option(
-        None,
-        "--workspace-id",
-        help="Claimed workspace identifier for Teams submissions.",
-        envvar="DRIFTSHIELD_WORKSPACE_ID",
     ),
     workflow_reference: str | None = typer.Option(
         None,
@@ -140,7 +118,7 @@ def ingest(
         ),
     ),
 ) -> None:
-    """Upload a transcript to the DriftShield ingest API."""
+    """Upload a transcript to a self-hosted DriftShield API (the bundled local app / dashboard feeder). For hosted DriftShield uploads use `driftshield submit`."""
     selected = [bool(path), project, latest]
     if sum(selected) != 1:
         console.print("[red]Error:[/red] Choose exactly one of --path, --project, or --latest.")
@@ -166,11 +144,6 @@ def ingest(
 
     try:
         submission_context = build_submission_context(
-            api_url=api_url,
-            api_key=api_key,
-            submission_tier=submission_tier,
-            tenant_id=tenant_id,
-            workspace_id=workspace_id,
             workflow_reference=workflow_reference,
             project_reference=project_reference,
             source_connector=SourceConnectorMetadata(
@@ -182,13 +155,6 @@ def ingest(
         )
     except ValueError as exc:
         console.print(f"[red]Error:[/red] {exc}")
-        raise typer.Exit(1) from exc
-    except error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
-        console.print(f"[red]Error:[/red] Tenant resolution failed with HTTP {exc.code}: {detail}")
-        raise typer.Exit(1) from exc
-    except error.URLError as exc:
-        console.print(f"[red]Error:[/red] Could not reach Teams auth-check endpoint: {exc.reason}")
         raise typer.Exit(1) from exc
 
     if include_analysis:
@@ -216,8 +182,6 @@ def ingest(
             raise typer.Exit(code=2)
         submission_context = SubmissionContext(
             submission_tier=submission_context.submission_tier,
-            tenant_id=submission_context.tenant_id,
-            workspace_id=submission_context.workspace_id,
             workflow_reference=submission_context.workflow_reference,
             project_reference=submission_context.project_reference,
             source_connector=submission_context.source_connector,
@@ -263,43 +227,13 @@ def ingest(
 
 def build_submission_context(
     *,
-    api_url: str,
-    api_key: str,
-    submission_tier: str,
-    tenant_id: str | None,
-    workspace_id: str | None,
     workflow_reference: str | None,
     project_reference: str | None,
     source_connector: SourceConnectorMetadata,
 ) -> SubmissionContext:
-    normalized_tier = submission_tier.strip().lower()
-    if normalized_tier not in _VALID_SUBMISSION_TIERS:
-        valid = ", ".join(sorted(_VALID_SUBMISSION_TIERS))
-        raise ValueError(f"submission tier must be one of: {valid}")
-
     normalized_source_connector = _normalise_source_connector(source_connector)
-    if normalized_tier == "oss":
-        return SubmissionContext(
-            submission_tier=normalized_tier,
-            workflow_reference=_optional_string(workflow_reference),
-            project_reference=_optional_string(project_reference),
-            source_connector=normalized_source_connector,
-        )
-
-    normalized_tenant_id = _required_string(tenant_id, field_name="tenant_id")
-    resolved = resolve_teams_submission_context(
-        api_url=api_url,
-        api_key=api_key,
-        tenant_id=normalized_tenant_id,
-        workspace_id=_optional_string(workspace_id),
-    )
-    resolved_tenant_id = _required_string(resolved.get("tenant_id"), field_name="tenant_id")
-    resolved_workspace_id = _optional_string(resolved.get("workspace_id"))
-
     return SubmissionContext(
-        submission_tier=normalized_tier,
-        tenant_id=resolved_tenant_id,
-        workspace_id=resolved_workspace_id,
+        submission_tier="oss",
         workflow_reference=_optional_string(workflow_reference),
         project_reference=_optional_string(project_reference),
         source_connector=normalized_source_connector,
@@ -360,37 +294,6 @@ def post_ingest(
         return json.loads(resp.read().decode("utf-8"))
 
 
-
-def resolve_teams_submission_context(
-    *,
-    api_url: str,
-    api_key: str,
-    tenant_id: str,
-    workspace_id: str | None,
-) -> dict[str, Any]:
-    query_params = {"tenant_id": tenant_id}
-    if workspace_id is not None:
-        query_params["workspace_id"] = workspace_id
-    auth_url = (
-        os.environ.get("DRIFTSHIELD_TEAMS_AUTH_CHECK_URL")
-        or api_url.rstrip("/") + "/v1/teams/auth-check"
-    )
-    req = request.Request(
-        auth_url + "?" + parse.urlencode(query_params),
-        method="GET",
-        headers={
-            "X-API-Key": api_key,
-            "Accept": "application/json",
-        },
-    )
-
-    with request.urlopen(req) as resp:
-        payload = json.loads(resp.read().decode("utf-8"))
-    if not isinstance(payload, dict):
-        raise ValueError("Teams auth-check returned an invalid payload")
-    return payload
-
-
 def _build_multipart_body(
     *,
     boundary: str,
@@ -408,19 +311,7 @@ def _build_multipart_body(
         segments,
         boundary=boundary,
         name="submission_tier",
-        value=submission_context.submission_tier,
-    )
-    _append_optional_text_form_field(
-        segments,
-        boundary=boundary,
-        name="tenant_id",
-        value=submission_context.tenant_id,
-    )
-    _append_optional_text_form_field(
-        segments,
-        boundary=boundary,
-        name="workspace_id",
-        value=submission_context.workspace_id,
+        value="oss",
     )
     _append_optional_text_form_field(
         segments,
@@ -502,13 +393,6 @@ def _normalise_source_connector(
         display_name=display_name,
         parser_name=parser_name,
     )
-
-
-def _required_string(value: object, *, field_name: str) -> str:
-    normalized = _optional_string(value)
-    if normalized is None:
-        raise ValueError(f"{field_name} is required for Teams submissions")
-    return normalized
 
 
 def _optional_string(value: object) -> str | None:

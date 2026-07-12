@@ -318,7 +318,7 @@ def test_zero_config_submit_then_show_result_roundtrip(tmp_path, monkeypatch):
         )
 
     monkeypatch.setattr(
-        "driftshield.cli.commands.telemetry.post_oss_submission", fake_post
+        "driftshield.cli._submit.post_oss_submission", fake_post
     )
 
     submit = runner.invoke(

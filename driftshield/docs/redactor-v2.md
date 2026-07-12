@@ -90,15 +90,14 @@ public detection surface or the rule-evaluation order changes.
 
 ## CLI inspection
 
-Two flags on `driftshield telemetry submit-session` let you inspect the
-redactor's behaviour without submitting:
+Two flags on `driftshield submit` let you inspect the redactor's behaviour without submitting:
 
 ```sh
 # Print the structured list of redaction entries that would apply.
-driftshield telemetry submit-session --path session.json --dry-run-redaction
+driftshield submit --path session.json --dry-run-redaction
 
 # Print the manifest that would accompany the submission.
-driftshield telemetry submit-session --path session.json --show-manifest
+driftshield submit --path session.json --show-manifest
 ```
 
 Both flags exit 0 without posting to the intake URL.

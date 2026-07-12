@@ -1,6 +1,6 @@
 """Build a signature summary from a finished session file.
 
-Shared helper between the ``telemetry submit-session`` and ``ingest``
+Shared helper between the ``driftshield submit`` and ``ingest``
 commands. Given a session file path, parse it through the local
 deterministic matcher and project the result into the public envelope
 shape (:class:`driftshield.intake_contract.SignatureSummary`).
