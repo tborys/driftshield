@@ -22,8 +22,14 @@ fields; this module pins both values as constants in anticipation.
 
 Tool-IO values are replaced (not deleted) with a stable hash placeholder so
 downstream analysers can keep their structural assumptions about tool-call
-shapes. Pure prompt/response keys (``content``, ``text``) still delete to
-match v1 behaviour.
+shapes.
+
+``content`` / ``text`` (ruleset.v3, driftshield#158) are redacted
+structurally instead of dropped wholesale: a plain string value is replaced
+with a string placeholder in place; a ``content`` list of typed blocks
+(native Claude Code ``tool_use`` / ``text`` / ``tool_result`` / ``thinking``
+records) is redacted block-by-block so downstream re-parsing keeps working
+on the redacted payload. See :func:`_redact_content_blocks`.
 """
 
 from __future__ import annotations
@@ -36,8 +42,8 @@ from typing import Any
 from driftshield.intake_contract import REQUIRED_REDACTION_FIELDS
 
 
-REDACTOR_VERSION = "recursive-redactor.v2.0.0"
-REDACTION_RULESET_VERSION = "ruleset.v2"
+REDACTOR_VERSION = "recursive-redactor.v3.0.0"
+REDACTION_RULESET_VERSION = "ruleset.v3"
 
 _TOOL_IO_KEYS: frozenset[str] = frozenset(
     {
@@ -128,10 +134,7 @@ _OPENCLAW_CONTENT_KEYS: frozenset[str] = frozenset(
 )
 
 _DROPPED_KEYS: frozenset[str] = (
-    REQUIRED_REDACTION_FIELDS
-    | _PROMPT_RESPONSE_KEYS
-    | _FAILURE_BODY_KEYS
-    | _OPENCLAW_CONTENT_KEYS
+    REQUIRED_REDACTION_FIELDS | _FAILURE_BODY_KEYS | _OPENCLAW_CONTENT_KEYS
 )
 
 
@@ -205,12 +208,137 @@ def _redact_string(value: str, path: str, entries: list[RedactionEntry]) -> str:
     return value
 
 
+def _redact_prompt_response_string(
+    value: str, path: str, entries: list[RedactionEntry]
+) -> str:
+    entries.append(
+        RedactionEntry(path=path, category="prompt_response", sample_hash=_stable_hash(value))
+    )
+    return _placeholder("prompt_response", value)
+
+
+def _redact_tool_use_block(
+    item: dict[str, Any], path: str, entries: list[RedactionEntry]
+) -> dict[str, Any]:
+    """``tool_use`` content block: keep ``type``/``id``/``name``, replace ``input``.
+
+    ``input`` becomes a placeholder OBJECT (not string) so a downstream
+    re-parse of the redacted payload still finds a mapping where it expects
+    tool-call arguments (driftshield#158).
+    """
+    result: dict[str, Any] = {}
+    for key in ("type", "id", "name"):
+        if key in item:
+            result[key] = item[key]
+    if "input" in item:
+        child_path = f"{path}.input"
+        serialised = repr(item["input"])
+        entries.append(
+            RedactionEntry(path=child_path, category="tool_io", sample_hash=_stable_hash(serialised))
+        )
+        result["input"] = {"redacted": _placeholder("tool_io", serialised)}
+    return result
+
+
+def _redact_text_block(
+    item: dict[str, Any], path: str, entries: list[RedactionEntry]
+) -> dict[str, Any]:
+    """``text`` content block: keep ``type``, replace ``text`` in place."""
+    result: dict[str, Any] = {}
+    if "type" in item:
+        result["type"] = item["type"]
+    if "text" in item:
+        value = item["text"]
+        child_path = f"{path}.text"
+        result["text"] = (
+            _redact_prompt_response_string(value, child_path, entries)
+            if isinstance(value, str)
+            else value
+        )
+    return result
+
+
+def _redact_tool_result_block(
+    item: dict[str, Any], path: str, entries: list[RedactionEntry]
+) -> dict[str, Any]:
+    """``tool_result`` content block: keep ``type``/``tool_use_id``/``is_error``,
+    replace the ``content`` body with a single string placeholder regardless
+    of whether it arrived as a string or a nested block list.
+    """
+    result: dict[str, Any] = {}
+    for key in ("type", "tool_use_id", "is_error"):
+        if key in item:
+            result[key] = item[key]
+    if "content" in item:
+        child_path = f"{path}.content"
+        value = item["content"]
+        serialised = value if isinstance(value, str) else repr(value)
+        result["content"] = _redact_prompt_response_string(serialised, child_path, entries)
+    return result
+
+
+def _redact_content_blocks(
+    items: list[Any], path: str, entries: list[RedactionEntry]
+) -> list[Any]:
+    """Redact a ``content`` list of native Claude Code typed blocks.
+
+    ``thinking`` blocks are dropped entirely. Recognised block types are
+    redacted structurally (see the per-type helpers above) so the redacted
+    payload keeps the shape a re-parse of the transcript expects. Any other
+    block type (or a non-dict item) falls back to the generic recursive
+    redaction so it still gets the standard key/pattern rules.
+    """
+    redacted_items: list[Any] = []
+    for index, item in enumerate(items):
+        item_path = f"{path}[{index}]"
+        if not isinstance(item, dict):
+            redacted_items.append(_redact_value(item, item_path, entries))
+            continue
+        block_type = item.get("type")
+        if block_type == "thinking":
+            entries.append(
+                RedactionEntry(
+                    path=item_path, category="dropped_key", sample_hash=_stable_hash(repr(item))
+                )
+            )
+            continue
+        if block_type == "tool_use":
+            redacted_items.append(_redact_tool_use_block(item, item_path, entries))
+            continue
+        if block_type == "text":
+            redacted_items.append(_redact_text_block(item, item_path, entries))
+            continue
+        if block_type == "tool_result":
+            redacted_items.append(_redact_tool_result_block(item, item_path, entries))
+            continue
+        redacted_items.append(_redact_value(item, item_path, entries))
+    return redacted_items
+
+
 def _redact_value(value: Any, path: str, entries: list[RedactionEntry]) -> Any:
     if isinstance(value, dict):
         result: dict[str, Any] = {}
         for key, item in value.items():
             child_path = f"{path}.{key}" if path else key
             if key in _DROPPED_KEYS:
+                entries.append(
+                    RedactionEntry(
+                        path=child_path,
+                        category="dropped_key",
+                        sample_hash=_stable_hash(repr(item)),
+                    )
+                )
+                continue
+            if key in _PROMPT_RESPONSE_KEYS:
+                if isinstance(item, str):
+                    result[key] = _redact_prompt_response_string(item, child_path, entries)
+                    continue
+                if key == "content" and isinstance(item, list):
+                    result[key] = _redact_content_blocks(item, child_path, entries)
+                    continue
+                # Unrecognised content/text shape (neither a string nor a
+                # block list): fall back to the pre-v3 wholesale drop rather
+                # than risk leaking an unhandled structure.
                 entries.append(
                     RedactionEntry(
                         path=child_path,

@@ -8,6 +8,18 @@ from driftshield.core.analysis.risk import RiskHeuristic
 from driftshield.core.models import CanonicalEvent, EventType, ExplanationPayload, RiskClassification
 
 
+def _as_mapping(value: object) -> dict:
+    """Return ``value`` if it is a dict, else an empty dict.
+
+    ``CanonicalEvent.inputs``/``outputs`` are typed as ``dict`` but a
+    tool_use ``input`` redacted under ruleset.v2 (driftshield#158) reaches
+    heuristics as a placeholder STRING, not a mapping. Every heuristic below
+    reads ``event.inputs`` as a dict; this guard keeps that read from raising
+    on already-uploaded payloads carrying the old string-placeholder shape.
+    """
+    return value if isinstance(value, dict) else {}
+
+
 class CoverageGapHeuristic(RiskHeuristic):
     """Detect when output references fewer items than the input provided."""
 
@@ -49,7 +61,7 @@ class CoverageGapHeuristic(RiskHeuristic):
 
     def _find_lists_in_dict(self, d: dict, prefix: str = "") -> dict[str, list]:
         result: dict[str, list] = {}
-        for key, value in d.items():
+        for key, value in _as_mapping(d).items():
             full_key = f"{prefix}.{key}" if prefix else key
             if isinstance(value, list) and value and all(isinstance(item, (str, int, float)) for item in value):
                 result[full_key] = value
@@ -129,7 +141,7 @@ class AssumptionMutationHeuristic(RiskHeuristic):
         )
 
     def _candidate_from_event(self, event: CanonicalEvent) -> tuple[str, str] | None:
-        for key, value in event.inputs.items():
+        for key, value in _as_mapping(event.inputs).items():
             if key.lower() in self.ASSUMPTION_KEYS and isinstance(value, str) and value.strip():
                 return key, value.strip().lower()
             if isinstance(value, str) and value.strip() and any(cue in value.lower() for cue in self.ASSUMPTION_CUES):
@@ -140,9 +152,10 @@ class AssumptionMutationHeuristic(RiskHeuristic):
         action = event.action.lower()
         if any(term in action for term in self.PLANNING_TERMS):
             return True
-        if any(key.lower() in self.ASSUMPTION_KEYS for key in event.inputs):
+        inputs = _as_mapping(event.inputs)
+        if any(key.lower() in self.ASSUMPTION_KEYS for key in inputs):
             return True
-        haystacks = [str(v).lower() for v in event.inputs.values() if isinstance(v, str)]
+        haystacks = [str(v).lower() for v in inputs.values() if isinstance(v, str)]
         return any(term in haystack for haystack in haystacks for term in self.PLANNING_TERMS)
 
     def _find_assistant_introduction(
@@ -215,7 +228,7 @@ class PolicyDivergenceHeuristic(RiskHeuristic):
         if not project_rules or event.action.lower() in self.READ_ONLY_ACTIONS:
             return None
 
-        command = _normalise_text(event.inputs.get("command"))
+        command = _normalise_text(_as_mapping(event.inputs).get("command"))
         for index, rule in enumerate(project_rules):
             if str(rule.get("rule_type", "")).lower() != "forbid_force_push":
                 continue
@@ -255,7 +268,7 @@ class ConstraintViolationHeuristic(RiskHeuristic):
                 continue
             source_ref = str(constraint.get("source_ref") or f"context.session_constraints[{index}]")
             evidence = ["metadata.tool_use_id"]
-            if "command" in event.inputs:
+            if "command" in _as_mapping(event.inputs):
                 evidence.append("inputs.command")
             evidence.append(source_ref)
             return RiskClassification(
@@ -276,7 +289,7 @@ class ConstraintViolationHeuristic(RiskHeuristic):
             return False
         if action in {"write", "edit"}:
             return True
-        command = _normalise_text(event.inputs.get("command"))
+        command = _normalise_text(_as_mapping(event.inputs).get("command"))
         return any(marker in command for marker in self.DESTRUCTIVE_COMMAND_MARKERS)
 
     def _has_explicit_confirmation(self, confirmations: list[dict]) -> bool:
@@ -332,7 +345,7 @@ class ContextContaminationHeuristic(RiskHeuristic):
 
     def _extract_context_values(self, d: dict) -> dict[str, str]:
         result = {}
-        for key, value in d.items():
+        for key, value in _as_mapping(d).items():
             key_lower = key.lower()
             for context_key in self.CONTEXT_KEYS:
                 if context_key in key_lower and isinstance(value, str):
@@ -342,7 +355,7 @@ class ContextContaminationHeuristic(RiskHeuristic):
 
     def _extract_value_keys(self, d: dict) -> dict[str, str]:
         result = {}
-        for key, value in d.items():
+        for key, value in _as_mapping(d).items():
             key_lower = key.lower()
             for value_key in self.VALUE_KEYS:
                 if value_key in key_lower and isinstance(value, str):

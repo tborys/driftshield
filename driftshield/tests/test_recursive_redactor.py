@@ -47,8 +47,8 @@ def _load(name: str) -> dict[str, object]:
 
 
 def test_module_pins_redactor_and_ruleset_versions():
-    assert REDACTOR_VERSION.startswith("recursive-redactor.v2")
-    assert REDACTION_RULESET_VERSION == "ruleset.v2"
+    assert REDACTOR_VERSION.startswith("recursive-redactor.v3")
+    assert REDACTION_RULESET_VERSION == "ruleset.v3"
 
 
 def test_aws_access_key_redacted_anywhere():
@@ -148,6 +148,107 @@ def test_tool_io_keys_replaced_with_placeholder_not_dropped():
     assert tool["arguments"].startswith("<REDACTED:tool_io:")
 
 
+def test_content_block_tool_use_input_replaced_with_placeholder_object():
+    """driftshield#158: native ``message.content`` list of typed blocks.
+    ``tool_use`` keeps ``type``/``id``/``name`` and gets ``input`` replaced
+    by a placeholder OBJECT (not string), so a downstream re-parse never
+    hits a non-mapping ``event.inputs``.
+    """
+    payload = {
+        "events": [
+            {
+                "type": "assistant",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "toolu_1",
+                            "name": "Read",
+                            "input": {"file_path": "/home/example-user/secrets.txt"},
+                        }
+                    ]
+                },
+            }
+        ]
+    }
+    result = redact(payload)
+    serialised = json.dumps(result.payload)
+    assert "/home/example-user/secrets.txt" not in serialised
+
+    block = result.payload["events"][0]["message"]["content"][0]
+    assert block == {
+        "type": "tool_use",
+        "id": "toolu_1",
+        "name": "Read",
+        "input": block["input"],
+    }
+    assert isinstance(block["input"], dict)
+    assert block["input"]["redacted"].startswith("<REDACTED:tool_io:")
+
+
+def test_content_block_text_replaced_type_retained():
+    payload = {
+        "events": [
+            {
+                "type": "assistant",
+                "message": {"content": [{"type": "text", "text": "SECRET_NARRATIVE"}]},
+            }
+        ]
+    }
+    result = redact(payload)
+    block = result.payload["events"][0]["message"]["content"][0]
+    assert block["type"] == "text"
+    assert "SECRET_NARRATIVE" not in json.dumps(result.payload)
+    assert block["text"].startswith("<REDACTED:prompt_response:")
+
+
+def test_content_block_tool_result_body_replaced_metadata_retained():
+    payload = {
+        "events": [
+            {
+                "type": "user",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "toolu_1",
+                            "is_error": True,
+                            "content": "SECRET_TOOL_OUTPUT",
+                        }
+                    ]
+                },
+            }
+        ]
+    }
+    result = redact(payload)
+    block = result.payload["events"][0]["message"]["content"][0]
+    assert block["tool_use_id"] == "toolu_1"
+    assert block["is_error"] is True
+    assert "SECRET_TOOL_OUTPUT" not in json.dumps(result.payload)
+    assert block["content"].startswith("<REDACTED:prompt_response:")
+
+
+def test_content_block_thinking_dropped_entirely():
+    payload = {
+        "events": [
+            {
+                "type": "assistant",
+                "message": {
+                    "content": [
+                        {"type": "thinking", "thinking": "SECRET_CHAIN_OF_THOUGHT"},
+                        {"type": "text", "text": "visible reply"},
+                    ]
+                },
+            }
+        ]
+    }
+    result = redact(payload)
+    blocks = result.payload["events"][0]["message"]["content"]
+    assert len(blocks) == 1
+    assert blocks[0]["type"] == "text"
+    assert "SECRET_CHAIN_OF_THOUGHT" not in json.dumps(result.payload)
+
+
 def test_required_redaction_fields_still_dropped_at_top():
     payload = {
         "prompts": ["x"],
@@ -163,7 +264,11 @@ def test_required_redaction_fields_still_dropped_at_top():
     assert set(fields) == REQUIRED_REDACTION_FIELDS
 
 
-def test_nested_content_and_text_still_dropped():
+def test_nested_content_and_text_redacted_in_place_not_dropped():
+    """ruleset.v3 (driftshield#158): a plain-string ``content``/``text`` value
+    is replaced with a placeholder in place, not deleted, so a downstream
+    re-parse still finds the key.
+    """
     payload = {
         "events": [
             {"type": "user", "content": "SECRET_CONTENT"},
@@ -174,6 +279,8 @@ def test_nested_content_and_text_still_dropped():
     serialised = json.dumps(redacted)
     assert "SECRET_CONTENT" not in serialised
     assert "SECRET_TEXT" not in serialised
+    assert redacted["events"][0]["content"].startswith("<REDACTED:prompt_response:")
+    assert redacted["events"][1]["text"].startswith("<REDACTED:prompt_response:")
 
 
 def test_redact_payload_with_manifest_exposes_entries():

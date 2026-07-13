@@ -6,8 +6,11 @@ from uuid import uuid4
 from driftshield.core.models import CanonicalEvent, EventType, RiskClassification
 from driftshield.core.analysis.risk import RiskHeuristic, RiskAnalyzer
 from driftshield.core.analysis.heuristics import (
+    AssumptionMutationHeuristic,
+    ConstraintViolationHeuristic,
     CoverageGapHeuristic,
     ContextContaminationHeuristic,
+    PolicyDivergenceHeuristic,
 )
 
 
@@ -324,5 +327,67 @@ class TestContextContaminationHeuristic:
         )
 
         result = heuristic.check(event, {"previous_outputs": previous_outputs})
+
+        assert result is None
+
+
+class TestNonDictInputsGuard:
+    """driftshield#158: a tool_use ``input`` redacted under ruleset.v2 reaches
+    heuristics as a placeholder STRING, not a mapping. Every heuristic that
+    reads ``event.inputs`` must degrade gracefully (no flag / no crash)
+    instead of raising ``AttributeError`` on ``.items()``/``.get()``/``in``.
+    """
+
+    STRING_INPUT = "<REDACTED:tool_io:deadbeefcafefeed>"
+
+    def test_coverage_gap_heuristic_no_crash(self):
+        heuristic = CoverageGapHeuristic()
+        event = make_event(inputs=self.STRING_INPUT, outputs={"processed_items": ["a"]})
+
+        assert heuristic.check(event, {}) is None
+
+    def test_assumption_mutation_heuristic_no_crash(self):
+        heuristic = AssumptionMutationHeuristic()
+        event = make_event(action="plan_rollout", inputs=self.STRING_INPUT)
+
+        assert heuristic.check(event, {"previous_events": []}) is None
+
+    def test_policy_divergence_heuristic_no_crash(self):
+        heuristic = PolicyDivergenceHeuristic()
+        event = make_event(action="bash", inputs=self.STRING_INPUT)
+
+        result = heuristic.check(
+            event,
+            {"project_rules": [{"rule_type": "forbid_force_push", "source_ref": "x"}]},
+        )
+
+        assert result is None
+
+    def test_constraint_violation_heuristic_no_crash(self):
+        heuristic = ConstraintViolationHeuristic()
+        event = make_event(action="bash", inputs=self.STRING_INPUT)
+
+        result = heuristic.check(
+            event,
+            {
+                "session_constraints": [
+                    {
+                        "constraint_type": "requires_confirmation_for_destructive_actions",
+                        "source_ref": "x",
+                    }
+                ],
+                "explicit_confirmations": [],
+            },
+        )
+
+        assert result is None
+
+    def test_context_contamination_heuristic_no_crash(self):
+        heuristic = ContextContaminationHeuristic()
+        event = make_event(inputs=self.STRING_INPUT, outputs={"total": 500})
+
+        result = heuristic.check(
+            event, {"previous_outputs": [{"discount_tier": "gold", "discount_category": "A"}]}
+        )
 
         assert result is None
