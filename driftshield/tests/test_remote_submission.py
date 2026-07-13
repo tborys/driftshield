@@ -53,7 +53,11 @@ def test_redact_payload_strips_required_fields():
     assert set(redacted_fields) == REQUIRED_REDACTION_FIELDS
 
 
-def test_redact_payload_strips_nested_content_and_text_keys():
+def test_redact_payload_redacts_nested_content_and_text_keys_in_place():
+    """ruleset.v3 (driftshield#158): a plain-string ``content``/``text`` value
+    is replaced with a placeholder in place, not deleted, so a downstream
+    re-parse still finds the key.
+    """
     payload = {
         "session_id": "sess-1",
         "events": [
@@ -70,12 +74,11 @@ def test_redact_payload_strips_nested_content_and_text_keys():
     assert redacted["session_id"] == "sess-1"
     assert [e["type"] for e in redacted["events"]] == ["user", "assistant"]
     assert [e["ts"] for e in redacted["events"]] == [1, 2]
-    for event in redacted["events"]:
-        assert "content" not in event
-        assert "text" not in event
+    assert redacted["events"][0]["content"].startswith("<REDACTED:prompt_response:")
+    assert redacted["events"][1]["text"].startswith("<REDACTED:prompt_response:")
 
 
-def test_redact_payload_strips_deeply_nested_sensitive_keys():
+def test_redact_payload_redacts_deeply_nested_sensitive_keys_in_place():
     payload = {
         "level_1": {
             "level_2": {
@@ -92,7 +95,9 @@ def test_redact_payload_strips_deeply_nested_sensitive_keys():
     redacted, _ = redact_payload(payload)
 
     assert "DEEP_SECRET" not in json.dumps(redacted)
-    assert redacted["level_1"]["level_2"]["level_3"]["level_4"] == {"keep": "safe_value"}
+    leaf = redacted["level_1"]["level_2"]["level_3"]["level_4"]
+    assert leaf["keep"] == "safe_value"
+    assert leaf["content"].startswith("<REDACTED:prompt_response:")
 
 
 def test_redact_payload_removes_claude_code_prompt_response_strings():
