@@ -36,6 +36,20 @@ log "Frontend checks (production build)"
 cd "$FRONTEND_DIR"
 npm run build
 
+log "Frontend e2e tests (Playwright)"
+cd "$FRONTEND_DIR"
+if ls tests/e2e/*.spec.ts >/dev/null 2>&1; then
+  # Intentional gap vs CI: CI runs `playwright install chromium --with-deps`,
+  # which apt-installs OS packages on the GitHub-hosted runner. Locally we
+  # only fetch the browser binary and leave system libraries to the
+  # developer's machine, since --with-deps assumes an apt-based, root-capable
+  # runner that a local dev box may not be.
+  npx playwright install chromium
+  npx playwright test --reporter=list
+else
+  echo "[dev-verify] No Playwright e2e tests found; skipping (mirrors CI frontend-e2e skip)"
+fi
+
 log "Quickstart sample report smoke test"
 cd "$BACKEND_DIR"
 REPORT_OUTPUT="$(mktemp)"
