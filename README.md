@@ -324,6 +324,15 @@ driftshield report <file.jsonl> --format json
 # Discover and list local transcript connectors
 driftshield connectors discover
 driftshield connectors list
+
+# Analyse every transcript in a directory or archive, without aborting on a bad file
+driftshield batch <directory-or-archive>
+
+# Same, plus submit every successfully analysed file (opt-in; no --submit means no network call)
+driftshield batch <directory-or-archive> --submit
+
+# Machine-readable batch report
+driftshield batch <directory-or-archive> --json
 ```
 
 ## Tech Stack
@@ -372,6 +381,21 @@ docker compose up -d
 ```
 
 The production compose file runs the app on port 8080 with PostgreSQL 16. Both `API_KEY` and `DB_PASSWORD` are required and will fail on startup if missing.
+
+### CLI-only image
+
+A separate `cli` build target packages just the `driftshield` CLI (no frontend, no web server), for running `batch`/`analyze`/`submit` standalone in CI or a customer environment:
+
+```bash
+cd driftshield
+docker build --target cli -t driftshield-cli .
+
+# Analyse every transcript under a mounted directory
+docker run --rm -v $(pwd)/transcripts:/data driftshield-cli batch /data
+
+# ...and submit the successfully analysed ones (opt-in; requires network egress)
+docker run --rm -v $(pwd)/transcripts:/data driftshield-cli batch /data --submit
+```
 
 ## Contributing
 
