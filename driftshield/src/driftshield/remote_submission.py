@@ -74,10 +74,15 @@ _DEFAULT_SOURCE_SYSTEM = "driftshield-oss"
 
 
 # Top-level key hints for the shapes recognisable from the payload's key-set
-# alone. The two events-carrying shapes (openclaw_trajectory and claude_code)
-# are NOT in this table: both arrive as a ``payload["events"]`` list, so they
-# are told apart by probing the event records themselves in
-# :func:`detect_shape`.
+# alone. This table alone misses the native OSS parser fixtures for
+# claude_desktop/codex_desktop, crewai and langchain: those ship in a
+# different concrete shape than the pre-built envelope fixtures below
+# (e.g. crewai's native fixture uses ``crew_name``/``run_id``, not a bare
+# ``crew`` key; langchain's native fixture is a top-level array, not a
+# dict at all). :func:`detect_shape` probes those first with the same
+# discriminators as :func:`driftshield.public.detect_source` before
+# falling back to this table -- see :func:`_looks_like_crewai`,
+# :func:`_detect_desktop_shape` and :func:`_looks_like_langchain_events`.
 _KNOWN_SHAPE_HINTS: dict[str, frozenset[str]] = {
     "claude_desktop": frozenset({"conversation", "messages"}),
     "codex": frozenset({"session", "turns"}),
@@ -118,6 +123,57 @@ def _looks_like_claude_code_events(events: Any) -> bool:
     )
 
 
+def _looks_like_langchain_events(events: Any) -> bool:
+    # A LangChain run tree is a top-level array of run records; once loaded
+    # via load_session_payload() the whole array becomes payload["events"].
+    # Same discriminator as driftshield.public._detect_single_document's
+    # array branch: a run_type field, or a trace_id paired with inputs.
+    if not isinstance(events, list) or len(events) == 0:
+        return False
+    first = next((event for event in events if isinstance(event, dict)), None)
+    if first is None:
+        return False
+    return "run_type" in first or ("trace_id" in first and "inputs" in first)
+
+
+def _looks_like_crewai(payload: dict[str, Any]) -> bool:
+    # Same discriminator as driftshield.public._detect_single_document: a
+    # crew run object with tasks[] keyed on run_id / crew_name. The native
+    # fixture never carries a bare "crew" key, so the old key-hint table
+    # entry for crewai never actually matched it.
+    return "tasks" in payload and ("crew_name" in payload or "run_id" in payload)
+
+
+def _detect_desktop_shape(payload: dict[str, Any]) -> str | None:
+    """Return ``"codex_desktop"``, ``"claude_desktop"``, or ``None``.
+
+    Same discriminator as driftshield.public._detect_single_document: both
+    formats are a single-session object with a messages[] array. They differ
+    by message content shape (codex_desktop: a content LIST of {type, text}
+    parts; claude_desktop: a content STRING), with session_id vs. a bare id
+    as the fallback when no content is present to inspect.
+    """
+    messages = payload.get("messages")
+    if not isinstance(messages, list) or not messages:
+        return None
+    first_message = next((message for message in messages if isinstance(message, dict)), None)
+    if first_message is None or "role" not in first_message:
+        return None
+    sample = next(
+        (
+            message.get("content")
+            for message in messages
+            if isinstance(message, dict) and message.get("content") is not None
+        ),
+        None,
+    )
+    if isinstance(sample, list):
+        return "codex_desktop"
+    if isinstance(sample, str):
+        return "claude_desktop"
+    return "claude_desktop" if "session_id" in payload else "codex_desktop"
+
+
 class UnknownTranscriptShapeError(ValueError):
     """Raised when the input transcript does not match a known shape.
 
@@ -145,10 +201,11 @@ def detect_shape(payload: dict[str, Any]) -> str | None:
     to submit payloads the recursive redactor was not designed against,
     rather than silently under-redacting them.
 
-    Events-carrying payloads are content-probed: OpenClaw runtime
-    trajectories detect as ``openclaw_trajectory``, native Claude Code
-    lines as ``claude_code``. An events list matching neither probe is not
-    claude_code; it falls to the key-hint table (and then to unknown).
+    Events-carrying payloads are content-probed first: OpenClaw runtime
+    trajectories detect as ``openclaw_trajectory``, LangChain run trees as
+    ``langchain``, native Claude Code lines as ``claude_code``. A dict
+    payload that isn't events-shaped is probed for crewai and the two
+    desktop formats, then falls to the key-hint table (and then unknown).
     """
     if not isinstance(payload, dict):
         return None
@@ -156,8 +213,15 @@ def detect_shape(payload: dict[str, Any]) -> str | None:
     if isinstance(events, list) and len(events) > 0:
         if _looks_like_openclaw_trajectory(events):
             return "openclaw_trajectory"
+        if _looks_like_langchain_events(events):
+            return "langchain"
         if _looks_like_claude_code_events(events):
             return "claude_code"
+    if _looks_like_crewai(payload):
+        return "crewai"
+    desktop_shape = _detect_desktop_shape(payload)
+    if desktop_shape is not None:
+        return desktop_shape
     keys = set(payload.keys())
     for shape, required in _KNOWN_SHAPE_HINTS.items():
         if required.issubset(keys):

@@ -399,6 +399,81 @@ def test_batch_help_mentions_submit_flag():
     assert "--include-analysis" in output
 
 
+# ---------------------------------------------------------------------------
+# Full fixture matrix: every bundled transcript format must analyse AND
+# submit through batch, whether copied plain (no native path hints) into a
+# directory or packed into a zip archive. driftshield#163 review round 3:
+# batch's submit step must accept every shape detect_source() supports, the
+# same as the single-file `driftshield submit` lane -- not a stricter one.
+# ---------------------------------------------------------------------------
+
+_ALL_TRANSCRIPT_FIXTURES = [
+    "sample_claude_code_session.jsonl",
+    "sample_codex_cli_session.jsonl",
+    "sample_claude_desktop_session.json",
+    "sample_codex_desktop_session.json",
+    "sample_crewai_session.json",
+    "sample_langchain_session.json",
+    "sample_openclaw_trajectory.json",
+]
+
+
+@pytest.mark.parametrize("fixture_name", _ALL_TRANSCRIPT_FIXTURES)
+def test_batch_analyses_every_bundled_fixture_in_plain_directory(tmp_path, fixture_name):
+    """Every bundled transcript format, copied plain (no native path-hint
+    directory) must be analysed, not skipped or failed."""
+    import shutil
+
+    shutil.copy(FIXTURES_DIR / fixture_name, tmp_path / fixture_name)
+
+    report = run_batch(tmp_path, submit=False)
+
+    assert len(report.files) == 1
+    assert report.files[0].outcome == "analysed-only", report.files[0].reason
+
+
+@pytest.mark.parametrize("fixture_name", _ALL_TRANSCRIPT_FIXTURES)
+def test_batch_submits_every_bundled_fixture_in_plain_directory(
+    tmp_path, fixture_name, monkeypatch
+):
+    """Every bundled transcript format must submit successfully through
+    batch --submit against a stubbed endpoint: no shape is skipped or
+    failed, and none of the redacted bodies leak raw content."""
+    import shutil
+
+    captured: dict = {}
+    monkeypatch.setattr("driftshield.cli._submit.post_oss_submission", _fake_post_ok(captured))
+    monkeypatch.setenv("DRIFTSHIELD_TELEMETRY_HOME", str(tmp_path / "tele"))
+
+    source_dir = tmp_path / "transcripts"
+    source_dir.mkdir()
+    shutil.copy(FIXTURES_DIR / fixture_name, source_dir / fixture_name)
+
+    report = run_batch(source_dir, submit=True, tier="oss")
+
+    assert len(report.files) == 1
+    assert report.files[0].outcome == "submitted", report.files[0].reason
+    assert report.files[0].submission_id == "sub_batch"
+
+
+@pytest.mark.parametrize("fixture_name", _ALL_TRANSCRIPT_FIXTURES)
+def test_batch_submits_every_bundled_fixture_from_zip_archive(tmp_path, fixture_name, monkeypatch):
+    """Same fixture matrix, but extracted from a zip archive: no native
+    path hints and no native directory structure survive extraction."""
+    captured: dict = {}
+    monkeypatch.setattr("driftshield.cli._submit.post_oss_submission", _fake_post_ok(captured))
+    monkeypatch.setenv("DRIFTSHIELD_TELEMETRY_HOME", str(tmp_path / "tele"))
+
+    archive_path = tmp_path / "sessions.zip"
+    with zipfile.ZipFile(archive_path, "w") as zf:
+        zf.write(FIXTURES_DIR / fixture_name, arcname=fixture_name)
+
+    report = run_batch(archive_path, submit=True, tier="oss")
+
+    assert len(report.files) == 1
+    assert report.files[0].outcome == "submitted", report.files[0].reason
+
+
 def test_batch_errors_on_missing_source():
     result = runner.invoke(app, ["batch", "/definitely/not/a/real/path"])
 

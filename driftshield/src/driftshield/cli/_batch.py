@@ -15,6 +15,7 @@ reason. Neither aborts the rest of the batch.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import json
 import tarfile
 import tempfile
 from pathlib import Path
@@ -125,6 +126,32 @@ def _extract_archive(archive_path: Path, dest: Path) -> None:
             tf.extractall(dest, filter="data")
 
 
+def _load_batch_submission_payload(file_path: Path) -> dict[str, Any]:
+    """Build the submission payload for one already-analysed batch file.
+
+    Reuses :func:`load_session_payload` for the shapes it already accepts
+    (a JSON object, or JSONL). That loader deliberately rejects a top-level
+    JSON array on the ``driftshield submit --path`` surface, where a lone
+    array is ambiguous input with no prior format detection behind it. In a
+    batch run the file has already been through ``detect_parser()`` /
+    ``detect_source()`` above, so a top-level array here is unambiguously a
+    native array-shaped transcript (e.g. a LangChain run tree): wrap it into
+    ``payload['events']`` the same way JSONL lines are wrapped, instead of
+    treating it as the same error a raw unformatted array would be on the
+    single-file surface.
+    """
+    try:
+        return load_session_payload(file_path)
+    except ValueError as exc:
+        try:
+            whole = json.loads(file_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            raise exc from None
+        if isinstance(whole, list) and whole:
+            return {"events": whole}
+        raise exc from None
+
+
 def _discover_files(root: Path) -> list[Path]:
     return sorted(p for p in root.rglob("*") if p.is_file())
 
@@ -198,7 +225,7 @@ def _process_directory(
             continue
 
         try:
-            payload = load_session_payload(file_path)
+            payload = _load_batch_submission_payload(file_path)
             outcome = submit_session_core(
                 payload=payload,
                 path=file_path,
