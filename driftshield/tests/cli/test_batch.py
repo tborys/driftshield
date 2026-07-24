@@ -9,6 +9,7 @@ the --json report shape.
 from __future__ import annotations
 
 import json
+import re
 import tarfile
 import zipfile
 from pathlib import Path
@@ -20,6 +21,8 @@ from driftshield.cli._batch import run_batch
 from driftshield.cli.main import app
 
 runner = CliRunner()
+
+ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures" / "transcripts"
 
@@ -388,11 +391,12 @@ def test_batch_json_output_is_stable_and_parseable(tmp_path):
 
 def test_batch_help_mentions_submit_flag():
     result = runner.invoke(app, ["batch", "--help"])
+    output = ANSI_RE.sub("", result.output)
 
     assert result.exit_code == 0
-    assert "--submit" in result.output
-    assert "--tier" in result.output
-    assert "--include-analysis" in result.output
+    assert "--submit" in output
+    assert "--tier" in output
+    assert "--include-analysis" in output
 
 
 def test_batch_errors_on_missing_source():
