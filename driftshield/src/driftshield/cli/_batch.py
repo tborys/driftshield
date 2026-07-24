@@ -29,6 +29,7 @@ from driftshield.cli._submit import (
 )
 from driftshield.cli.parsers import detect_parser, get_parser
 from driftshield.core.analysis.session import analyze_session
+from driftshield.public import detect_source
 from driftshield.remote_submission import RemoteSubmissionError, UnknownTranscriptShapeError
 
 
@@ -157,6 +158,20 @@ def _process_directory(
                 )
             )
             continue
+
+        if parser_name is None:
+            # detect_parser() keys on path conventions (e.g. `.codex-desktop/
+            # sessions/`) that a batch source rarely preserves: files are
+            # walked from an arbitrary directory or extracted from an archive
+            # into a flat temp dir. Fall back to content sniffing so a
+            # supported non-.jsonl transcript (claude_desktop, codex_desktop,
+            # crewai, langchain, ...) is still recognised by its shape.
+            try:
+                content = file_path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                content = None
+            if content is not None:
+                parser_name = detect_source(content)
 
         if parser_name is None:
             report.files.append(

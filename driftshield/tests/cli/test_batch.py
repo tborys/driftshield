@@ -230,6 +230,43 @@ def test_batch_fixture_directory_valid_and_invalid_do_not_abort(tmp_path):
     assert report.has_failures is False
 
 
+def test_batch_detects_non_jsonl_transcript_by_content_in_plain_directory(tmp_path):
+    """driftshield#163 review finding: detect_parser() keys on native session
+    directory hints (e.g. `.claude-desktop/sessions/`) or a `.jsonl` suffix, so
+    a supported non-.jsonl transcript (claude_desktop here) copied into a
+    plain directory has none of those hints. Batch must still recognise it by
+    sniffing its content, not report it as skipped."""
+    import shutil
+
+    shutil.copy(
+        FIXTURES_DIR / "sample_claude_desktop_session.json",
+        tmp_path / "sample_claude_desktop_session.json",
+    )
+
+    report = run_batch(tmp_path)
+
+    outcomes = {entry.path: entry.outcome for entry in report.files}
+    assert outcomes["sample_claude_desktop_session.json"] == "analysed-only"
+    assert report.has_failures is False
+
+
+def test_batch_detects_non_jsonl_transcript_in_zip_archive(tmp_path):
+    """Same coverage gap as above, but via the archive path: the transcript
+    is extracted to a flat temp directory with no native path hints either."""
+    archive_path = tmp_path / "sessions.zip"
+    with zipfile.ZipFile(archive_path, "w") as zf:
+        zf.write(
+            FIXTURES_DIR / "sample_claude_desktop_session.json",
+            arcname="sample_claude_desktop_session.json",
+        )
+
+    report = run_batch(archive_path)
+
+    outcomes = {entry.path: entry.outcome for entry in report.files}
+    assert outcomes["sample_claude_desktop_session.json"] == "analysed-only"
+    assert report.has_failures is False
+
+
 def test_batch_isolates_a_file_that_raises_during_parsing(tmp_path):
     """A file that auto-detects to a parser but blows up during parse/analyse
     must be recorded 'failed' with the exception message, and must not stop
