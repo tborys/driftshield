@@ -7,7 +7,23 @@ COPY frontend/ ./
 ARG VITE_API_KEY=""
 RUN VITE_API_KEY=${VITE_API_KEY} npm run build
 
-# Stage 2: Python application
+# Stage 2: CLI-only image (analyze/submit/batch, no web server or frontend)
+#
+# Built with `docker build --target cli -t driftshield-cli .`. Placed before
+# the `production` stage so `production` stays the last stage in this file --
+# an untargeted `docker build .` (as used by docker-compose.yml, which sets
+# no `target:`) must keep building the full web app image unchanged.
+FROM python:3.12-slim AS cli
+WORKDIR /app
+
+COPY pyproject.toml ./
+COPY src/ ./src/
+RUN pip install --no-cache-dir .
+
+ENTRYPOINT ["driftshield"]
+CMD ["--help"]
+
+# Stage 3: Python web application
 FROM python:3.12-slim AS production
 WORKDIR /app
 

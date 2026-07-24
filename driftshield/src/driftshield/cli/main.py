@@ -4,6 +4,7 @@ import typer
 
 from driftshield import __version__
 from driftshield.cli.commands.analyze import analyze
+from driftshield.cli.commands.batch import batch
 from driftshield.cli.commands.connectors import app as connectors_app
 from driftshield.cli.commands.export_validations import export_validations
 from driftshield.cli.commands.generate_fixtures import generate_fixtures
@@ -24,6 +25,7 @@ app = typer.Typer(
 
 # Register commands
 app.command()(analyze)
+app.command()(batch)
 app.command(name="list")(list_sessions)
 app.command()(inspect)
 app.command(name="report")(report_command)
