@@ -170,6 +170,7 @@ def _process_directory(
     submit: bool,
     tier: str,
     include_analysis: bool,
+    backfill: bool = False,
 ) -> None:
     for file_path in _discover_files(root):
         relative = _relative_label(file_path, root)
@@ -231,6 +232,7 @@ def _process_directory(
                 path=file_path,
                 tier=tier,
                 include_analysis=include_analysis,
+                backfill=backfill,
             )
         except _SUBMISSION_ERRORS as exc:  # noqa: BLE001 - per-file isolation
             report.files.append(
@@ -251,6 +253,7 @@ def run_batch(
     submit: bool = False,
     tier: str = "oss",
     include_analysis: bool = False,
+    backfill: bool = False,
 ) -> BatchReport:
     """Discover and analyse every transcript under ``source``.
 
@@ -258,12 +261,22 @@ def run_batch(
     ``.zip``/``.tar.gz``/``.tgz`` archive, which is extracted to a temporary
     directory that is cleaned up before this function returns. Raises
     ``ValueError`` if ``source`` is neither.
+
+    ``backfill=True`` stamps top-level ``backfill: true`` on every
+    submitted envelope (only meaningful together with ``submit=True`` and
+    ``tier="teams"``; see :func:`driftshield.cli._submit.submit_session_core`
+    for the validation that enforces this).
     """
     report = BatchReport()
 
     if source.is_dir():
         _process_directory(
-            source, report=report, submit=submit, tier=tier, include_analysis=include_analysis
+            source,
+            report=report,
+            submit=submit,
+            tier=tier,
+            include_analysis=include_analysis,
+            backfill=backfill,
         )
         return report
 
@@ -277,6 +290,7 @@ def run_batch(
                 submit=submit,
                 tier=tier,
                 include_analysis=include_analysis,
+                backfill=backfill,
             )
         return report
 
