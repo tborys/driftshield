@@ -102,6 +102,7 @@ def submit_session_core(
     include_analysis: bool = False,
     tier: str = "oss",
     environment: str | None = None,
+    backfill: bool = False,
 ) -> SubmitOutcome:
     """Build a phase3g.v1 envelope from an already-loaded session payload,
     redact it, and submit it once to the configured intake URL.
@@ -115,11 +116,22 @@ def submit_session_core(
     :func:`driftshield.cli._session_payload.load_session_payload`) and any
     ``--dry-run-redaction``/``--show-manifest`` inspection path; this
     function only covers the actual submit.
+
+    ``backfill=True`` stamps top-level ``backfill: true`` on the submitted
+    envelope (the post-hoc pilot-import declaration intel#330 accepts on
+    the authenticated lane) and only ``tier == "teams"`` may set it; any
+    other tier raises :class:`SubmitCoreError` before anything is uploaded.
     """
 
     resolved_tier = tier.strip().lower()
     if resolved_tier not in {"oss", "teams"}:
         raise SubmitCoreError("--tier must be 'oss' or 'teams'.")
+
+    if backfill and resolved_tier != "teams":
+        raise SubmitCoreError(
+            "--backfill requires --tier teams (the authenticated lane); "
+            "the community tier does not accept a backfill declaration."
+        )
 
     resolved_environment: str | None = None
     if environment is not None:
@@ -244,12 +256,16 @@ def submit_session_core(
     # bubble to the caller as-is.
     if resolved_tier == "teams":
         assert teams_api_key is not None
+        teams_kwargs: dict[str, Any] = {}
+        if backfill:
+            teams_kwargs["backfill"] = True
         result = submit_teams_via_presigned_upload(
             config=TeamsUploadConfig(intake_url=intake_url, api_key=teams_api_key),
             payload=redacted_payload,
             workflow_reference=resolved_workflow_reference,
             file_name=path.name,
             provenance=provenance,
+            **teams_kwargs,
         )
     elif is_large:
         result = submit_oss_via_presigned_upload(

@@ -141,7 +141,8 @@ def _submit_via_presigned_upload(
     mode: str,
     api_key: str | None,
     provenance: dict[str, Any] | None,
-    opener: Any,
+    backfill: bool = False,
+    opener: Any = None,
 ) -> OssSubmissionResult:
     """Shared presign → POST-to-S3 → finalise flow for both lanes.
 
@@ -199,6 +200,10 @@ def _submit_via_presigned_upload(
     # signature_summary) so the presigned lane is not lossier than inline.
     if provenance:
         finalise_body.update(provenance)
+    if backfill:
+        # Post-hoc pilot-import declaration (intel#330): only the Teams
+        # (authenticated) caller ever passes this through.
+        finalise_body["backfill"] = True
 
     decoded = _post_json(
         f"{base}{finalise_path}", finalise_body, api_key=api_key, opener=opener
@@ -244,9 +249,16 @@ def submit_teams_via_presigned_upload(
     file_name: str,
     mode: str = "file",
     provenance: dict[str, Any] | None = None,
+    backfill: bool = False,
     opener: Any = None,
 ) -> OssSubmissionResult:
-    """Upload a large Teams (API-key) session via presigned S3."""
+    """Upload a large Teams (API-key) session via presigned S3.
+
+    ``backfill=True`` stamps top-level ``backfill: true`` on the finalise
+    body (the post-hoc pilot-import declaration from intel#330). Only this,
+    the authenticated lane, ever carries it -- the OSS lane has no
+    ``backfill`` parameter at all.
+    """
     return _submit_via_presigned_upload(
         base=derive_intake_base_url(config.intake_url),
         presign_path=_TEAMS_PRESIGN_PATH,
@@ -257,6 +269,7 @@ def submit_teams_via_presigned_upload(
         mode=mode,
         api_key=config.api_key,
         provenance=provenance,
+        backfill=backfill,
         opener=opener,
     )
 

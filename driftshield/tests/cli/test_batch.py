@@ -55,6 +55,31 @@ def _network_forbidden(*args, **kwargs):
     raise AssertionError("no network call should be made without --submit")
 
 
+def _fake_teams_upload_ok(captured: dict, submission_id: str = "sub_teams_batch"):
+    def fake_teams_upload(
+        *, config, payload, workflow_reference, file_name, provenance, backfill=False
+    ):
+        captured["api_key"] = config.api_key
+        captured.setdefault("backfill_flags", []).append(backfill)
+
+        class _Resp:
+            pass
+
+        resp = _Resp()
+        resp.submission_id = submission_id
+        resp.processing_status = "received"
+
+        class _Result:
+            pass
+
+        result = _Result()
+        result.response = resp
+        result.server_contract_version = None
+        return result
+
+    return fake_teams_upload
+
+
 def _write_claude_code_jsonl(
     path: Path,
     *,
@@ -196,6 +221,69 @@ def test_batch_submit_cli_flag_wires_through(tmp_path, monkeypatch):
     payload = json.loads(result.output)
     assert payload["totals"]["submitted"] == 1
     assert payload["files"][0]["submission_id"] == "sub_batch"
+
+
+# ---------------------------------------------------------------------------
+# --backfill flag (driftshield#169)
+# ---------------------------------------------------------------------------
+
+
+def test_batch_backfill_teams_tier_sends_top_level_backfill_true(tmp_path, monkeypatch):
+    captured: dict = {}
+    monkeypatch.setattr(
+        "driftshield.cli._submit.submit_teams_via_presigned_upload",
+        _fake_teams_upload_ok(captured),
+    )
+    monkeypatch.setenv("DRIFTSHIELD_API_KEY", "test-key")
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("DRIFTSHIELD_TELEMETRY_HOME", str(tmp_path / "tele"))
+    runner.invoke(app, ["telemetry", "remote-enable", "--intake-url", "https://intake.example.test/v1/intake"])
+    _write_claude_code_jsonl(tmp_path / "session.jsonl")
+
+    result = runner.invoke(
+        app, ["batch", str(tmp_path), "--submit", "--tier", "teams", "--backfill", "--json"]
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["totals"]["submitted"] == 1
+    assert captured["backfill_flags"] == [True]
+
+
+def test_batch_backfill_community_tier_exits_nonzero_before_any_upload(tmp_path, monkeypatch):
+    monkeypatch.setattr("driftshield.cli._submit.post_oss_submission", _network_forbidden)
+    monkeypatch.setattr(
+        "driftshield.cli._submit.submit_oss_via_presigned_upload", _network_forbidden
+    )
+    monkeypatch.setattr(
+        "driftshield.cli._submit.submit_teams_via_presigned_upload", _network_forbidden
+    )
+    _write_claude_code_jsonl(tmp_path / "session.jsonl")
+
+    result = runner.invoke(
+        app, ["batch", str(tmp_path), "--submit", "--tier", "oss", "--backfill"]
+    )
+
+    assert result.exit_code != 0
+    assert "--backfill" in result.output
+    assert "teams" in result.output
+
+
+def test_batch_backfill_without_submit_warns_and_uploads_nothing(tmp_path, monkeypatch):
+    monkeypatch.setattr("driftshield.cli._submit.post_oss_submission", _network_forbidden)
+    monkeypatch.setattr(
+        "driftshield.cli._submit.submit_oss_via_presigned_upload", _network_forbidden
+    )
+    monkeypatch.setattr(
+        "driftshield.cli._submit.submit_teams_via_presigned_upload", _network_forbidden
+    )
+    _write_claude_code_jsonl(tmp_path / "session.jsonl")
+
+    result = runner.invoke(app, ["batch", str(tmp_path), "--backfill"])
+
+    assert result.exit_code == 0, result.output
+    assert "Warning" in result.output
+    assert "analysed-only" in result.output
 
 
 # ---------------------------------------------------------------------------
@@ -397,6 +485,7 @@ def test_batch_help_mentions_submit_flag():
     assert "--submit" in output
     assert "--tier" in output
     assert "--include-analysis" in output
+    assert "--backfill" in output
 
 
 # ---------------------------------------------------------------------------

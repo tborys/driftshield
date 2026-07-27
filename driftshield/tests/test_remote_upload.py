@@ -171,3 +171,77 @@ def test_provenance_fields_ride_the_finalise_body() -> None:
     assert body["agent_id"] == "agent-x"
     assert body["model_name"] == "claude"
     assert body["workflow_reference"] == "wf-triage"
+
+
+def test_backfill_flag_rides_the_teams_finalise_body_top_level() -> None:
+    """driftshield#169: --backfill stamps top-level backfill: true on the
+    Teams (authenticated) lane's finalise body."""
+    finalise_bodies: list[dict[str, Any]] = []
+
+    def opener(req: Any) -> _FakeResponse:
+        url = req.full_url
+        if url.endswith("/uploads/presign"):
+            return _FakeResponse(
+                json.dumps(
+                    {
+                        "upload_id": "up_1",
+                        "url": "https://s3.example/bucket",
+                        "fields": {"key": "uploads/raw/up_1"},
+                        "max_bytes": 50 * 1024 * 1024,
+                    }
+                ).encode("utf-8")
+            )
+        if url.endswith("/uploads/finalise"):
+            finalise_bodies.append(json.loads(req.data.decode("utf-8")))
+            return _FakeResponse(
+                json.dumps(
+                    {"submission_id": "sub_1", "processing_status": "received"}
+                ).encode("utf-8")
+            )
+        return _FakeResponse(b"")
+
+    submit_teams_via_presigned_upload(
+        config=TeamsUploadConfig(intake_url="https://api.example/v1/intake", api_key="k"),
+        payload={"session_id": "sess-1"},
+        workflow_reference="default",
+        file_name="s.jsonl",
+        backfill=True,
+        opener=opener,
+    )
+    assert finalise_bodies[0]["backfill"] is True
+
+
+def test_backfill_flag_absent_when_not_set() -> None:
+    """Default behaviour (no --backfill) must not add the field at all."""
+    finalise_bodies: list[dict[str, Any]] = []
+
+    def opener(req: Any) -> _FakeResponse:
+        url = req.full_url
+        if url.endswith("/uploads/presign"):
+            return _FakeResponse(
+                json.dumps(
+                    {
+                        "upload_id": "up_1",
+                        "url": "https://s3.example/bucket",
+                        "fields": {"key": "uploads/raw/up_1"},
+                        "max_bytes": 50 * 1024 * 1024,
+                    }
+                ).encode("utf-8")
+            )
+        if url.endswith("/uploads/finalise"):
+            finalise_bodies.append(json.loads(req.data.decode("utf-8")))
+            return _FakeResponse(
+                json.dumps(
+                    {"submission_id": "sub_1", "processing_status": "received"}
+                ).encode("utf-8")
+            )
+        return _FakeResponse(b"")
+
+    submit_teams_via_presigned_upload(
+        config=TeamsUploadConfig(intake_url="https://api.example/v1/intake", api_key="k"),
+        payload={"session_id": "sess-1"},
+        workflow_reference="default",
+        file_name="s.jsonl",
+        opener=opener,
+    )
+    assert "backfill" not in finalise_bodies[0]

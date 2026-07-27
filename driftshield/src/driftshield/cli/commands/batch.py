@@ -46,6 +46,19 @@ def batch(
             "Ignored when --submit is not passed."
         ),
     ),
+    backfill: bool = typer.Option(
+        False,
+        "--backfill",
+        help=(
+            "Declare every submitted envelope a post-hoc pilot import: sets "
+            "top-level 'backfill: true' so the server indexes recurrence and "
+            "lifecycle trends on original session timestamps instead of "
+            "arrival time. Requires --submit and --tier teams (the "
+            "authenticated lane) -- the unauthenticated community tier "
+            "rejects it client-side before any upload. With --backfill but "
+            "no --submit, this is a no-op with a warning."
+        ),
+    ),
     json_output: bool = typer.Option(
         False,
         "--json",
@@ -74,12 +87,27 @@ def batch(
         console.print(f"[red]Error:[/red] '{source}' does not exist.")
         raise typer.Exit(1)
 
+    if backfill and submit and tier.strip().lower() != "teams":
+        console.print(
+            "[red]Error:[/red] --backfill requires --tier teams (the "
+            "authenticated lane); the community tier does not accept a "
+            "backfill declaration."
+        )
+        raise typer.Exit(1)
+
+    if backfill and not submit:
+        console.print(
+            "[yellow]Warning:[/yellow] --backfill has no effect without "
+            "--submit; nothing will be uploaded."
+        )
+
     try:
         report = run_batch(
             source,
             submit=submit,
             tier=tier,
             include_analysis=include_analysis,
+            backfill=backfill,
         )
     except ValueError as exc:
         console.print(f"[red]Error:[/red] {exc}")
