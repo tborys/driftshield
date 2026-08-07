@@ -67,6 +67,7 @@ _REFERENCE_FIELDS = {
         "agent_id",
         "model_name",
         "model_version",
+        "session_observed_at",
         "signature_summary",
     },
     "IntakeSubmissionRequest": {
