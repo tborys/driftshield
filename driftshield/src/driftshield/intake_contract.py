@@ -112,6 +112,13 @@ class SubmissionEnvelope(BaseModel):
     agent_id: str | None = Field(default=None, min_length=1)
     model_name: str | None = Field(default=None, min_length=1)
     model_version: str | None = Field(default=None, min_length=1)
+    # The session's own end timestamp (the latest event timestamp the
+    # parser recognised for the session), not ingest time. Populated
+    # whenever the source transcript has parseable timestamps; omitted
+    # otherwise. The intake server indexes backfilled recurrence and
+    # lifecycle history on this field when the submission also declares
+    # ``backfill: true`` and otherwise ignores it (driftshield#174).
+    session_observed_at: datetime | None = None
     # Envelope-level sibling of ``payload``. The recursive redactor only
     # walks ``payload``; this block stays byte-identical end-to-end.
     signature_summary: SignatureSummary | None = None
