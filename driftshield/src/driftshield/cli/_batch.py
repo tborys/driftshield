@@ -214,7 +214,7 @@ def _process_directory(
         try:
             parser_instance = get_parser(parser_name)
             events = parser_instance.parse_file(str(file_path))
-            analyze_session(events)
+            analysis_result = analyze_session(events)
         except Exception as exc:  # noqa: BLE001 - per-file isolation
             report.files.append(
                 BatchFileOutcome(path=relative, outcome="failed", reason=str(exc))
@@ -225,6 +225,17 @@ def _process_directory(
             report.files.append(BatchFileOutcome(path=relative, outcome="analysed-only"))
             continue
 
+        # The session's own end timestamp (the latest event timestamp the
+        # parser recognised), not ingest time. Sent whenever known, not
+        # only under --backfill: harmless on live traffic, and the server
+        # ignores it outside backfill (driftshield#174). Omitted when the
+        # session yielded no events, so there is nothing to date it by.
+        session_observed_at = (
+            analysis_result.events[-1].timestamp.isoformat()
+            if analysis_result.events
+            else None
+        )
+
         try:
             payload = _load_batch_submission_payload(file_path)
             outcome = submit_session_core(
@@ -233,6 +244,7 @@ def _process_directory(
                 tier=tier,
                 include_analysis=include_analysis,
                 backfill=backfill,
+                session_observed_at=session_observed_at,
             )
         except _SUBMISSION_ERRORS as exc:  # noqa: BLE001 - per-file isolation
             report.files.append(

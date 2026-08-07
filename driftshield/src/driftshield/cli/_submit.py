@@ -103,6 +103,7 @@ def submit_session_core(
     tier: str = "oss",
     environment: str | None = None,
     backfill: bool = False,
+    session_observed_at: str | None = None,
 ) -> SubmitOutcome:
     """Build a phase3g.v1 envelope from an already-loaded session payload,
     redact it, and submit it once to the configured intake URL.
@@ -121,6 +122,14 @@ def submit_session_core(
     envelope (the post-hoc pilot-import declaration intel#330 accepts on
     the authenticated lane) and only ``tier == "teams"`` may set it; any
     other tier raises :class:`SubmitCoreError` before anything is uploaded.
+
+    ``session_observed_at`` is the session's own end timestamp (ISO 8601
+    UTC; the latest event timestamp the parser recognised), not ingest
+    time. Unlike ``backfill`` it is not tier-gated: pass it whenever the
+    source transcript has parseable event timestamps and it rides both
+    the inline envelope and the presigned finalise body on either tier.
+    The intake server indexes backfilled recurrence and lifecycle history
+    on it and ignores it outside ``backfill`` (driftshield#174).
     """
 
     resolved_tier = tier.strip().lower()
@@ -245,6 +254,7 @@ def submit_session_core(
         ("agent_id", agent_id),
         ("model_name", model_name),
         ("model_version", model_version),
+        ("session_observed_at", session_observed_at),
     ):
         if value is not None:
             provenance[key] = value
@@ -286,6 +296,7 @@ def submit_session_core(
             agent_id=agent_id,
             model_name=model_name,
             model_version=model_version,
+            session_observed_at=session_observed_at,
             signature_summary=summary,
         )
         submission_config = OssRemoteSubmissionConfig(intake_url=intake_url)

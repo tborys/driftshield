@@ -61,6 +61,7 @@ def _fake_teams_upload_ok(captured: dict, submission_id: str = "sub_teams_batch"
     ):
         captured["api_key"] = config.api_key
         captured.setdefault("backfill_flags", []).append(backfill)
+        captured.setdefault("provenances", []).append(provenance)
 
         class _Resp:
             pass
@@ -125,6 +126,54 @@ def _write_claude_code_jsonl(
         ),
     ]
     path.write_text("\n".join(lines) + "\n")
+    return path
+
+
+def _write_claude_code_jsonl_with_timestamps(
+    path: Path,
+    *,
+    session_id: str = "batch-test-session-ts",
+    user_timestamp: str = "2026-01-01T00:00:00+00:00",
+    assistant_timestamp: str = "2026-01-01T00:05:30+00:00",
+) -> Path:
+    """Same shape as :func:`_write_claude_code_jsonl` but with explicit
+    per-record ``timestamp`` fields, so the parsed session's last event
+    timestamp is a known, assertable value (driftshield#174)."""
+    lines = [
+        json.dumps(
+            {
+                "type": "user",
+                "sessionId": session_id,
+                "timestamp": user_timestamp,
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "text", "text": "hello there"}],
+                },
+            }
+        ),
+        json.dumps(
+            {
+                "type": "assistant",
+                "sessionId": session_id,
+                "timestamp": assistant_timestamp,
+                "message": {
+                    "model": "claude-test",
+                    "content": [{"type": "text", "text": "done"}],
+                },
+            }
+        ),
+    ]
+    path.write_text("\n".join(lines) + "\n")
+    return path
+
+
+def _write_claude_code_jsonl_with_no_events(
+    path: Path, *, session_id: str = "batch-empty-session"
+) -> Path:
+    """A claude_code-shaped JSONL file whose only record type
+    (``summary``) yields zero canonical events -- the "no parseable
+    timestamps" case (driftshield#174): nothing to date the session by."""
+    path.write_text(json.dumps({"type": "summary", "sessionId": session_id}) + "\n")
     return path
 
 
@@ -284,6 +333,112 @@ def test_batch_backfill_without_submit_warns_and_uploads_nothing(tmp_path, monke
     assert result.exit_code == 0, result.output
     assert "Warning" in result.output
     assert "analysed-only" in result.output
+
+
+# ---------------------------------------------------------------------------
+# session_observed_at (driftshield#174)
+# ---------------------------------------------------------------------------
+
+
+def test_batch_backfill_sends_session_observed_at_on_inline_oss_envelope(tmp_path, monkeypatch):
+    """Inline lane: session_observed_at equals the session's last event
+    timestamp on the envelope."""
+    captured: dict = {}
+    monkeypatch.setattr("driftshield.cli._submit.post_oss_submission", _fake_post_ok(captured))
+    monkeypatch.setenv("DRIFTSHIELD_TELEMETRY_HOME", str(tmp_path / "tele"))
+    _write_claude_code_jsonl_with_timestamps(
+        tmp_path / "session.jsonl", assistant_timestamp="2026-01-01T00:05:30+00:00"
+    )
+
+    report = run_batch(tmp_path, submit=True, tier="oss")
+
+    assert report.files[0].outcome == "submitted", report.files[0].reason
+    envelope = captured["submission"].envelope
+    assert envelope.session_observed_at is not None
+    assert envelope.session_observed_at.isoformat() == "2026-01-01T00:05:30+00:00"
+
+
+def test_batch_backfill_sends_session_observed_at_on_teams_finalise_body(tmp_path, monkeypatch):
+    """Presigned lane: session_observed_at rides the finalise body as a
+    sibling of the existing backfill field (via the shared provenance
+    dict), proven against a stubbed endpoint."""
+    captured: dict = {}
+    monkeypatch.setattr(
+        "driftshield.cli._submit.submit_teams_via_presigned_upload",
+        _fake_teams_upload_ok(captured),
+    )
+    monkeypatch.setenv("DRIFTSHIELD_API_KEY", "test-key")
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("DRIFTSHIELD_TELEMETRY_HOME", str(tmp_path / "tele"))
+    runner.invoke(
+        app,
+        ["telemetry", "remote-enable", "--intake-url", "https://intake.example.test/v1/intake"],
+    )
+    _write_claude_code_jsonl_with_timestamps(
+        tmp_path / "session.jsonl", assistant_timestamp="2026-01-01T00:05:30+00:00"
+    )
+
+    result = runner.invoke(
+        app, ["batch", str(tmp_path), "--submit", "--tier", "teams", "--backfill", "--json"]
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["totals"]["submitted"] == 1
+    assert captured["backfill_flags"] == [True]
+    assert captured["provenances"][0]["session_observed_at"] == "2026-01-01T00:05:30+00:00"
+
+
+def test_batch_no_parseable_timestamps_omits_session_observed_at(tmp_path, monkeypatch):
+    """A transcript that yields zero canonical events has nothing to date
+    it by: session_observed_at is omitted and the submission still goes
+    through."""
+    captured: dict = {}
+    monkeypatch.setattr("driftshield.cli._submit.post_oss_submission", _fake_post_ok(captured))
+    monkeypatch.setenv("DRIFTSHIELD_TELEMETRY_HOME", str(tmp_path / "tele"))
+    _write_claude_code_jsonl_with_no_events(tmp_path / "empty.jsonl")
+
+    report = run_batch(tmp_path, submit=True, tier="oss")
+
+    assert report.files[0].outcome == "submitted", report.files[0].reason
+    envelope = captured["submission"].envelope
+    assert envelope.session_observed_at is None
+
+
+def test_batch_session_observed_at_sent_without_backfill_flag(tmp_path, monkeypatch):
+    """Not gated by --backfill: sent on ordinary submissions too (the
+    server ignores it outside backfill)."""
+    captured: dict = {}
+    monkeypatch.setattr("driftshield.cli._submit.post_oss_submission", _fake_post_ok(captured))
+    monkeypatch.setenv("DRIFTSHIELD_TELEMETRY_HOME", str(tmp_path / "tele"))
+    _write_claude_code_jsonl_with_timestamps(
+        tmp_path / "session.jsonl", assistant_timestamp="2026-02-02T12:00:00+00:00"
+    )
+
+    report = run_batch(tmp_path, submit=True, tier="oss")
+
+    assert report.files[0].outcome == "submitted", report.files[0].reason
+    envelope = captured["submission"].envelope
+    assert envelope.session_observed_at is not None
+    assert envelope.session_observed_at.isoformat() == "2026-02-02T12:00:00+00:00"
+
+
+def test_batch_session_observed_at_does_not_affect_redaction(tmp_path, monkeypatch):
+    """Regression: session_observed_at is envelope-level (a sibling of
+    payload); adding it must not touch the redaction invariant."""
+    captured: dict = {}
+    monkeypatch.setattr("driftshield.cli._submit.post_oss_submission", _fake_post_ok(captured))
+    monkeypatch.setenv("DRIFTSHIELD_TELEMETRY_HOME", str(tmp_path / "tele"))
+
+    secret_user_text = "SECRET_USER_PROMPT_MARKER_XYZ"
+    _write_claude_code_jsonl(tmp_path / "session.jsonl", user_text=secret_user_text)
+
+    report = run_batch(tmp_path, submit=True, tier="oss")
+
+    assert report.files[0].outcome == "submitted", report.files[0].reason
+    submission = captured["submission"]
+    assert submission.envelope.session_observed_at is not None
+    assert secret_user_text not in submission.model_dump_json()
 
 
 # ---------------------------------------------------------------------------

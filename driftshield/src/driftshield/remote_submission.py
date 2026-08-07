@@ -319,6 +319,7 @@ def build_oss_submission_request(
     agent_id: str | None = None,
     model_name: str | None = None,
     model_version: str | None = None,
+    session_observed_at: str | None = None,
     signature_summary: SignatureSummary | None = None,
 ) -> OssSubmissionRequest:
     """Build an unauthenticated OSS submission request.
@@ -333,6 +334,10 @@ def build_oss_submission_request(
     No installation_id, no consent_state. The envelope still carries
     redaction_manifest + payload_size_bytes + schema_version, all enforced
     server-side by OssSubmissionService.
+
+    ``session_observed_at`` is the session's own end timestamp (ISO 8601
+    UTC), not ingest time; pass it whenever the source transcript has
+    parseable event timestamps (driftshield#174).
     """
     shape = detect_shape(payload)
     if shape is None and not force_unknown_shape:
@@ -367,6 +372,7 @@ def build_oss_submission_request(
         agent_id=agent_id,
         model_name=model_name,
         model_version=model_version,
+        session_observed_at=session_observed_at,
         signature_summary=signature_summary,
     )
     return OssSubmissionRequest(

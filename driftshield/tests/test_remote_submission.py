@@ -238,6 +238,30 @@ def test_build_oss_submission_request_threads_provenance_fields():
     assert envelope.model_version == "2026-05"
 
 
+def test_build_oss_submission_request_threads_session_observed_at():
+    """driftshield#174: session_observed_at is surfaced on the envelope
+    when supplied, as a real datetime parsed from the ISO 8601 string."""
+    request = build_oss_submission_request(
+        source_session_id="sess-1",
+        payload={"session_id": "sess-1"},
+        session_observed_at="2026-01-01T00:05:30+00:00",
+    )
+
+    envelope = request.envelope
+    assert envelope.session_observed_at is not None
+    assert envelope.session_observed_at.isoformat() == "2026-01-01T00:05:30+00:00"
+
+
+def test_build_oss_submission_request_session_observed_at_absent_by_default():
+    """No timestamp supplied => the field stays unset, not a fallback value."""
+    request = build_oss_submission_request(
+        source_session_id="sess-1",
+        payload={"session_id": "sess-1"},
+    )
+
+    assert request.envelope.session_observed_at is None
+
+
 def test_build_oss_submission_request_workflow_reference_override():
     request = build_oss_submission_request(
         source_session_id="sess-1",

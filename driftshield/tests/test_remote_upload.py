@@ -245,3 +245,79 @@ def test_backfill_flag_absent_when_not_set() -> None:
         opener=opener,
     )
     assert "backfill" not in finalise_bodies[0]
+
+
+def test_session_observed_at_rides_the_finalise_body_next_to_backfill() -> None:
+    """driftshield#174: session_observed_at (carried via provenance) sits
+    alongside backfill on the Teams finalise body."""
+    finalise_bodies: list[dict[str, Any]] = []
+
+    def opener(req: Any) -> _FakeResponse:
+        url = req.full_url
+        if url.endswith("/uploads/presign"):
+            return _FakeResponse(
+                json.dumps(
+                    {
+                        "upload_id": "up_1",
+                        "url": "https://s3.example/bucket",
+                        "fields": {"key": "uploads/raw/up_1"},
+                        "max_bytes": 50 * 1024 * 1024,
+                    }
+                ).encode("utf-8")
+            )
+        if url.endswith("/uploads/finalise"):
+            finalise_bodies.append(json.loads(req.data.decode("utf-8")))
+            return _FakeResponse(
+                json.dumps(
+                    {"submission_id": "sub_1", "processing_status": "received"}
+                ).encode("utf-8")
+            )
+        return _FakeResponse(b"")
+
+    submit_teams_via_presigned_upload(
+        config=TeamsUploadConfig(intake_url="https://api.example/v1/intake", api_key="k"),
+        payload={"session_id": "sess-1"},
+        workflow_reference="default",
+        file_name="s.jsonl",
+        provenance={"session_observed_at": "2026-01-01T00:05:30+00:00"},
+        backfill=True,
+        opener=opener,
+    )
+    assert finalise_bodies[0]["backfill"] is True
+    assert finalise_bodies[0]["session_observed_at"] == "2026-01-01T00:05:30+00:00"
+
+
+def test_session_observed_at_absent_from_finalise_body_when_not_supplied() -> None:
+    """Default behaviour (no timestamp known) must not add the field at all."""
+    finalise_bodies: list[dict[str, Any]] = []
+
+    def opener(req: Any) -> _FakeResponse:
+        url = req.full_url
+        if url.endswith("/uploads/presign"):
+            return _FakeResponse(
+                json.dumps(
+                    {
+                        "upload_id": "up_1",
+                        "url": "https://s3.example/bucket",
+                        "fields": {"key": "uploads/raw/up_1"},
+                        "max_bytes": 50 * 1024 * 1024,
+                    }
+                ).encode("utf-8")
+            )
+        if url.endswith("/uploads/finalise"):
+            finalise_bodies.append(json.loads(req.data.decode("utf-8")))
+            return _FakeResponse(
+                json.dumps(
+                    {"submission_id": "sub_1", "processing_status": "received"}
+                ).encode("utf-8")
+            )
+        return _FakeResponse(b"")
+
+    submit_teams_via_presigned_upload(
+        config=TeamsUploadConfig(intake_url="https://api.example/v1/intake", api_key="k"),
+        payload={"session_id": "sess-1"},
+        workflow_reference="default",
+        file_name="s.jsonl",
+        opener=opener,
+    )
+    assert "session_observed_at" not in finalise_bodies[0]
