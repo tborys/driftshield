@@ -1,0 +1,41 @@
+{
+  "schema": "delivery-manifest.v1",
+  "note": "Public-safe copy of the pinned DriftShield delivery manifest for this repository, synced by the operator when the pin rolls. Coordination fields that reference private infrastructure are deliberately omitted; agents working in this repository need nothing beyond what is here.",
+  "repository": "tborys/driftshield",
+  "implementation": {
+    "max_review_rounds": 3,
+    "trigger_label": "flow:implement",
+    "branch_naming": "deterministic_repository_issue_branch",
+    "pull_request_lineage": "single_issue_single_branch_single_draft_pr"
+  },
+  "required_checks": [
+    "public-scope",
+    "backend-tests",
+    "frontend-build",
+    "frontend-e2e"
+  ],
+  "verification_command": "./scripts/dev-verify.sh",
+  "review_policy": {
+    "result_schema": "driftshield-tede-review.v1",
+    "approval_label": "flow:approved",
+    "changes_requested_label": "flow:changes-requested",
+    "round_accounting": {
+      "consumes_round": [
+        "current_head_approved",
+        "current_head_changes_requested",
+        "current_head_blocked"
+      ],
+      "does_not_consume_round": [
+        "reminder",
+        "timeout",
+        "duplicate_dispatch",
+        "stale_verdict"
+      ]
+    }
+  },
+  "merge_policy": {
+    "auto_merge": false,
+    "exact_sha_required": true,
+    "no_post_merge_worker_chaining": true
+  }
+}
