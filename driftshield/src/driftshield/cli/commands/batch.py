@@ -46,6 +46,21 @@ def batch(
             "Ignored when --submit is not passed."
         ),
     ),
+    workflow_reference: str | None = typer.Option(
+        None,
+        "--workflow-reference",
+        help=(
+            "Workflow identifier stamped on every submitted envelope, "
+            "matching 'driftshield submit --workflow-reference' in name and "
+            "meaning. When omitted, batch derives one per file from its "
+            "immediate parent directory (stable, sanitised) instead of "
+            "falling back to the module default -- so a tree of "
+            "per-project session directories yields one workflow reference "
+            "per project. Resolution order: explicit flag, then "
+            "derived-per-directory, then the module default. Ignored when "
+            "--submit is not passed."
+        ),
+    ),
     backfill: bool = typer.Option(
         False,
         "--backfill",
@@ -80,6 +95,14 @@ def batch(
     'failed' per file. Without --submit, every file that analysed
     successfully is reported 'analysed-only' and nothing is ever uploaded.
 
+    workflow_reference precedence for each submitted file: --workflow-reference
+    flag (one value for the whole batch), then a value derived from the
+    file's immediate parent directory, then the module default 'default'.
+    This differs from 'driftshield submit', which falls back to a
+    workflow_reference already present in the payload before the module
+    default -- batch derives from the directory instead of consulting the
+    payload. See docs/telemetry.md for the full comparison.
+
     Exits non-zero only if at least one file's outcome is 'failed'; a
     'skipped' file does not affect the exit code.
     """
@@ -101,6 +124,12 @@ def batch(
             "--submit; nothing will be uploaded."
         )
 
+    if workflow_reference is not None and not submit:
+        console.print(
+            "[yellow]Warning:[/yellow] --workflow-reference has no effect "
+            "without --submit; nothing will be uploaded."
+        )
+
     try:
         report = run_batch(
             source,
@@ -108,6 +137,7 @@ def batch(
             tier=tier,
             include_analysis=include_analysis,
             backfill=backfill,
+            workflow_reference=workflow_reference,
         )
     except ValueError as exc:
         console.print(f"[red]Error:[/red] {exc}")
