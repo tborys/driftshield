@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import json
+import re
 import tarfile
 import tempfile
 from pathlib import Path
@@ -30,11 +31,34 @@ from driftshield.cli._submit import (
 )
 from driftshield.cli.parsers import detect_parser, get_parser
 from driftshield.core.analysis.session import analyze_session
+from driftshield.intake_contract import DEFAULT_WORKFLOW_REFERENCE
 from driftshield.public import detect_source
 from driftshield.remote_submission import RemoteSubmissionError, UnknownTranscriptShapeError
 
 
 _ARCHIVE_SUFFIXES = (".zip", ".tar.gz", ".tgz")
+
+# Characters the workflow_reference field is treated as accepting for a
+# derived (not explicitly-flagged) value. A directory name is free-form user
+# content, so any run of characters outside this set collapses to a single
+# '-' rather than riding through unchecked.
+_WORKFLOW_REFERENCE_UNSAFE_RE = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def _derive_workflow_reference(file_path: Path) -> str:
+    """Derive a stable, per-directory workflow reference for one discovered file.
+
+    The file's immediate parent directory is the unit (driftshield#182): a
+    tree of per-project session directories yields one workflow reference
+    per project, and the same directory always produces the same reference
+    since only the directory's own name feeds the derivation. Sanitised by
+    collapsing any run of characters outside ``[A-Za-z0-9._-]`` into a
+    single ``-`` and trimming leading/trailing ``-``; falls back to the
+    module default when nothing usable survives (e.g. an all-symbol
+    directory name).
+    """
+    sanitized = _WORKFLOW_REFERENCE_UNSAFE_RE.sub("-", file_path.parent.name).strip("-")
+    return sanitized or DEFAULT_WORKFLOW_REFERENCE
 
 # Any exception raised by submit_session_core() (or by load_session_payload())
 # on a legitimate, well-formed but unsubmittable transcript. Kept as one tuple
@@ -171,6 +195,7 @@ def _process_directory(
     tier: str,
     include_analysis: bool,
     backfill: bool = False,
+    workflow_reference: str | None = None,
 ) -> None:
     for file_path in _discover_files(root):
         relative = _relative_label(file_path, root)
@@ -236,6 +261,16 @@ def _process_directory(
             else None
         )
 
+        # Resolution order: the explicit --workflow-reference flag (same
+        # value for every file), then a value derived per file from its
+        # immediate parent directory rather than falling straight through
+        # to the module default (driftshield#182).
+        resolved_workflow_reference = (
+            workflow_reference
+            if workflow_reference is not None
+            else _derive_workflow_reference(file_path)
+        )
+
         try:
             payload = _load_batch_submission_payload(file_path)
             outcome = submit_session_core(
@@ -245,6 +280,7 @@ def _process_directory(
                 include_analysis=include_analysis,
                 backfill=backfill,
                 session_observed_at=session_observed_at,
+                workflow_reference=resolved_workflow_reference,
             )
         except _SUBMISSION_ERRORS as exc:  # noqa: BLE001 - per-file isolation
             report.files.append(
@@ -266,6 +302,7 @@ def run_batch(
     tier: str = "oss",
     include_analysis: bool = False,
     backfill: bool = False,
+    workflow_reference: str | None = None,
 ) -> BatchReport:
     """Discover and analyse every transcript under ``source``.
 
@@ -278,6 +315,13 @@ def run_batch(
     submitted envelope (only meaningful together with ``submit=True`` and
     ``tier="teams"``; see :func:`driftshield.cli._submit.submit_session_core`
     for the validation that enforces this).
+
+    ``workflow_reference``, when given, is stamped on every submitted
+    envelope (matching ``driftshield submit --workflow-reference``). When
+    omitted, each file's own value is derived from its immediate parent
+    directory instead of falling back to the module default -- see
+    :func:`_derive_workflow_reference`. Only meaningful together with
+    ``submit=True``.
     """
     report = BatchReport()
 
@@ -289,6 +333,7 @@ def run_batch(
             tier=tier,
             include_analysis=include_analysis,
             backfill=backfill,
+            workflow_reference=workflow_reference,
         )
         return report
 
@@ -303,6 +348,7 @@ def run_batch(
                 tier=tier,
                 include_analysis=include_analysis,
                 backfill=backfill,
+                workflow_reference=workflow_reference,
             )
         return report
 

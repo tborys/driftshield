@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from driftshield.cli._batch import run_batch
+from driftshield.cli._batch import _derive_workflow_reference, run_batch
 from driftshield.cli.main import app
 
 runner = CliRunner()
@@ -333,6 +333,123 @@ def test_batch_backfill_without_submit_warns_and_uploads_nothing(tmp_path, monke
     assert result.exit_code == 0, result.output
     assert "Warning" in result.output
     assert "analysed-only" in result.output
+
+
+# ---------------------------------------------------------------------------
+# --workflow-reference flag, with per-source derivation (driftshield#182)
+# ---------------------------------------------------------------------------
+
+
+def test_batch_workflow_reference_flag_stamps_every_submitted_envelope(tmp_path, monkeypatch):
+    captured: dict = {}
+    monkeypatch.setattr("driftshield.cli._submit.post_oss_submission", _fake_post_ok(captured))
+    monkeypatch.setenv("DRIFTSHIELD_TELEMETRY_HOME", str(tmp_path / "tele"))
+    _write_claude_code_jsonl(tmp_path / "a.jsonl", session_id="wf-a")
+    _write_claude_code_jsonl(tmp_path / "b.jsonl", session_id="wf-b")
+
+    report = run_batch(tmp_path, submit=True, tier="oss", workflow_reference="explicit-ref")
+
+    assert report.totals["submitted"] == 2, report.files
+    for submission in captured["submissions"]:
+        assert submission.envelope.workflow_reference == "explicit-ref"
+
+
+def test_batch_workflow_reference_cli_flag_wires_through(tmp_path, monkeypatch):
+    captured: dict = {}
+    monkeypatch.setattr("driftshield.cli._submit.post_oss_submission", _fake_post_ok(captured))
+    monkeypatch.setenv("DRIFTSHIELD_TELEMETRY_HOME", str(tmp_path / "tele"))
+    _write_claude_code_jsonl(tmp_path / "session.jsonl")
+
+    result = runner.invoke(
+        app, ["batch", str(tmp_path), "--submit", "--workflow-reference", "cli-ref", "--json"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert captured["submission"].envelope.workflow_reference == "cli-ref"
+
+
+def test_batch_without_workflow_reference_flag_derives_one_per_source_directory(
+    tmp_path, monkeypatch
+):
+    """driftshield#182 acceptance criterion: without the flag, a tree
+    containing at least two source directories produces submitted envelopes
+    carrying different workflow references, one per directory."""
+    captured: dict = {}
+    monkeypatch.setattr("driftshield.cli._submit.post_oss_submission", _fake_post_ok(captured))
+    monkeypatch.setenv("DRIFTSHIELD_TELEMETRY_HOME", str(tmp_path / "tele"))
+
+    project_a = tmp_path / "project-a"
+    project_b = tmp_path / "project-b"
+    project_a.mkdir()
+    project_b.mkdir()
+    _write_claude_code_jsonl(project_a / "session.jsonl", session_id="proj-a-session")
+    _write_claude_code_jsonl(project_b / "session.jsonl", session_id="proj-b-session")
+
+    report = run_batch(tmp_path, submit=True, tier="oss")
+
+    assert report.totals["submitted"] == 2, report.files
+    refs = {submission.envelope.workflow_reference for submission in captured["submissions"]}
+    assert refs == {"project-a", "project-b"}
+
+
+def test_batch_derived_workflow_reference_stable_across_runs_and_sanitised(tmp_path, monkeypatch):
+    """driftshield#182 acceptance criterion: derivation is stable across
+    runs for the same directory, and sanitises a directory name containing
+    characters the field does not accept."""
+    captured: dict = {}
+    monkeypatch.setattr("driftshield.cli._submit.post_oss_submission", _fake_post_ok(captured))
+    monkeypatch.setenv("DRIFTSHIELD_TELEMETRY_HOME", str(tmp_path / "tele"))
+
+    unsafe_dir = tmp_path / "My Project!! (v2)"
+    unsafe_dir.mkdir()
+    _write_claude_code_jsonl(unsafe_dir / "session.jsonl")
+
+    report_1 = run_batch(unsafe_dir, submit=True, tier="oss")
+    ref_1 = captured["submissions"][-1].envelope.workflow_reference
+    report_2 = run_batch(unsafe_dir, submit=True, tier="oss")
+    ref_2 = captured["submissions"][-1].envelope.workflow_reference
+
+    assert report_1.totals["submitted"] == 1, report_1.files
+    assert report_2.totals["submitted"] == 1, report_2.files
+    assert ref_1 == ref_2
+    assert ref_1 == re.sub(r"[^A-Za-z0-9._-]+", "-", "My Project!! (v2)").strip("-")
+    assert " " not in ref_1
+    assert "!" not in ref_1
+    assert "(" not in ref_1
+
+
+def test_derive_workflow_reference_falls_back_to_default_for_all_symbol_directory(tmp_path):
+    """An all-symbol directory name sanitises to nothing usable; falls back
+    to the module default rather than an empty/invalid reference."""
+    directory = tmp_path / "!!!"
+    directory.mkdir()
+
+    assert _derive_workflow_reference(directory / "session.jsonl") == "default"
+
+
+def test_batch_workflow_reference_without_submit_warns_and_uploads_nothing(tmp_path, monkeypatch):
+    monkeypatch.setattr("driftshield.cli._submit.post_oss_submission", _network_forbidden)
+    monkeypatch.setattr(
+        "driftshield.cli._submit.submit_oss_via_presigned_upload", _network_forbidden
+    )
+    monkeypatch.setattr(
+        "driftshield.cli._submit.submit_teams_via_presigned_upload", _network_forbidden
+    )
+    _write_claude_code_jsonl(tmp_path / "session.jsonl")
+
+    result = runner.invoke(app, ["batch", str(tmp_path), "--workflow-reference", "unused-ref"])
+
+    assert result.exit_code == 0, result.output
+    assert "Warning" in result.output
+    assert "analysed-only" in result.output
+
+
+def test_batch_help_mentions_workflow_reference_flag():
+    result = runner.invoke(app, ["batch", "--help"])
+    output = ANSI_RE.sub("", result.output)
+
+    assert result.exit_code == 0
+    assert "--workflow-reference" in output
 
 
 # ---------------------------------------------------------------------------

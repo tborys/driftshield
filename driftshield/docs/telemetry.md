@@ -114,6 +114,27 @@ DRIFTSHIELD_API_KEY=... driftshield submit --path <session.json> --tier teams
 
 Pass `--include-analysis` to attach the local matcher verdict to the submission.
 
+`workflow_reference` resolution order for `driftshield submit`: the `--workflow-reference`
+flag, then a `workflow_reference` already present in the session JSON, then the module
+default `"default"`.
+
+### Batch uploads
+
+`driftshield batch` walks a directory or a `.zip`/`.tar.gz`/`.tgz` archive and can submit
+every successfully analysed file the same way, via `--submit`:
+
+```bash
+driftshield batch <directory-or-archive> --submit --workflow-reference <value>
+```
+
+`workflow_reference` resolution order for `driftshield batch` differs from `submit`: the
+`--workflow-reference` flag (one value for the whole run), then a value derived per file
+from its immediate parent directory, then the module default `"default"` -- batch does not
+consult a `workflow_reference` already present in the payload. Derivation walks a tree of
+per-project session directories into one workflow reference per project: stable across runs
+for the same directory, and sanitised to the characters the field accepts. `--workflow-reference`
+is a no-op (with a warning) when `--submit` is not passed, matching `--backfill`.
+
 ## Out of scope
 
 - background emission without explicit consent
