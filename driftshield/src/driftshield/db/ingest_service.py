@@ -10,6 +10,7 @@ from driftshield.core.analysis.session import analyze_session
 from driftshield.core.models import CanonicalEvent, Session as DomainSession, SessionStatus
 from driftshield.core.normalization import normalize_events
 from driftshield.db.persistence import IngestOutcome, IngestProvenance, PersistenceService
+from driftshield.parsers.openclaw_trajectory import unwrap_trajectory_wrapper
 
 
 class TranscriptIngestService:
@@ -45,6 +46,8 @@ class TranscriptIngestService:
 
         parser = get_parser(normalised)
         content = raw_bytes.decode("utf-8")
+        if normalised == "openclaw_trajectory":
+            content = unwrap_trajectory_wrapper(content)
         events = parser.parse(content)
         if not events:
             raise ValueError("No events parsed from transcript")

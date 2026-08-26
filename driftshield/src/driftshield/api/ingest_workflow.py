@@ -11,19 +11,22 @@ from driftshield.core.analysis.session import AnalysisResult
 from driftshield.db.behaviour_service import BehaviourEventService
 from driftshield.db.ingest_service import TranscriptIngestService, metrics_payload_from_analysis_result
 from driftshield.db.persistence import IngestOutcome, IngestProvenance, PersistenceService
+from driftshield.public import detect_source
 from driftshield.telemetry import TelemetryService
 
 
-def detect_format(filename: str | None) -> str:
-    if filename and filename.endswith(".jsonl"):
-        return "claude_code"
-    return "unknown"
+def resolve_format(format_name: str, raw_bytes: bytes) -> str:
+    """Resolve the parser name for an upload, detecting from content on ``auto``.
 
-
-def resolve_format(format_name: str, filename: str | None) -> str:
+    Delegates to :func:`driftshield.public.detect_source`, the same content
+    based sniffer the DB-free ``analyse`` chain uses, so ``format=auto``
+    recognises every source ``cli.parsers`` supports instead of only
+    ``.jsonl`` uploads guessed from the filename.
+    """
     normalised = format_name.replace("-", "_")
     if normalised == "auto":
-        normalised = detect_format(filename)
+        content = raw_bytes.decode("utf-8", errors="replace")
+        normalised = detect_source(content) or "unknown"
     if normalised not in PARSERS:
         raise HTTPException(status_code=422, detail=f"Unsupported format: {format_name}")
     return normalised
@@ -37,7 +40,7 @@ def ingest_transcript_bytes(
     filename: str | None,
     commit: bool = True,
 ) -> tuple[IngestOutcome, AnalysisResult | None, str]:
-    normalised = resolve_format(format_name, filename)
+    normalised = resolve_format(format_name, raw_bytes)
     _validate_request_size(raw_bytes)
 
     ingest_service = TranscriptIngestService(db)
