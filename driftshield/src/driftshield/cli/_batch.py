@@ -1,21 +1,19 @@
 """Discovery and execution logic behind the ``driftshield batch`` command.
 
 Given a directory or a ``.zip``/``.tar.gz``/``.tgz`` archive of transcripts,
-walk it, auto-detect a parser per file, analyse each file independently, and
-optionally submit every successfully analysed file through the same
-build-payload -> redact -> submit path as ``driftshield submit``
-(:func:`driftshield.cli._submit.submit_session_core`).
+walk it, analyse each file through :func:`driftshield.public.analyse_run`,
+and optionally submit every analysed file through
+:func:`driftshield.public.submit`, the same door ``driftshield submit`` uses.
 
-Per-file isolation is the point of this module: a file that cannot be
-detected is recorded ``skipped``; a file that raises during parse, analysis,
-or submission is recorded ``failed`` with the exception message as the
-reason. Neither aborts the rest of the batch.
+Per-file isolation is the point of this module: a file with no parseable
+events is recorded ``skipped``; a file that raises during analysis or
+submission is recorded ``failed`` with the exception message as the reason.
+Neither aborts the rest of the batch.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-import json
 import re
 import tarfile
 import tempfile
@@ -23,18 +21,9 @@ from pathlib import Path
 from typing import Any
 import zipfile
 
-from driftshield.cli._session_payload import load_session_payload
-from driftshield.cli._submit import (
-    IncludeAnalysisError,
-    SubmitCoreError,
-    submit_session_core,
-)
-from driftshield.cli.parsers import detect_parser, get_parser
-from driftshield.core.analysis.session import analyze_session
+from driftshield.cli._submit import resolve_workspace_key
 from driftshield.intake_contract import DEFAULT_WORKFLOW_REFERENCE
-from driftshield.public import detect_source
-from driftshield.remote_submission import RemoteSubmissionError, UnknownTranscriptShapeError
-
+from driftshield.public import NoParseableEventsError, SubmitError, analyse_run, submit
 
 _ARCHIVE_SUFFIXES = (".zip", ".tar.gz", ".tgz")
 
@@ -50,28 +39,12 @@ def _derive_workflow_reference(file_path: Path) -> str:
 
     The file's immediate parent directory is the unit (driftshield#182): a
     tree of per-project session directories yields one workflow reference
-    per project, and the same directory always produces the same reference
-    since only the directory's own name feeds the derivation. Sanitised by
-    collapsing any run of characters outside ``[A-Za-z0-9._-]`` into a
-    single ``-`` and trimming leading/trailing ``-``; falls back to the
-    module default when nothing usable survives (e.g. an all-symbol
-    directory name).
+    per project. Sanitised by collapsing any run of characters outside
+    ``[A-Za-z0-9._-]`` into a single ``-`` and trimming leading/trailing
+    ``-``; falls back to the module default when nothing usable survives.
     """
     sanitized = _WORKFLOW_REFERENCE_UNSAFE_RE.sub("-", file_path.parent.name).strip("-")
     return sanitized or DEFAULT_WORKFLOW_REFERENCE
-
-# Any exception raised by submit_session_core() (or by load_session_payload())
-# on a legitimate, well-formed but unsubmittable transcript. Kept as one tuple
-# so batch only needs a single except clause to record a "failed" outcome
-# without ever letting one file's submission error abort the run.
-_SUBMISSION_ERRORS = (
-    OSError,
-    ValueError,
-    RemoteSubmissionError,
-    UnknownTranscriptShapeError,
-    IncludeAnalysisError,
-    SubmitCoreError,
-)
 
 
 @dataclass(slots=True)
@@ -119,8 +92,7 @@ class BatchReport:
 
 
 def _is_archive(path: Path) -> bool:
-    name = path.name.lower()
-    return name.endswith(_ARCHIVE_SUFFIXES)
+    return path.name.lower().endswith(_ARCHIVE_SUFFIXES)
 
 
 def _safe_extract_zip(archive: zipfile.ZipFile, dest: Path) -> None:
@@ -150,48 +122,6 @@ def _extract_archive(archive_path: Path, dest: Path) -> None:
             tf.extractall(dest, filter="data")
 
 
-def _load_batch_submission_payload(file_path: Path) -> dict[str, Any]:
-    """Build the submission payload for one already-analysed batch file.
-
-    Reuses :func:`load_session_payload` for the shapes it already accepts
-    (a JSON object, or JSONL). That loader deliberately rejects a top-level
-    JSON array on the ``driftshield submit --path`` surface, where a lone
-    array is ambiguous input with no prior format detection behind it. In a
-    batch run the file has already been through ``detect_parser()`` /
-    ``detect_source()`` above, so a top-level array here is unambiguously a
-    native array-shaped transcript (e.g. a LangChain run tree): wrap it into
-    ``payload['events']`` the same way JSONL lines are wrapped, instead of
-    treating it as the same error a raw unformatted array would be on the
-    single-file surface.
-    """
-    try:
-        return load_session_payload(file_path)
-    except ValueError as exc:
-        try:
-            whole = json.loads(file_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            raise exc from None
-        if isinstance(whole, list) and whole:
-            return {"events": whole}
-        raise exc from None
-
-
-def _detect_content_parser(file_path: Path) -> str | None:
-    """Read ``file_path`` and return content detection's verdict, if any.
-
-    Returns ``None`` when the file can't be read as UTF-8 text or when
-    :func:`driftshield.public.detect_source` recognises no known format.
-    Shared by the two places batch consults content sniffing: the initial
-    "no path-based parser" fallback, and the zero-events reconciliation
-    below (driftshield#185).
-    """
-    try:
-        content = file_path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
-        return None
-    return detect_source(content)
-
-
 def _discover_files(root: Path) -> list[Path]:
     return sorted(p for p in root.rglob("*") if p.is_file())
 
@@ -207,7 +137,7 @@ def _process_directory(
     root: Path,
     *,
     report: BatchReport,
-    submit: bool,
+    submit_files: bool,
     tier: str,
     include_analysis: bool,
     backfill: bool = False,
@@ -217,129 +147,44 @@ def _process_directory(
         relative = _relative_label(file_path, root)
 
         try:
-            parser_name = detect_parser(file_path)
+            run = analyse_run(file_path.read_bytes(), source=str(file_path))
+        except NoParseableEventsError as exc:
+            # Nothing to analyse is a skip; a parser that blew up on the
+            # content is a failure the exit code must reflect.
+            outcome = "failed" if exc.reason == "parse_failed" else "skipped"
+            report.files.append(BatchFileOutcome(path=relative, outcome=outcome, reason=str(exc)))
+            continue
         except Exception as exc:  # noqa: BLE001 - per-file isolation
-            report.files.append(
-                BatchFileOutcome(
-                    path=relative,
-                    outcome="skipped",
-                    reason=f"parser detection failed: {exc}",
-                )
-            )
+            report.files.append(BatchFileOutcome(path=relative, outcome="failed", reason=str(exc)))
             continue
 
-        if parser_name is None:
-            # detect_parser() keys on path conventions (e.g. `.codex-desktop/
-            # sessions/`) that a batch source rarely preserves: files are
-            # walked from an arbitrary directory or extracted from an archive
-            # into a flat temp dir. Fall back to content sniffing so a
-            # supported non-.jsonl transcript (claude_desktop, codex_desktop,
-            # crewai, langchain, ...) is still recognised by its shape.
-            parser_name = _detect_content_parser(file_path)
-
-        if parser_name is None:
-            report.files.append(
-                BatchFileOutcome(
-                    path=relative,
-                    outcome="skipped",
-                    reason="no known parser detected for this file",
-                )
-            )
+        if not submit_files:
+            report.files.append(BatchFileOutcome(path=relative, outcome="analysed-only"))
             continue
-
-        try:
-            parser_instance = get_parser(parser_name)
-            events = parser_instance.parse_file(str(file_path))
-            analysis_result = analyze_session(events)
-        except Exception as exc:  # noqa: BLE001 - per-file isolation
-            report.files.append(
-                BatchFileOutcome(path=relative, outcome="failed", reason=str(exc))
-            )
-            continue
-
-        # detect_parser() defaults any unrecognised `.jsonl` path to
-        # claude_code (its historical assume-Claude-Code behaviour), so a
-        # zero-event parse doesn't necessarily mean the file is unparseable
-        # -- it may mean the wrong parser was picked. Before trusting that
-        # silently, check whether content detection identifies a different,
-        # better-fitting source and re-parse with it (driftshield#185).
-        empty_events_warning: str | None = None
-        if not events:
-            content_parser_name = _detect_content_parser(file_path)
-            if content_parser_name is not None and content_parser_name != parser_name:
-                try:
-                    alt_parser_instance = get_parser(content_parser_name)
-                    alt_events = alt_parser_instance.parse_file(str(file_path))
-                    alt_analysis_result = analyze_session(alt_events)
-                except Exception:  # noqa: BLE001 - fall through to the warning below
-                    alt_events = []
-                if alt_events:
-                    parser_name = content_parser_name
-                    events = alt_events
-                    analysis_result = alt_analysis_result
-
-            if not events:
-                empty_events_warning = (
-                    f"parsed as '{parser_name}' but found zero events; content "
-                    f"detection found no better match"
-                    if content_parser_name is None or content_parser_name == parser_name
-                    else (
-                        f"parsed as '{parser_name}' but found zero events, and "
-                        f"re-parsing as '{content_parser_name}' (content detection) "
-                        f"also found zero events"
-                    )
-                )
-
-        if not submit:
-            report.files.append(
-                BatchFileOutcome(
-                    path=relative, outcome="analysed-only", reason=empty_events_warning
-                )
-            )
-            continue
-
-        # The session's own end timestamp (the latest event timestamp the
-        # parser recognised), not ingest time. Sent whenever known, not
-        # only under --backfill: harmless on live traffic, and the server
-        # ignores it outside backfill (driftshield#174). Omitted when the
-        # session yielded no events, so there is nothing to date it by.
-        session_observed_at = (
-            analysis_result.events[-1].timestamp.isoformat()
-            if analysis_result.events
-            else None
-        )
 
         # Resolution order: the explicit --workflow-reference flag (same
         # value for every file), then a value derived per file from its
         # immediate parent directory rather than falling straight through
         # to the module default (driftshield#182).
-        resolved_workflow_reference = (
-            workflow_reference
-            if workflow_reference is not None
-            else _derive_workflow_reference(file_path)
-        )
-
         try:
-            payload = _load_batch_submission_payload(file_path)
-            outcome = submit_session_core(
-                payload=payload,
-                path=file_path,
-                tier=tier,
-                include_analysis=include_analysis,
+            receipt = submit(
+                run,
+                tier,
+                resolve_workspace_key(tier),
+                workflow_reference=(
+                    workflow_reference
+                    if workflow_reference is not None
+                    else _derive_workflow_reference(file_path)
+                ),
                 backfill=backfill,
-                session_observed_at=session_observed_at,
-                workflow_reference=resolved_workflow_reference,
+                include_analysis=include_analysis,
             )
-        except _SUBMISSION_ERRORS as exc:  # noqa: BLE001 - per-file isolation
-            report.files.append(
-                BatchFileOutcome(path=relative, outcome="failed", reason=str(exc))
-            )
+        except (SubmitError, ValueError) as exc:  # per-file isolation
+            report.files.append(BatchFileOutcome(path=relative, outcome="failed", reason=str(exc)))
             continue
 
         report.files.append(
-            BatchFileOutcome(
-                path=relative, outcome="submitted", submission_id=outcome.submission_id
-            )
+            BatchFileOutcome(path=relative, outcome="submitted", submission_id=receipt.submission_id)
         )
 
 
@@ -361,8 +206,7 @@ def run_batch(
 
     ``backfill=True`` stamps top-level ``backfill: true`` on every
     submitted envelope (only meaningful together with ``submit=True`` and
-    ``tier="teams"``; see :func:`driftshield.cli._submit.submit_session_core`
-    for the validation that enforces this).
+    ``tier="teams"``; :func:`driftshield.public.submit` enforces this).
 
     ``workflow_reference``, when given, is stamped on every submitted
     envelope (matching ``driftshield submit --workflow-reference``). When
@@ -372,32 +216,24 @@ def run_batch(
     ``submit=True``.
     """
     report = BatchReport()
+    options = dict(
+        report=report,
+        submit_files=submit,
+        tier=tier,
+        include_analysis=include_analysis,
+        backfill=backfill,
+        workflow_reference=workflow_reference,
+    )
 
     if source.is_dir():
-        _process_directory(
-            source,
-            report=report,
-            submit=submit,
-            tier=tier,
-            include_analysis=include_analysis,
-            backfill=backfill,
-            workflow_reference=workflow_reference,
-        )
+        _process_directory(source, **options)
         return report
 
     if source.is_file() and _is_archive(source):
         with tempfile.TemporaryDirectory(prefix="driftshield-batch-") as tmp_name:
             extract_root = Path(tmp_name)
             _extract_archive(source, extract_root)
-            _process_directory(
-                extract_root,
-                report=report,
-                submit=submit,
-                tier=tier,
-                include_analysis=include_analysis,
-                backfill=backfill,
-                workflow_reference=workflow_reference,
-            )
+            _process_directory(extract_root, **options)
         return report
 
     raise ValueError(

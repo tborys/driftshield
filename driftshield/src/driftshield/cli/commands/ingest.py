@@ -15,7 +15,7 @@ import typer
 from rich.console import Console
 
 from driftshield.cli.discovery import discover_sessions, resolve_session
-from driftshield.cli.parsers import detect_parser
+from driftshield.public import NoParseableEventsError, UnsupportedFormatError, analyse_run
 
 
 console = Console(force_terminal=True)
@@ -126,15 +126,19 @@ def ingest(
 
     file_path = _resolve_ingest_file(path=path, project=project or latest)
 
-    effective_parser = parser
-    if effective_parser == "auto":
-        detected = detect_parser(file_path)
-        if detected is None:
-            console.print(
-                f"[red]Error:[/red] Could not detect parser for '{file_path.name}'. Use --parser."
-            )
-            raise typer.Exit(1)
-        effective_parser = detected
+    try:
+        run = analyse_run(
+            file_path.read_bytes(),
+            source=str(file_path),
+            format=None if parser == "auto" else parser,
+        )
+    except (NoParseableEventsError, UnsupportedFormatError) as exc:
+        if include_analysis:
+            typer.echo(f"error: --include-analysis specified but {exc}", err=True)
+            raise typer.Exit(code=2) from exc
+        console.print(f"[red]Error:[/red] {exc}. Use --parser.")
+        raise typer.Exit(1) from exc
+    effective_parser = run.detected_format
 
     api_url = os.environ.get("DRIFTSHIELD_API_URL", "http://localhost:8000")
     api_key = os.environ.get("DRIFTSHIELD_API_KEY") or os.environ.get("API_KEY")
@@ -158,34 +162,12 @@ def ingest(
         raise typer.Exit(1) from exc
 
     if include_analysis:
-        from driftshield.cli._signature_summary import (
-            build_signature_summary_from_session,
-        )
-
-        try:
-            summary = build_signature_summary_from_session(file_path)
-        except Exception as exc:  # noqa: BLE001
-            typer.echo(
-                "error: --include-analysis specified but "
-                f"build_signature_summary_from_session(...) failed: {exc}",
-                err=True,
-            )
-            raise typer.Exit(code=2) from exc
-        if summary is None:
-            typer.echo(
-                "error: --include-analysis specified but "
-                "build_signature_summary_from_session(...) could not produce "
-                "a summary (no parser detected or session yielded no events). "
-                "Re-run without --include-analysis or supply a parseable session.",
-                err=True,
-            )
-            raise typer.Exit(code=2)
         submission_context = SubmissionContext(
             submission_tier=submission_context.submission_tier,
             workflow_reference=submission_context.workflow_reference,
             project_reference=submission_context.project_reference,
             source_connector=submission_context.source_connector,
-            signature_summary_json=summary.model_dump_json(),
+            signature_summary_json=run.signature_summary.model_dump_json(),
         )
 
     target_url = api_url.rstrip("/") + "/api/ingest"

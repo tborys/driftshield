@@ -335,6 +335,20 @@ driftshield batch <directory-or-archive> --submit
 driftshield batch <directory-or-archive> --json
 ```
 
+## Library use
+
+The engine has two public calls, `analyse_run` and `submit`; the CLI is a thin skin over them.
+
+```python
+from driftshield import analyse_run, submit
+
+run = analyse_run(open("session.jsonl", "rb").read(), source="session.jsonl")
+print(run.detected_format, run.qualification_state, [h.signature_id for h in run.signature_hits])
+receipt = submit(run)  # community lane: keyless, redacted
+```
+
+`docs/public-api.md` documents both calls, their types and error modes.
+
 ## Tech Stack
 
 | Layer | Technology |

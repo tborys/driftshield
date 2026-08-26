@@ -1,35 +1,14 @@
-import hashlib
-from datetime import datetime, timezone
-
 from fastapi import HTTPException, UploadFile
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DBSession
 
 from driftshield.api.security import get_max_request_bytes
-from driftshield.cli.parsers import PARSERS
 from driftshield.core.analysis.session import AnalysisResult
 from driftshield.db.behaviour_service import BehaviourEventService
 from driftshield.db.ingest_service import TranscriptIngestService, metrics_payload_from_analysis_result
-from driftshield.db.persistence import IngestOutcome, IngestProvenance, PersistenceService
-from driftshield.public import detect_source
+from driftshield.db.persistence import IngestOutcome, PersistenceService
+from driftshield.public import analyse_run
 from driftshield.telemetry import TelemetryService
-
-
-def resolve_format(format_name: str, raw_bytes: bytes) -> str:
-    """Resolve the parser name for an upload, detecting from content on ``auto``.
-
-    Delegates to :func:`driftshield.public.detect_source`, the same content
-    based sniffer the DB-free ``analyse`` chain uses, so ``format=auto``
-    recognises every source ``cli.parsers`` supports instead of only
-    ``.jsonl`` uploads guessed from the filename.
-    """
-    normalised = format_name.replace("-", "_")
-    if normalised == "auto":
-        content = raw_bytes.decode("utf-8", errors="replace")
-        normalised = detect_source(content) or "unknown"
-    if normalised not in PARSERS:
-        raise HTTPException(status_code=422, detail=f"Unsupported format: {format_name}")
-    return normalised
 
 
 def ingest_transcript_bytes(
@@ -40,16 +19,20 @@ def ingest_transcript_bytes(
     filename: str | None,
     commit: bool = True,
 ) -> tuple[IngestOutcome, AnalysisResult | None, str]:
-    normalised = resolve_format(format_name, raw_bytes)
     _validate_request_size(raw_bytes)
+    try:
+        run = analyse_run(
+            raw_bytes,
+            source=filename,
+            format=None if format_name == "auto" else format_name,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    normalised = run.detected_format
 
     ingest_service = TranscriptIngestService(db)
     try:
-        outcome, analysis_result = ingest_service.ingest_bytes(
-            raw_bytes=raw_bytes,
-            parser_name=normalised,
-            source_path=filename,
-        )
+        outcome, analysis_result = ingest_service.ingest_run(run)
         if not outcome.deduplicated and analysis_result is not None and analysis_result.events:
             BehaviourEventService(db).link_new_run_after_pattern_view(session_id=outcome.session_id)
         if commit:
@@ -60,15 +43,7 @@ def ingest_transcript_bytes(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except IntegrityError:
         db.rollback()
-        outcome = PersistenceService(db).get_ingest_outcome(
-            IngestProvenance(
-                transcript_hash=hashlib.sha256(raw_bytes).hexdigest(),
-                source_session_id=None,
-                source_path=filename,
-                parser_version=f"{normalised}@1",
-                ingested_at=datetime.now(timezone.utc),
-            )
-        )
+        outcome = PersistenceService(db).get_ingest_outcome(run.provenance)
         if outcome is None:
             raise
         analysis_result = None

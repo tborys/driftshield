@@ -22,8 +22,6 @@ from driftshield.remote_submission import (
     RemoteSubmissionError,
     build_oss_submission_request,
     post_oss_submission,
-    redact_payload,
-    redact_payload_with_manifest,
 )
 
 
@@ -34,171 +32,13 @@ def _config() -> OssRemoteSubmissionConfig:
     return OssRemoteSubmissionConfig(intake_url=_OSS_INTAKE_URL)
 
 
-def test_redact_payload_strips_required_fields():
-    payload = {
-        "session_id": "sess-1",
-        "prompts": [{"role": "user", "content": "secret"}],
-        "responses": [{"role": "assistant", "content": "also secret"}],
-        "user_identifiers": ["alice@example.test"],
-        "metadata": {"foo": "bar"},
-    }
-
-    redacted, redacted_fields = redact_payload(payload)
-
-    assert "prompts" not in redacted
-    assert "responses" not in redacted
-    assert "user_identifiers" not in redacted
-    assert redacted["session_id"] == "sess-1"
-    assert redacted["metadata"] == {"foo": "bar"}
-    assert set(redacted_fields) == REQUIRED_REDACTION_FIELDS
-
-
-def test_redact_payload_redacts_nested_content_and_text_keys_in_place():
-    """ruleset.v3 (driftshield#158): a plain-string ``content``/``text`` value
-    is replaced with a placeholder in place, not deleted, so a downstream
-    re-parse still finds the key.
-    """
-    payload = {
-        "session_id": "sess-1",
-        "events": [
-            {"type": "user", "content": "MY SECRET PROMPT", "ts": 1},
-            {"type": "assistant", "text": "MY SECRET RESPONSE", "ts": 2},
-        ],
-    }
-
-    redacted, _ = redact_payload(payload)
-
-    serialised = json.dumps(redacted)
-    assert "MY SECRET PROMPT" not in serialised
-    assert "MY SECRET RESPONSE" not in serialised
-    assert redacted["session_id"] == "sess-1"
-    assert [e["type"] for e in redacted["events"]] == ["user", "assistant"]
-    assert [e["ts"] for e in redacted["events"]] == [1, 2]
-    assert redacted["events"][0]["content"].startswith("<REDACTED:prompt_response:")
-    assert redacted["events"][1]["text"].startswith("<REDACTED:prompt_response:")
-
-
-def test_redact_payload_redacts_deeply_nested_sensitive_keys_in_place():
-    payload = {
-        "level_1": {
-            "level_2": {
-                "level_3": {
-                    "level_4": {
-                        "content": "DEEP_SECRET",
-                        "keep": "safe_value",
-                    }
-                }
-            }
-        }
-    }
-
-    redacted, _ = redact_payload(payload)
-
-    assert "DEEP_SECRET" not in json.dumps(redacted)
-    leaf = redacted["level_1"]["level_2"]["level_3"]["level_4"]
-    assert leaf["keep"] == "safe_value"
-    assert leaf["content"].startswith("<REDACTED:prompt_response:")
-
-
-def test_redact_payload_removes_claude_code_prompt_response_strings():
-    """Realistic Claude Code session shape: events[].content carries prompts/responses."""
-    payload = {
-        "session_id": "claude-sess-abc",
-        "events": [
-            {
-                "type": "user",
-                "content": "Please refactor the auth middleware to use JWT",
-                "timestamp": "2026-05-17T10:00:00Z",
-            },
-            {
-                "type": "assistant",
-                "content": "Here's the refactored middleware with JWT validation...",
-                "timestamp": "2026-05-17T10:00:05Z",
-                "tool_calls": [
-                    {"name": "edit", "arguments": {"file": "/src/auth.py"}},
-                ],
-            },
-        ],
-        "metadata": {"model": "claude-opus-4-7"},
-    }
-
-    redacted, _ = redact_payload(payload)
-    serialised = json.dumps(redacted)
-
-    assert "Please refactor the auth middleware to use JWT" not in serialised
-    assert "Here's the refactored middleware with JWT validation..." not in serialised
-    assert redacted["session_id"] == "claude-sess-abc"
-    assert redacted["metadata"] == {"model": "claude-opus-4-7"}
-    assert [e["type"] for e in redacted["events"]] == ["user", "assistant"]
-
-
-def test_redact_payload_handles_none_and_empty_values():
-    payload = {
-        "session_id": "sess-1",
-        "empty_dict": {},
-        "empty_list": [],
-        "none_value": None,
-        "events": [],
-    }
-
-    redacted, _ = redact_payload(payload)
-
-    assert redacted == payload
-
-
-def test_build_oss_submission_request_redacts_nested_content_before_manifest():
-    """The envelope-building path must redact nested content before the manifest is built."""
-    payload = {
-        "session_id": "sess-1",
-        "events": [
-            {"type": "user", "content": "LEAK_CANARY_PROMPT"},
-            {"type": "assistant", "content": "LEAK_CANARY_RESPONSE"},
-        ],
-    }
-
-    request = build_oss_submission_request(
-        source_session_id="sess-1",
-        payload=payload,
-    )
-
-    serialised = request.envelope.model_dump_json()
-    assert "LEAK_CANARY_PROMPT" not in serialised
-    assert "LEAK_CANARY_RESPONSE" not in serialised
-    # Public manifest contract is unchanged: still advertises REQUIRED_REDACTION_FIELDS.
-    assert set(request.envelope.redaction_manifest.redacted_fields) == REQUIRED_REDACTION_FIELDS
-    assert request.envelope.redaction_manifest.redaction_applied is True
-    # payload_size_bytes must reflect the redacted payload, not the original.
-    expected_bytes = json.dumps(
-        request.envelope.payload,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
-    assert request.envelope.payload_size_bytes == len(expected_bytes)
-
-
-def test_redact_payload_manifest_advertises_superset_even_if_missing():
-    payload = {"session_id": "sess-1", "metadata": {"foo": "bar"}}
-
-    redacted, redacted_fields = redact_payload(payload)
-
-    assert redacted == payload
-    assert set(redacted_fields) == REQUIRED_REDACTION_FIELDS
-
-
 def test_build_oss_submission_request_phase3g_v1_shape():
     """Builder produces a phase3g.v1 envelope with the default workflow ref."""
-    payload = {
-        "session_id": "sess-1",
-        "prompts": ["should be stripped"],
-        "responses": ["also stripped"],
-        "user_identifiers": ["alice@example.test"],
-        "metadata": {"foo": "bar"},
-    }
+    payload = {"session_id": "sess-1", "metadata": {"foo": "bar"}}
 
     request = build_oss_submission_request(
         source_session_id="sess-1",
-        payload=payload,
+        redacted_payload=payload,
     )
 
     assert isinstance(request, OssSubmissionRequest)
@@ -211,9 +51,6 @@ def test_build_oss_submission_request_phase3g_v1_shape():
     assert envelope.agent_id is None
     assert envelope.model_name is None
     assert envelope.model_version is None
-    assert "prompts" not in envelope.payload
-    assert "responses" not in envelope.payload
-    assert "user_identifiers" not in envelope.payload
     assert envelope.payload["session_id"] == "sess-1"
     assert envelope.payload["metadata"] == {"foo": "bar"}
 
@@ -226,7 +63,7 @@ def test_build_oss_submission_request_threads_provenance_fields():
     """agent_id / model_name / model_version are surfaced on the envelope when supplied."""
     request = build_oss_submission_request(
         source_session_id="sess-1",
-        payload={"session_id": "sess-1"},
+        redacted_payload={"session_id": "sess-1"},
         agent_id="agent-42",
         model_name="claude-opus-4-7",
         model_version="2026-05",
@@ -243,7 +80,7 @@ def test_build_oss_submission_request_threads_session_observed_at():
     when supplied, as a real datetime parsed from the ISO 8601 string."""
     request = build_oss_submission_request(
         source_session_id="sess-1",
-        payload={"session_id": "sess-1"},
+        redacted_payload={"session_id": "sess-1"},
         session_observed_at="2026-01-01T00:05:30+00:00",
     )
 
@@ -256,7 +93,7 @@ def test_build_oss_submission_request_session_observed_at_absent_by_default():
     """No timestamp supplied => the field stays unset, not a fallback value."""
     request = build_oss_submission_request(
         source_session_id="sess-1",
-        payload={"session_id": "sess-1"},
+        redacted_payload={"session_id": "sess-1"},
     )
 
     assert request.envelope.session_observed_at is None
@@ -265,7 +102,7 @@ def test_build_oss_submission_request_session_observed_at_absent_by_default():
 def test_build_oss_submission_request_workflow_reference_override():
     request = build_oss_submission_request(
         source_session_id="sess-1",
-        payload={"session_id": "sess-1"},
+        redacted_payload={"session_id": "sess-1"},
         workflow_reference="checkout-flow",
     )
 
@@ -281,7 +118,7 @@ def test_build_oss_submission_request_emits_manifest_v2_with_provenance():
 
     request = build_oss_submission_request(
         source_session_id="sess-1",
-        payload={"session_id": "sess-1", "metadata": {"foo": "bar"}},
+        redacted_payload={"session_id": "sess-1", "metadata": {"foo": "bar"}},
     )
 
     manifest = request.envelope.redaction_manifest
@@ -294,7 +131,7 @@ def test_build_oss_submission_request_has_no_installation_id_or_consent_state():
     """D19 contract: request must NOT carry installation_id or consent_state."""
     request = build_oss_submission_request(
         source_session_id="sess-1",
-        payload={"session_id": "sess-1"},
+        redacted_payload={"session_id": "sess-1"},
     )
 
     serialised = json.loads(request.model_dump_json())
@@ -309,7 +146,7 @@ def test_build_oss_submission_request_payload_size_bytes_is_exact():
 
     request = build_oss_submission_request(
         source_session_id="sess-1",
-        payload=payload,
+        redacted_payload=payload,
     )
 
     expected = json.dumps(
@@ -351,7 +188,7 @@ def test_post_oss_submission_happy_path():
 
     request = build_oss_submission_request(
         source_session_id="sess-1",
-        payload={"session_id": "sess-1"},
+        redacted_payload={"session_id": "sess-1"},
     )
 
     result = post_oss_submission(config=_config(), submission=request, opener=fake_opener)
@@ -384,7 +221,7 @@ def test_post_oss_submission_surfaces_deprecated_server_header():
 
     request = build_oss_submission_request(
         source_session_id="sess-1",
-        payload={"session_id": "sess-1"},
+        redacted_payload={"session_id": "sess-1"},
     )
 
     result = post_oss_submission(config=_config(), submission=request, opener=fake_opener)
@@ -400,7 +237,7 @@ def test_post_oss_submission_server_contract_version_absent_when_header_missing(
 
     request = build_oss_submission_request(
         source_session_id="sess-1",
-        payload={"session_id": "sess-1"},
+        redacted_payload={"session_id": "sess-1"},
     )
 
     result = post_oss_submission(config=_config(), submission=request, opener=fake_opener)
@@ -420,7 +257,7 @@ def test_post_oss_submission_http_error_raises_remote_submission_error():
 
     request = build_oss_submission_request(
         source_session_id="sess-1",
-        payload={"session_id": "sess-1"},
+        redacted_payload={"session_id": "sess-1"},
     )
 
     with pytest.raises(RemoteSubmissionError) as exc_info:
@@ -435,7 +272,7 @@ def test_post_oss_submission_url_error_raises_remote_submission_error():
 
     request = build_oss_submission_request(
         source_session_id="sess-1",
-        payload={"session_id": "sess-1"},
+        redacted_payload={"session_id": "sess-1"},
     )
 
     with pytest.raises(RemoteSubmissionError) as exc_info:
@@ -449,7 +286,7 @@ def test_post_oss_submission_non_json_response_raises():
 
     request = build_oss_submission_request(
         source_session_id="sess-1",
-        payload={"session_id": "sess-1"},
+        redacted_payload={"session_id": "sess-1"},
     )
 
     with pytest.raises(RemoteSubmissionError) as exc_info:
@@ -493,7 +330,7 @@ def test_build_oss_submission_request_no_signature_summary():
     """Default invocation produces an envelope with signature_summary=None."""
     request = build_oss_submission_request(
         source_session_id="sess-1",
-        payload={"session_id": "sess-1"},
+        redacted_payload={"session_id": "sess-1"},
     )
     assert request.envelope.signature_summary is None
 
@@ -502,7 +339,7 @@ def test_build_oss_submission_request_populates_signature_summary():
     summary = _summary_with_one_entry()
     request = build_oss_submission_request(
         source_session_id="sess-1",
-        payload={"session_id": "sess-1"},
+        redacted_payload={"session_id": "sess-1"},
         signature_summary=summary,
     )
     assert request.envelope.signature_summary is not None
@@ -513,35 +350,6 @@ def test_build_oss_submission_request_populates_signature_summary():
     encoded = json.loads(request.model_dump_json())
     assert "signature_summary" in encoded["envelope"]
     assert encoded["envelope"]["signature_summary"]["matches"][0]["signature_id"] == "sig-abc"
-
-
-def test_redact_call_site_passes_only_payload():
-    """The redactor is invoked only with the inner payload dict, never the envelope."""
-    summary = _summary_with_one_entry()
-    captured: dict[str, Any] = {}
-
-    real_redact = __import__(
-        "driftshield.remote_submission", fromlist=["redact_payload"]
-    ).redact_payload
-
-    def spy(payload):
-        captured["payload"] = payload
-        return real_redact(payload)
-
-    with patch("driftshield.remote_submission.redact_payload", side_effect=spy) as spied:
-        build_oss_submission_request(
-            source_session_id="sess-1",
-            payload={"session_id": "sess-1", "metadata": {"foo": "bar"}},
-            signature_summary=summary,
-        )
-
-    # Redactor saw exactly the inner payload dict; signature_summary was not
-    # in the input, by construction (it is a sibling of payload, not nested).
-    assert spied.call_count == 1
-    inner_payload = captured["payload"]
-    assert "signature_summary" not in inner_payload
-    assert inner_payload["session_id"] == "sess-1"
-    assert inner_payload["metadata"] == {"foo": "bar"}
 
 
 def test_derive_oss_inline_submit_url_from_canonical_intake():
@@ -592,7 +400,7 @@ def test_post_oss_submission_routes_v1_intake_to_oss_submissions():
 
     submission = build_oss_submission_request(
         source_session_id="sess-1",
-        payload={"session_id": "sess-1"},
+        redacted_payload={"session_id": "sess-1"},
     )
     post_oss_submission(
         config=OssRemoteSubmissionConfig(intake_url="https://api.example/v1/intake"),
@@ -630,105 +438,3 @@ def _openclaw_payload() -> dict[str, Any]:
     }
 
 
-def test_detect_shape_openclaw_trajectory():
-    from driftshield.remote_submission import detect_shape
-
-    assert detect_shape(_openclaw_payload()) == "openclaw_trajectory"
-
-
-def test_detect_shape_claude_code_lines_still_detect():
-    from driftshield.remote_submission import detect_shape
-
-    payload = {
-        "session_id": "sess-1",
-        "events": [
-            {"type": "assistant", "sessionId": "sess-1", "message": {"content": []}},
-            {"type": "user", "sessionId": "sess-1", "message": {"content": []}},
-        ],
-    }
-    assert detect_shape(payload) == "claude_code"
-
-
-def test_detect_shape_unrecognisable_events_are_not_claude_code():
-    """Arbitrary line-delimited JSON without the type discriminator must not
-    wave through the unknown-shape redaction guard as claude_code."""
-    from driftshield.remote_submission import detect_shape
-
-    payload = {"events": [{"foo": 1}, {"bar": 2}]}
-    assert detect_shape(payload) is None
-
-
-def test_openclaw_payload_submits_without_force_unknown_shape():
-    submission = build_oss_submission_request(
-        source_session_id="sess-oc",
-        payload=_openclaw_payload(),
-    )
-    assert submission.envelope.payload["events"]
-
-
-def test_derive_openclaw_provenance_extracts_agent_and_model():
-    from driftshield.remote_submission import derive_openclaw_provenance
-
-    provenance = derive_openclaw_provenance(_openclaw_payload())
-    assert provenance == {
-        "agent_id": "openclaw:engineering",
-        "model_name": "openai-codex/gpt-5.4",
-    }
-
-
-def test_derive_openclaw_provenance_empty_for_other_shapes():
-    from driftshield.remote_submission import derive_openclaw_provenance
-
-    assert derive_openclaw_provenance({"session_id": "sess-1"}) == {}
-    assert (
-        derive_openclaw_provenance(
-            {"events": [{"type": "assistant", "message": {}}]}
-        )
-        == {}
-    )
-
-
-def test_openclaw_content_keys_redacted():
-    """ruleset.v2: OpenClaw prompt/response/tool free text never rides the
-    envelope. The keys are dropped with recorded entries."""
-    payload = {
-        "session_id": "sess-oc",
-        "events": [
-            _openclaw_event(
-                "context.compiled",
-                {
-                    "prompt": "secret prompt text",
-                    "systemPrompt": "you are an agent with these tools",
-                    "imagesCount": 0,
-                },
-            ),
-            _openclaw_event(
-                "trace.artifacts",
-                {
-                    "assistantTexts": ["model reply"],
-                    "toolMetas": [{"toolName": "exec", "meta": "rm -rf notes"}],
-                    "messagingToolSentTexts": ["sent message"],
-                    "messagesSnapshot": [{"role": "user"}],
-                    "finalPromptText": "final prompt",
-                    "finalStatus": "success",
-                },
-            ),
-        ],
-    }
-    result = redact_payload_with_manifest(payload)
-    events = result.payload["events"]
-    assert "prompt" not in events[0]["data"]
-    assert "systemPrompt" not in events[0]["data"]
-    assert events[0]["data"]["imagesCount"] == 0
-    for key in (
-        "assistantTexts",
-        "toolMetas",
-        "messagingToolSentTexts",
-        "messagesSnapshot",
-        "finalPromptText",
-    ):
-        assert key not in events[1]["data"]
-    assert events[1]["data"]["finalStatus"] == "success"
-    dropped_paths = {e.path for e in result.entries if e.category == "dropped_key"}
-    assert "events[0].data.prompt" in dropped_paths
-    assert "events[1].data.assistantTexts" in dropped_paths

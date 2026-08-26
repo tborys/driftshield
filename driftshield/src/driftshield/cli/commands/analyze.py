@@ -7,10 +7,9 @@ from typing import Optional
 import typer
 from rich.console import Console
 
-from driftshield.cli.parsers import get_parser, detect_parser, ParserNotFoundError
 from driftshield.cli.output import format_summary, format_json, format_verbose_table, format_quiet
 from driftshield.cli.discovery import discover_sessions, resolve_session
-from driftshield.core.analysis.session import analyze_session
+from driftshield.public import NoParseableEventsError, UnsupportedFormatError, analyse_run
 
 
 console = Console(force_terminal=True)
@@ -87,34 +86,29 @@ def analyze(
         console.print("[red]Error:[/red] No path provided. Use --project or specify a file path.")
         raise typer.Exit(1)
 
-    # Analyze each file
+    # Analyse each file through the door
     all_results = []
     for file_path in files_to_analyze:
-        effective_parser = parser
-        if effective_parser == "auto":
-            detected = detect_parser(file_path)
-            if detected is None:
-                console.print(
-                    f"[yellow]Warning:[/yellow] Could not detect parser for '{file_path.name}', skipping"
-                )
-                continue
-            effective_parser = detected
-
         try:
-            parser_instance = get_parser(effective_parser)
-        except ParserNotFoundError as e:
+            run = analyse_run(
+                file_path.read_bytes(),
+                source=str(file_path),
+                format=None if parser == "auto" else parser,
+            )
+        except UnsupportedFormatError as e:
             console.print(f"[red]Error:[/red] {e}")
             raise typer.Exit(1)
-
-        try:
-            events = parser_instance.parse_file(str(file_path))
-            result = analyze_session(events)
-            all_results.append((file_path, result))
+        except NoParseableEventsError as e:
+            console.print(f"[yellow]Warning:[/yellow] {file_path.name}: {e}, skipping")
+            continue
         except Exception as e:
             console.print(f"[red]Error:[/red] Failed to analyze {file_path.name}: {e}")
             if len(files_to_analyze) == 1:
                 raise typer.Exit(1)
             continue
+        for warning in run.warnings:
+            console.print(f"[yellow]Warning:[/yellow] {file_path.name}: {warning}")
+        all_results.append((file_path, run.analysis))
 
     if not all_results:
         console.print("No sessions analyzed.")

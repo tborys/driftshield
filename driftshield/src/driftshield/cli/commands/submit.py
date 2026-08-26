@@ -50,11 +50,6 @@ def submit(
         "--show-manifest",
         help="Print the redaction manifest that would accompany the submission, exit without submitting.",
     ),
-    force_unknown_shape: bool = typer.Option(
-        False,
-        "--force-unknown-shape",
-        help="Submit even if the transcript top-level shape is not recognised by the redactor.",
-    ),
     include_analysis: bool = typer.Option(
         False,
         "--include-analysis",
@@ -102,7 +97,6 @@ def submit(
         model_version=model_version,
         dry_run_redaction=dry_run_redaction,
         show_manifest=show_manifest,
-        force_unknown_shape=force_unknown_shape,
         include_analysis=include_analysis,
         tier=tier,
         environment=environment,

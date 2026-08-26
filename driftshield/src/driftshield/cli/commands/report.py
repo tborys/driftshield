@@ -1,15 +1,11 @@
 """Report command for DriftShield CLI."""
 
 import json
-import uuid
-from datetime import datetime, timezone
 from pathlib import Path
 
 import typer
 
-from driftshield.cli.parsers import detect_parser, get_parser
-from driftshield.core.analysis.session import analyze_session
-from driftshield.core.models import Session as DomainSession, SessionStatus
+from driftshield.public import analyse_run
 from driftshield.reports.builder import ReportBuilder
 from driftshield.reports.json_export import export_json
 from driftshield.reports.markdown import render_markdown
@@ -33,27 +29,12 @@ def report_command(
         typer.echo(f"Error: {path} not found", err=True)
         raise typer.Exit(1)
 
-    # Detect and run parser
-    name = parser_name or detect_parser(path)
-    if name is None:
-        typer.echo(f"Error: could not detect parser for {path.name}", err=True)
+    try:
+        run = analyse_run(path.read_bytes(), source=str(path), format=parser_name)
+    except ValueError as exc:
+        typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(1)
-
-    parser = get_parser(name)
-    events = parser.parse_file(str(path))
-
-    if not events:
-        typer.echo("No events found in transcript", err=True)
-        raise typer.Exit(1)
-
-    # Analyse
-    result = analyze_session(events)
-    session = DomainSession(
-        id=events[0].session_id or uuid.uuid4(),
-        agent_id=events[0].agent_id or "unknown",
-        started_at=events[0].timestamp or datetime.now(timezone.utc),
-        status=SessionStatus.COMPLETED,
-    )
+    session, result = run.session, run.analysis
 
     # Build and render report
     rt = ReportType(report_type)

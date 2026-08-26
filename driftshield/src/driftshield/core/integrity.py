@@ -9,7 +9,7 @@ from driftshield.core.analysis.session import AnalysisResult
 from driftshield.core.models import Session as DomainSession
 
 if TYPE_CHECKING:
-    from driftshield.db.persistence import IngestProvenance
+    from driftshield.core.models import RunProvenance
 
 INTEGRITY_SCHEMA_VERSION = "phase3e.v1"
 INTEGRITY_POLICY_VERSION = "phase3e.v1.default"
@@ -19,7 +19,7 @@ OSS_V1_PATTERN_INTEGRITY_PLACEHOLDER = 0.95
 def build_integrity_summary(
     session: DomainSession,
     result: AnalysisResult,
-    provenance: IngestProvenance | None,
+    provenance: RunProvenance | None,
 ) -> dict[str, Any]:
     """Build the persisted OSS-safe integrity summary for one investigated run."""
 
@@ -71,7 +71,7 @@ def build_integrity_summary(
 
 def build_integrity_provenance(
     summary: dict[str, Any],
-    provenance: IngestProvenance | None,
+    provenance: RunProvenance | None,
 ) -> dict[str, Any]:
     """Build the public provenance payload for the integrity decision."""
 
@@ -127,7 +127,7 @@ def _semantic_score(result: AnalysisResult) -> tuple[float, list[str]]:
 
 def _source_factor(
     session: DomainSession,
-    provenance: IngestProvenance | None,
+    provenance: RunProvenance | None,
 ) -> tuple[float, list[str]]:
     score = 0.4
     reasons: list[str] = []
@@ -163,7 +163,7 @@ def _trust_band(final_learning_weight: float) -> str:
     return "quarantined"
 
 
-def _evaluated_at(session: DomainSession, provenance: IngestProvenance | None) -> datetime:
+def _evaluated_at(session: DomainSession, provenance: RunProvenance | None) -> datetime:
     if provenance is not None:
         return provenance.ingested_at
     if session.ended_at is not None:

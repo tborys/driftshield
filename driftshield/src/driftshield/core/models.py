@@ -193,6 +193,17 @@ class RiskClassification:
         return explanations
 
 
+@dataclass(frozen=True)
+class RunProvenance:
+    """Where a run came from: content hash, source ids, parser and ingest time."""
+
+    transcript_hash: str
+    source_session_id: str | None
+    source_path: str | None
+    parser_version: str
+    ingested_at: datetime
+
+
 @dataclass
 class CanonicalEvent:
     """A single decision node in a reasoning trace."""

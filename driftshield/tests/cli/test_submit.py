@@ -53,7 +53,7 @@ def test_submit_oss_inline_redacts_and_posts(tmp_path, monkeypatch):
 
         return _Result()
 
-    monkeypatch.setattr("driftshield.cli._submit.post_oss_submission", fake_post)
+    monkeypatch.setattr("driftshield.public.post_oss_submission", fake_post)
     monkeypatch.setenv("DRIFTSHIELD_TELEMETRY_HOME", str(tmp_path / "tele"))
     session = _write_session(tmp_path)
 
@@ -98,7 +98,7 @@ def test_submit_session_emits_deprecation(tmp_path, monkeypatch):
     # Use a local runner so we can inspect separated streams independently.
     # Click 8.2+ always separates stderr; CliRunner() needs no extra arguments.
     local_runner = CliRunner()
-    monkeypatch.setattr("driftshield.cli._submit.post_oss_submission", _fake_post_ok(monkeypatch))
+    monkeypatch.setattr("driftshield.public.post_oss_submission", _fake_post_ok(monkeypatch))
     monkeypatch.setenv("DRIFTSHIELD_TELEMETRY_HOME", str(tmp_path / "tele"))
     session = _write_session(tmp_path)
     result = local_runner.invoke(app, ["telemetry", "submit-session", "--path", str(session)])
@@ -128,7 +128,7 @@ def test_submit_teams_tier_uses_authenticated_presigned_upload(tmp_path, monkeyp
         return _Result()
 
     monkeypatch.setattr(
-        "driftshield.cli._submit.submit_teams_via_presigned_upload", fake_teams_upload
+        "driftshield.public.submit_teams_via_presigned_upload", fake_teams_upload
     )
     monkeypatch.setenv("DRIFTSHIELD_API_KEY", "test-key")
     monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))

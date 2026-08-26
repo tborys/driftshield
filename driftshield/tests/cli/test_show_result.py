@@ -304,7 +304,21 @@ def test_zero_config_submit_then_show_result_roundtrip(tmp_path, monkeypatch):
 
     monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
     session_path = tmp_path / "session.json"
-    session_path.write_text(json.dumps({"session_id": "sess-1"}), encoding="utf-8")
+    session_path.write_text(
+        json.dumps(
+            {
+                "session_id": "sess-1",
+                "events": [
+                    {
+                        "type": "user",
+                        "sessionId": "sess-1",
+                        "message": {"role": "user", "content": [{"type": "text", "text": "hi"}]},
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
 
     captured: dict[str, Any] = {}
 
@@ -318,7 +332,7 @@ def test_zero_config_submit_then_show_result_roundtrip(tmp_path, monkeypatch):
         )
 
     monkeypatch.setattr(
-        "driftshield.cli._submit.post_oss_submission", fake_post
+        "driftshield.public.post_oss_submission", fake_post
     )
 
     submit = runner.invoke(

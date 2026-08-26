@@ -21,13 +21,6 @@ from driftshield.recursive_redactor import (
     REDACTOR_VERSION,
     redact,
 )
-from driftshield.remote_submission import (
-    UnknownTranscriptShapeError,
-    build_oss_submission_request,
-    detect_shape,
-    redact_payload,
-    redact_payload_with_manifest,
-)
 
 
 _FIXTURE_DIR = Path(__file__).parent / "fixtures" / "redactor_corpus"
@@ -349,12 +342,9 @@ def test_required_redaction_fields_still_dropped_at_top():
         "user_identifiers": ["z"],
         "session_id": "s",
     }
-    redacted, fields = redact_payload(payload)
-    assert "prompts" not in redacted
-    assert "responses" not in redacted
-    assert "user_identifiers" not in redacted
+    redacted = redact(payload).payload
+    assert not REQUIRED_REDACTION_FIELDS & set(redacted)
     assert redacted["session_id"] == "s"
-    assert set(fields) == REQUIRED_REDACTION_FIELDS
 
 
 def test_nested_content_and_text_redacted_in_place_not_dropped():
@@ -368,7 +358,7 @@ def test_nested_content_and_text_redacted_in_place_not_dropped():
             {"type": "assistant", "text": "SECRET_TEXT"},
         ]
     }
-    redacted, _ = redact_payload(payload)
+    redacted = redact(payload).payload
     serialised = json.dumps(redacted)
     assert "SECRET_CONTENT" not in serialised
     assert "SECRET_TEXT" not in serialised
@@ -376,9 +366,9 @@ def test_nested_content_and_text_redacted_in_place_not_dropped():
     assert redacted["events"][1]["text"].startswith("<REDACTED:prompt_response:")
 
 
-def test_redact_payload_with_manifest_exposes_entries():
+def test_redact_exposes_entries():
     payload = {"events": [{"note": "ssn 123-45-6789"}]}
-    result = redact_payload_with_manifest(payload)
+    result = redact(payload)
     assert any(entry.category == "ssn" for entry in result.entries)
     assert any(entry.path.startswith("events[0].note") for entry in result.entries)
 
@@ -458,7 +448,7 @@ def test_claude_code_corpus_api_error_status_retained():
     Its free-text ``error`` body is dropped by the canary-survival test; the
     bare ``api_error_status`` HTTP code is retained.
     """
-    redacted, _ = redact_payload(_load("claude_code"))
+    redacted = redact(_load("claude_code")).payload
     statuses = [
         event["event"]["api_error_status"]
         for event in redacted.get("events", [])
@@ -498,38 +488,10 @@ def test_matcher_signal_keys_retained_not_blanket_dropped():
 @pytest.mark.parametrize("name", _CORPUS_NAMES)
 def test_corpus_fixture_has_no_canary_survival(name: str):
     payload = _load(name)
-    redacted, _ = redact_payload(payload)
+    redacted = redact(payload).payload
     serialised = json.dumps(redacted)
     leaks = _CANARY_RE.findall(serialised)
     assert leaks == [], f"canary markers survived redaction in {name} fixture: {leaks}"
-
-
-@pytest.mark.parametrize("name", _CORPUS_NAMES)
-def test_corpus_fixture_detects_known_shape(name: str):
-    payload = _load(name)
-    shape = detect_shape(payload)
-    assert shape is not None, f"shape detection failed for {name}"
-
-
-def test_detect_shape_returns_none_for_unknown_shape():
-    payload = {"some_random_top_level_key": True}
-    assert detect_shape(payload) is None
-
-
-def test_build_request_refuses_unknown_shape_by_default():
-    payload = {"some_random_top_level_key": True}
-    with pytest.raises(UnknownTranscriptShapeError):
-        build_oss_submission_request(source_session_id="s", payload=payload)
-
-
-def test_build_request_accepts_unknown_shape_when_forced():
-    payload = {"some_random_top_level_key": True}
-    submission = build_oss_submission_request(
-        source_session_id="s",
-        payload=payload,
-        force_unknown_shape=True,
-    )
-    assert submission.envelope.source_session_id == "s"
 
 
 # ---------------------------------------------------------------------------

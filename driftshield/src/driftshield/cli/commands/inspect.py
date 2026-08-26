@@ -7,9 +7,8 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
-from driftshield.cli.parsers import get_parser, detect_parser
+from driftshield.public import analyse_run
 from driftshield.cli.discovery import resolve_session
-from driftshield.core.graph.builder import build_graph
 from driftshield.core.graph.models import DecisionNode, LineageGraph
 
 
@@ -118,19 +117,12 @@ def inspect(
             console.print(f"[red]Error:[/red] Could not find session: {session}")
             raise typer.Exit(1)
 
-    parser_name = detect_parser(resolved)
-    if parser_name is None:
-        console.print(f"[red]Error:[/red] Could not detect parser for: {resolved.name}")
+    try:
+        run = analyse_run(resolved.read_bytes(), source=str(resolved))
+    except ValueError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1)
-
-    parser = get_parser(parser_name)
-    events = parser.parse_file(str(resolved))
-
-    if not events:
-        console.print("[red]Error:[/red] No events found in session.")
-        raise typer.Exit(1)
-
-    graph = build_graph(events, session_id=events[0].session_id)
+    graph = run.analysis.graph
 
     target_node = None
     for n in graph.nodes:
