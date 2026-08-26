@@ -19,6 +19,7 @@ from typer.testing import CliRunner
 
 from driftshield.cli._batch import _derive_workflow_reference, run_batch
 from driftshield.cli.main import app
+from driftshield.core.analysis.session import analyze_session
 
 runner = CliRunner()
 
@@ -628,6 +629,66 @@ def test_batch_detects_non_jsonl_transcript_in_zip_archive(tmp_path):
     outcomes = {entry.path: entry.outcome for entry in report.files}
     assert outcomes["sample_claude_desktop_session.json"] == "analysed-only"
     assert report.has_failures is False
+
+
+# ---------------------------------------------------------------------------
+# Zero-event reconciliation via content detection (driftshield#185)
+# ---------------------------------------------------------------------------
+
+
+def test_batch_reidentifies_codex_fixture_by_content_when_path_default_is_wrong(
+    tmp_path, monkeypatch
+):
+    """driftshield#185: a codex_cli JSONL file copied into a plain directory
+    (no `.codex/sessions/` path hint) has only the bare `.jsonl` suffix to go
+    on, so ``detect_parser()`` defaults it to claude_code -- its historical
+    assume-Claude-Code fallback. Parsing it as claude_code silently yields
+    zero events. Batch must notice the zero-event parse, consult content
+    detection (``public.detect_source``), and re-parse as codex_cli --
+    recovering its 3 events instead of a silent, wrong 'analysed-only'."""
+    import shutil
+
+    shutil.copy(
+        FIXTURES_DIR / "sample_codex_cli_session.jsonl",
+        tmp_path / "sample_codex_cli_session.jsonl",
+    )
+
+    captured_events: list[list] = []
+    real_analyze_session = analyze_session
+
+    def _spy_analyze_session(events):
+        captured_events.append(events)
+        return real_analyze_session(events)
+
+    monkeypatch.setattr("driftshield.cli._batch.analyze_session", _spy_analyze_session)
+
+    report = run_batch(tmp_path)
+
+    entry = report.files[0]
+    assert entry.outcome == "analysed-only"
+    assert entry.reason is None  # recovered -- nothing to warn about
+
+    final_events = captured_events[-1]
+    assert len(final_events) == 3
+    assert all(
+        any(ref.get("kind") == "parser" and ref.get("value") == "codex_cli" for ref in event.source_refs)
+        for event in final_events
+    )
+
+
+def test_batch_zero_events_from_both_path_and_content_detection_warns(tmp_path):
+    """driftshield#185: when the path-based parser yields zero events *and*
+    content detection either agrees or finds nothing better, batch must
+    record an explicit warning in the report instead of a silent
+    'analysed-only' with no reason."""
+    _write_claude_code_jsonl_with_no_events(tmp_path / "empty.jsonl")
+
+    report = run_batch(tmp_path)
+
+    entry = report.files[0]
+    assert entry.outcome == "analysed-only"
+    assert entry.reason is not None
+    assert "zero events" in entry.reason
 
 
 def test_batch_isolates_a_file_that_raises_during_parsing(tmp_path):
