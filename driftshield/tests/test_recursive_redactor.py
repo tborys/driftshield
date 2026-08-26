@@ -124,6 +124,99 @@ def test_email_redacted_in_free_text():
     assert any(entry.category == "email" for entry in result.entries)
 
 
+# ---------------------------------------------------------------------------
+# driftshield#184: linear-time email matching
+#
+# `_EMAIL` used to be a single backtracking regex
+# (`[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}`) that scanned
+# quadratically over long `@`-free runs. `_redact_emails` replaced it with a
+# manual scan; these tests pin its output against the original pattern
+# (byte-for-byte) and pin the fixed quadratic-blowup case to a fast bound.
+# ---------------------------------------------------------------------------
+
+_REFERENCE_EMAIL_PATTERN = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+
+_EMAIL_EDGE_CASES = (
+    "",
+    "no email here",
+    "user@example.com",
+    "ping alice@example.test now",
+    "a.b@c.d.com",
+    "a@b.co@c.org",  # second local part is never followed by another `@`
+    "a@@b.com",
+    "trailing@dot.",
+    ".@leading.dot.com",
+    "a@b..com",
+    "edge._%+-@allowed-chars.io",
+    "multiple a@x.co and b@y.org and c@z.net in one string",
+    "x" * 5000,  # long run, no `@` at all
+    "x" * 2000 + "@" + "y" * 2000 + ".com",  # long local + domain parts
+    "@" * 20,
+    "a" * 50 + "@" + "b" * 50 + ".c" * 20 + "om",
+)
+
+
+def _string_values(value: object) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        result: list[str] = []
+        for item in value.values():
+            result.extend(_string_values(item))
+        return result
+    if isinstance(value, list):
+        result = []
+        for item in value:
+            result.extend(_string_values(item))
+        return result
+    return []
+
+
+def _reference_emails(text: str) -> list[str]:
+    return [m.group(0) for m in _REFERENCE_EMAIL_PATTERN.finditer(text)]
+
+
+def _new_emails(text: str) -> list[str]:
+    from driftshield.recursive_redactor import _redact_emails
+
+    found: list[str] = []
+
+    def record(category: str, matched: str) -> str:
+        found.append(matched)
+        return matched
+
+    _redact_emails(text, record)
+    return found
+
+
+@pytest.mark.parametrize("text", _EMAIL_EDGE_CASES)
+def test_email_matches_are_identical_to_reference_pattern(text: str):
+    assert _new_emails(text) == _reference_emails(text)
+
+
+@pytest.mark.parametrize("name", _CORPUS_NAMES)
+def test_corpus_fixture_email_matches_are_byte_identical_to_reference_pattern(name: str):
+    """Redaction output is unchanged across the full fixture corpus."""
+    payload = _load(name)
+    for text in _string_values(payload):
+        assert _new_emails(text) == _reference_emails(text), (
+            f"{name}: email matches differ for {text!r}"
+        )
+
+
+def test_large_no_at_payload_redacts_well_under_one_second():
+    """Regression for driftshield#184: a 300KB `@`-free payload used to take
+    ~32s in the old backtracking regex. Generous bound to stay robust on
+    slow CI runners while still catching a reintroduced quadratic blowup."""
+    import time
+
+    payload = {"events": [{"note": "x" * 300_000}]}
+    start = time.perf_counter()
+    redact(payload)
+    elapsed = time.perf_counter() - start
+    assert elapsed < 2.0, f"redact() took {elapsed:.2f}s on a 300KB no-@ payload"
+
+
 def test_tool_io_keys_replaced_with_placeholder_not_dropped():
     payload = {
         "events": [
@@ -354,9 +447,7 @@ def test_verbatim_failure_body_keys_dropped_at_any_depth():
     ):
         assert canary not in serialised, f"{canary} survived redaction"
 
-    dropped_paths = {
-        entry.path for entry in result.entries if entry.category == "dropped_key"
-    }
+    dropped_paths = {entry.path for entry in result.entries if entry.category == "dropped_key"}
     assert any(p.endswith("toolUseResult") for p in dropped_paths)
     assert any(p.endswith("details") for p in dropped_paths)
     assert any(p.endswith("raw") for p in dropped_paths)
@@ -371,7 +462,8 @@ def test_claude_code_corpus_api_error_status_retained():
     statuses = [
         event["event"]["api_error_status"]
         for event in redacted.get("events", [])
-        if isinstance(event, dict) and isinstance(event.get("event"), dict)
+        if isinstance(event, dict)
+        and isinstance(event.get("event"), dict)
         and "api_error_status" in event["event"]
     ]
     assert 401 in statuses
@@ -409,9 +501,7 @@ def test_corpus_fixture_has_no_canary_survival(name: str):
     redacted, _ = redact_payload(payload)
     serialised = json.dumps(redacted)
     leaks = _CANARY_RE.findall(serialised)
-    assert leaks == [], (
-        f"canary markers survived redaction in {name} fixture: {leaks}"
-    )
+    assert leaks == [], f"canary markers survived redaction in {name} fixture: {leaks}"
 
 
 @pytest.mark.parametrize("name", _CORPUS_NAMES)

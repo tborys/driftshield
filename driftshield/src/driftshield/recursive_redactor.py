@@ -34,6 +34,7 @@ on the redacted payload. See :func:`_redact_content_blocks`.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from hashlib import sha256
 import re
@@ -146,7 +147,25 @@ _SSN = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
 _CARD_CANDIDATE = re.compile(r"\b\d{13,19}\b")
 _HOME_PATH_UNIX = re.compile(r"/(?:Users|home)/[A-Za-z0-9_.-]+")
 _HOME_PATH_WIN = re.compile(r"C:\\Users\\[A-Za-z0-9_.-]+", re.IGNORECASE)
-_EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+
+# Email matching (driftshield#184).
+#
+# A single combined pattern (`[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}`)
+# backtracks quadratically: when a long run of local-part-class characters
+# contains no `@`, `re.sub` retries the greedy `+` at every character
+# position in the run, each retry rescanning the remaining run to discover
+# (again) that there's no `@` ahead. 300KB of `@`-free text costs ~32s.
+#
+# `_redact_emails` below replaces the single backtracking match with a
+# manual scan: jump directly between `@` occurrences with `str.find`
+# (a linear C-level scan with no backtracking), then validate only the
+# bounded local-part/domain neighbourhood around each `@`. Text with no
+# `@` at all is rejected by a single `str.find` call. The per-character
+# classes below drive that neighbourhood validation; none of them are
+# quantified, so matching a single character is O(1) and never backtracks.
+_LOCAL_CHAR = re.compile(r"[A-Za-z0-9._%+-]")
+_DOMAIN_CHAR = re.compile(r"[A-Za-z0-9.-]")
+_ALPHA_CHAR = re.compile(r"[A-Za-z]")
 
 
 @dataclass(slots=True)
@@ -183,6 +202,79 @@ def _luhn_valid(digits: str) -> bool:
     return total % 10 == 0
 
 
+def _find_email_match(value: str, at: int, min_start: int) -> tuple[int, int] | None:
+    """Find the email match anchored at the ``@`` found at index ``at``.
+
+    Mirrors ``[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}`` matched
+    against ``value`` starting no earlier than ``min_start`` (the point a
+    real ``re.sub`` scan would have reached, i.e. the end of the previous
+    match), without the engine's per-start-position backtracking.
+
+    Both the local part and the domain part are greedy `+` runs of a fixed
+    character class, so the maximal run is unambiguous and cheap to find
+    directly. The only real backtracking in the original pattern is the
+    domain part giving back characters to locate the literal ``.`` before
+    ``[A-Za-z]{2,}``; since neither `.` nor the required class change
+    across attempts, that reduces to picking the rightmost ``.`` in the
+    domain run with at least two alpha characters after it — computed here
+    with a single backward walk instead of the engine's repeated retries.
+
+    Returns the ``(start, end)`` span of the match, or ``None`` if no match
+    exists starting at or after ``min_start``.
+    """
+    local_start = at
+    while local_start > min_start and _LOCAL_CHAR.match(value[local_start - 1]):
+        local_start -= 1
+    if local_start == at:
+        return None  # local part is required (`+`)
+
+    domain_start = at + 1
+    domain_end = domain_start
+    length = len(value)
+    while domain_end < length and _DOMAIN_CHAR.match(value[domain_end]):
+        domain_end += 1
+    if domain_end == domain_start:
+        return None  # domain part is required (`+`)
+
+    # Try the rightmost `.` first (mirrors the greedy domain `+` giving back
+    # one character at a time), first success wins.
+    for dot in range(domain_end - 1, domain_start, -1):
+        if value[dot] != ".":
+            continue
+        alpha_end = dot + 1
+        while alpha_end < domain_end and _ALPHA_CHAR.match(value[alpha_end]):
+            alpha_end += 1
+        if alpha_end - (dot + 1) >= 2:
+            return local_start, alpha_end
+    return None
+
+
+def _redact_emails(value: str, record: Callable[[str, str], str]) -> str:
+    """Linear-time replacement for the old single-pattern ``_EMAIL.sub``.
+
+    See the comment above ``_LOCAL_CHAR`` for why the combined pattern was
+    quadratic and what this does instead.
+    """
+    at = value.find("@")
+    if at == -1:
+        return value
+
+    chunks: list[str] = []
+    pos = 0
+    while at != -1:
+        match = _find_email_match(value, at, pos)
+        if match is not None:
+            start, end = match
+            chunks.append(value[pos:start])
+            chunks.append(record("email", value[start:end]))
+            pos = end
+            at = value.find("@", pos)
+        else:
+            at = value.find("@", at + 1)
+    chunks.append(value[pos:])
+    return "".join(chunks)
+
+
 def _redact_string(value: str, path: str, entries: list[RedactionEntry]) -> str:
     def record(category: str, matched: str) -> str:
         entries.append(
@@ -204,13 +296,11 @@ def _redact_string(value: str, path: str, entries: list[RedactionEntry]) -> str:
     value = _CARD_CANDIDATE.sub(_sub_card, value)
     value = _HOME_PATH_UNIX.sub(lambda m: record("home_path", m.group(0)), value)
     value = _HOME_PATH_WIN.sub(lambda m: record("home_path", m.group(0)), value)
-    value = _EMAIL.sub(lambda m: record("email", m.group(0)), value)
+    value = _redact_emails(value, record)
     return value
 
 
-def _redact_prompt_response_string(
-    value: str, path: str, entries: list[RedactionEntry]
-) -> str:
+def _redact_prompt_response_string(value: str, path: str, entries: list[RedactionEntry]) -> str:
     entries.append(
         RedactionEntry(path=path, category="prompt_response", sample_hash=_stable_hash(value))
     )
@@ -234,7 +324,9 @@ def _redact_tool_use_block(
         child_path = f"{path}.input"
         serialised = repr(item["input"])
         entries.append(
-            RedactionEntry(path=child_path, category="tool_io", sample_hash=_stable_hash(serialised))
+            RedactionEntry(
+                path=child_path, category="tool_io", sample_hash=_stable_hash(serialised)
+            )
         )
         result["input"] = {"redacted": _placeholder("tool_io", serialised)}
     return result
@@ -277,9 +369,7 @@ def _redact_tool_result_block(
     return result
 
 
-def _redact_content_blocks(
-    items: list[Any], path: str, entries: list[RedactionEntry]
-) -> list[Any]:
+def _redact_content_blocks(items: list[Any], path: str, entries: list[RedactionEntry]) -> list[Any]:
     """Redact a ``content`` list of native Claude Code typed blocks.
 
     ``thinking`` blocks are dropped entirely. Recognised block types are
@@ -362,8 +452,7 @@ def _redact_value(value: Any, path: str, entries: list[RedactionEntry]) -> Any:
         return result
     if isinstance(value, list):
         return [
-            _redact_value(item, f"{path}[{index}]", entries)
-            for index, item in enumerate(value)
+            _redact_value(item, f"{path}[{index}]", entries) for index, item in enumerate(value)
         ]
     if isinstance(value, str):
         return _redact_string(value, path, entries)
