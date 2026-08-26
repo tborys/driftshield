@@ -5,6 +5,22 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
+
+FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "transcripts"
+
+# One fixture per supported parser, mapping the file to the source
+# ``format=auto`` must detect from content alone. Mirrors
+# ``test_public_analyse.py``'s ``_SOURCE_FIXTURES`` so the dashboard ingest
+# path and the DB-free ``analyse`` chain stay covered by the same contract.
+_AUTO_FORMAT_FIXTURES = {
+    "openclaw_trajectory": FIXTURES / "sample_openclaw_trajectory.json",
+    "claude_code": FIXTURES / "sample_claude_code_session.jsonl",
+    "codex_cli": FIXTURES / "sample_codex_cli_session.jsonl",
+    "codex_desktop": FIXTURES / "sample_codex_desktop_session.json",
+    "claude_desktop": FIXTURES / "sample_claude_desktop_session.json",
+    "crewai": FIXTURES / "sample_crewai_session.json",
+    "langchain": FIXTURES / "sample_langchain_session.json",
+}
 from fastapi import HTTPException, UploadFile
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -342,6 +358,52 @@ def test_ingest_crewai_transcript_with_explicit_parser(client, auth_headers):
     assert data["status"] == "created"
 
 
+@pytest.mark.parametrize("expected_format,fixture", list(_AUTO_FORMAT_FIXTURES.items()))
+def test_ingest_with_format_auto_succeeds_for_every_fixture(client, auth_headers, expected_format, fixture):
+    # driftshield#186: format=auto used to 422 with "Unsupported format: auto"
+    # for every non-.jsonl upload because resolve_format guessed from the
+    # filename. It must delegate to public.detect_source (content based) so
+    # every parser cli.parsers supports is reachable through the dashboard
+    # upload, not just claude_code.
+    response = client.post(
+        "/api/ingest",
+        headers=auth_headers,
+        files={"file": (fixture.name, io.BytesIO(fixture.read_bytes()), "application/octet-stream")},
+        data={"format": "auto"},
+    )
+
+    assert response.status_code == 201, response.text
+    data = response.json()
+    assert data["total_events"] > 0
+    assert data["status"] == "created"
+
+
+def test_ingest_openclaw_trajectory_wrapper_persists_events(client, auth_headers, db_session):
+    # driftshield#186: the trajectory-wrapper unwrap ({"events": [...]}) lived
+    # only in public.py; db.ingest_service.ingest_bytes never applied it, so
+    # the dashboard upload of the repo's own trajectory fixture failed with
+    # "No events parsed". Explicit parser + wrapper-shaped fixture pins the
+    # ingest_bytes path directly, not just auto-detection.
+    fixture = _AUTO_FORMAT_FIXTURES["openclaw_trajectory"]
+    response = client.post(
+        "/api/ingest",
+        headers=auth_headers,
+        files={"file": (fixture.name, io.BytesIO(fixture.read_bytes()), "application/json")},
+        data={"format": "openclaw_trajectory"},
+    )
+
+    assert response.status_code == 201, response.text
+    data = response.json()
+    assert data["total_events"] > 0
+    assert data["status"] == "created"
+
+    session = db_session.get(SessionModel, uuid.UUID(data["session_id"]))
+    assert session is not None
+    assert session.parser_version == "openclaw_trajectory@1"
+    canonical_analysis = session.metadata_json["canonical_analysis"]
+    assert canonical_analysis["normalized_events"]
+
+
 def test_ingest_without_auth(client, sample_transcript):
     response = client.post(
         "/api/ingest",
@@ -358,6 +420,17 @@ def test_ingest_unsupported_format(client, auth_headers):
         data={"format": "unknown-format"},
     )
     assert response.status_code == 422
+
+
+def test_ingest_format_auto_with_unrecognised_content_still_422s(client, auth_headers):
+    response = client.post(
+        "/api/ingest",
+        headers=auth_headers,
+        files={"file": ("test.txt", io.BytesIO(b"not a transcript"), "text/plain")},
+        data={"format": "auto"},
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Unsupported format: auto"
 
 
 def test_ingest_rejects_request_over_max_size_by_content_length(client, auth_headers, sample_transcript, monkeypatch):

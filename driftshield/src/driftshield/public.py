@@ -48,6 +48,7 @@ from driftshield.core.deterministic_matching import (
 from driftshield.core.models import Session as DomainSession, SessionStatus
 from driftshield.core.normalization import normalize_events
 from driftshield.intake_contract import SIGNATURE_SUMMARY_VERSION, SignatureSummary
+from driftshield.parsers.openclaw_trajectory import unwrap_trajectory_wrapper
 from driftshield.signatures.community import load_builtin_community_pack
 
 ANALYSE_SCHEMA_VERSION = "public-analyse-v1"
@@ -236,23 +237,6 @@ def detect_source(content: str) -> str | None:
     return None
 
 
-def _trajectory_wrapper_to_jsonl(content: str) -> str:
-    """Unwrap a single object ``{"events": [...]}`` trajectory to JSONL.
-
-    The OpenClaw trajectory parser consumes one record per line. The persisted
-    cloud payload is a single object whose ``events`` array holds the records,
-    so flatten it. A body that is not the wrapper shape is returned unchanged
-    (already JSONL, or not a trajectory at all).
-    """
-    try:
-        whole = json.loads(content)
-    except json.JSONDecodeError:
-        return content
-    if isinstance(whole, dict) and isinstance(whole.get("events"), list):
-        return "\n".join(json.dumps(event) for event in whole["events"])
-    return content
-
-
 def _empty_canonical(source_format: str, *, reason: str) -> dict[str, Any]:
     """Build an honest not classifiable verdict for an unparseable transcript."""
     return {
@@ -316,7 +300,7 @@ def analyse(
 
     parse_input = content
     if resolved == "openclaw_trajectory":
-        parse_input = _trajectory_wrapper_to_jsonl(content)
+        parse_input = unwrap_trajectory_wrapper(content)
 
     try:
         events = parser.parse(parse_input)

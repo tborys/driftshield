@@ -38,6 +38,25 @@ from driftshield.core.normalization import normalize_events
 from driftshield.parsers.openclaw import OpenClawParser
 
 
+def unwrap_trajectory_wrapper(content: str) -> str:
+    """Flatten a single object ``{"events": [...]}`` trajectory to JSONL.
+
+    :class:`OpenClawTrajectoryParser` consumes one record per line. The
+    persisted cloud/dashboard payload (e.g. ``sample_openclaw_trajectory.json``)
+    is a single object whose ``events`` array holds the records, so flatten it
+    before parsing. Content that is not the wrapper shape is returned
+    unchanged (already JSONL, or not a trajectory at all) so callers can apply
+    this unconditionally ahead of ``parse()``.
+    """
+    try:
+        whole = json.loads(content)
+    except json.JSONDecodeError:
+        return content
+    if isinstance(whole, dict) and isinstance(whole.get("events"), list):
+        return "\n".join(json.dumps(event) for event in whole["events"])
+    return content
+
+
 class OpenClawTrajectoryParser:
     """Parse OpenClaw runtime trajectories into canonical events."""
 
