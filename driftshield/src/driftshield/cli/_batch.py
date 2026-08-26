@@ -176,6 +176,22 @@ def _load_batch_submission_payload(file_path: Path) -> dict[str, Any]:
         raise exc from None
 
 
+def _detect_content_parser(file_path: Path) -> str | None:
+    """Read ``file_path`` and return content detection's verdict, if any.
+
+    Returns ``None`` when the file can't be read as UTF-8 text or when
+    :func:`driftshield.public.detect_source` recognises no known format.
+    Shared by the two places batch consults content sniffing: the initial
+    "no path-based parser" fallback, and the zero-events reconciliation
+    below (driftshield#185).
+    """
+    try:
+        content = file_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+    return detect_source(content)
+
+
 def _discover_files(root: Path) -> list[Path]:
     return sorted(p for p in root.rglob("*") if p.is_file())
 
@@ -219,12 +235,7 @@ def _process_directory(
             # into a flat temp dir. Fall back to content sniffing so a
             # supported non-.jsonl transcript (claude_desktop, codex_desktop,
             # crewai, langchain, ...) is still recognised by its shape.
-            try:
-                content = file_path.read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError):
-                content = None
-            if content is not None:
-                parser_name = detect_source(content)
+            parser_name = _detect_content_parser(file_path)
 
         if parser_name is None:
             report.files.append(
@@ -246,8 +257,45 @@ def _process_directory(
             )
             continue
 
+        # detect_parser() defaults any unrecognised `.jsonl` path to
+        # claude_code (its historical assume-Claude-Code behaviour), so a
+        # zero-event parse doesn't necessarily mean the file is unparseable
+        # -- it may mean the wrong parser was picked. Before trusting that
+        # silently, check whether content detection identifies a different,
+        # better-fitting source and re-parse with it (driftshield#185).
+        empty_events_warning: str | None = None
+        if not events:
+            content_parser_name = _detect_content_parser(file_path)
+            if content_parser_name is not None and content_parser_name != parser_name:
+                try:
+                    alt_parser_instance = get_parser(content_parser_name)
+                    alt_events = alt_parser_instance.parse_file(str(file_path))
+                    alt_analysis_result = analyze_session(alt_events)
+                except Exception:  # noqa: BLE001 - fall through to the warning below
+                    alt_events = []
+                if alt_events:
+                    parser_name = content_parser_name
+                    events = alt_events
+                    analysis_result = alt_analysis_result
+
+            if not events:
+                empty_events_warning = (
+                    f"parsed as '{parser_name}' but found zero events; content "
+                    f"detection found no better match"
+                    if content_parser_name is None or content_parser_name == parser_name
+                    else (
+                        f"parsed as '{parser_name}' but found zero events, and "
+                        f"re-parsing as '{content_parser_name}' (content detection) "
+                        f"also found zero events"
+                    )
+                )
+
         if not submit:
-            report.files.append(BatchFileOutcome(path=relative, outcome="analysed-only"))
+            report.files.append(
+                BatchFileOutcome(
+                    path=relative, outcome="analysed-only", reason=empty_events_warning
+                )
+            )
             continue
 
         # The session's own end timestamp (the latest event timestamp the
