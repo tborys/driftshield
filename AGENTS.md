@@ -52,6 +52,11 @@
 - Keep the public OSS repo self-contained. Do not add documentation, prompts, fixtures, or workflow text that depends on the private DriftShield repos to make sense.
 - When checking a PR, confirm `./scripts/check-public-scope.sh` would pass if the change touches docs, prompts, templates, fixtures, or workflow files.
 
+## Releases
+
+- Process: `docs/release-runbook.md`. Tag `v<version>` on `main` runs `.github/workflows/release-publish.yml` (PyPI trusted publishing behind the `pypi` environment, then a GitHub release from the matching `CHANGELOG.md` section). `scripts/release-build-check.sh` is the single build-and-verify step both release workflows run; run it locally from a venv before tagging.
+- Version lives in two places that must agree: `driftshield/pyproject.toml` and `driftshield/src/driftshield/__init__.py`.
+
 ## Maintaining this file
 
 Keep this file for knowledge useful to almost every future agent session in this project.

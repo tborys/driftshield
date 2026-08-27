@@ -1,7 +1,8 @@
 [project]
 name = "driftshield"
-version = "0.1.0"
+version = "0.2.0"
 description = "Open-source AI decision forensics toolkit"
+readme = "README.md"
 license = "AGPL-3.0-or-later"
 requires-python = ">=3.12"
 classifiers = [
@@ -22,6 +23,12 @@ dependencies = [
     "rich>=13.0.0",
     "jinja2>=3.1.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/tborys/driftshield"
+Changelog = "https://github.com/tborys/driftshield/blob/main/CHANGELOG.md"
+Documentation = "https://github.com/tborys/driftshield/blob/main/docs/public-api.md"
+Issues = "https://github.com/tborys/driftshield/issues"
 
 [project.optional-dependencies]
 dev = [
@@ -45,6 +52,7 @@ include = [
 
 [tool.hatch.build.targets.sdist]
 only-include = [
+    "README.md",
     "src/driftshield",
     "tests",
 ]

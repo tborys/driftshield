@@ -1,0 +1,112 @@
+name: release-publish
+
+# Tag push release. Pushing a tag v<version> builds and checks the artefact,
+# publishes it to PyPI via trusted publishing (OIDC, no stored token) behind the
+# `pypi` environment, then creates the GitHub release from the matching
+# CHANGELOG.md section. See docs/release-runbook.md.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build and check artefact
+        run: ./scripts/release-build-check.sh
+
+      - name: Assert tag matches package version
+        id: version
+        run: |
+          set -euo pipefail
+          version="$(cat driftshield/dist/VERSION)"
+          tag="${GITHUB_REF_NAME#v}"
+          if [ "$tag" != "$version" ]; then
+            echo "tag v$tag does not match package version $version" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Extract release notes from CHANGELOG
+        run: |
+          set -euo pipefail
+          version="$(cat driftshield/dist/VERSION)"
+          awk -v v="$version" '
+            $0 ~ "^## " v "( |$)" { on = 1; next }
+            on && /^## / { exit }
+            on { print }
+          ' CHANGELOG.md > driftshield/dist/RELEASE_NOTES.md
+          if [ ! -s driftshield/dist/RELEASE_NOTES.md ]; then
+            echo "no CHANGELOG.md section for $version" >&2
+            exit 1
+          fi
+          rm driftshield/dist/VERSION
+
+      - name: Upload dist artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: driftshield/dist/*
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/driftshield/${{ needs.build.outputs.version }}/
+    permissions:
+      id-token: write
+    steps:
+      - name: Download dist artefact
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Keep only distribution files
+        run: rm -f dist/RELEASE_NOTES.md
+
+      - name: Publish to PyPI (trusted publishing)
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
+
+  github-release:
+    needs: [build, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download dist artefact
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh release create "$GITHUB_REF_NAME" \
+            --title "driftshield ${{ needs.build.outputs.version }}" \
+            --notes-file dist/RELEASE_NOTES.md \
+            --verify-tag \
+            dist/*.whl dist/*.tar.gz

@@ -1,5 +1,7 @@
 from fastapi import APIRouter
 
+from driftshield import __version__
+
 router = APIRouter()
 
 
@@ -7,5 +9,5 @@ router = APIRouter()
 def health_check():
     return {
         "status": "ok",
-        "version": "0.1.0",
+        "version": __version__,
     }

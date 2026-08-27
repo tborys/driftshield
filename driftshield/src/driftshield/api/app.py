@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from driftshield import __version__
 from driftshield.api.routes.behaviour import router as behaviour_router
 from driftshield.api.routes.connectors import router as connectors_router
 from driftshield.api.routes.health import router as health_router
@@ -18,7 +19,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="DriftShield",
         description="AI Decision Forensics API",
-        version="0.1.0",
+        version=__version__,
     )
     app.add_middleware(RequestSizeLimitMiddleware)
     app.include_router(behaviour_router)
