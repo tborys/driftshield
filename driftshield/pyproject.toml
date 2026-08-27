@@ -52,6 +52,7 @@ include = [
 
 [tool.hatch.build.targets.sdist]
 only-include = [
+    "README.md",
     "src/driftshield",
     "tests",
 ]
