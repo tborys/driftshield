@@ -258,7 +258,7 @@ def test_ingest_recovers_from_duplicate_commit_race(client, auth_headers, sample
 
     session_id = uuid.uuid4()
 
-    def fake_ingest_bytes(self, *, raw_bytes, parser_name, source_path, existing_session_id=None):
+    def fake_ingest_run(self, run, *, existing_session_id=None):
         analysis_result = AnalysisResult(
             events=[],
             graph=LineageGraph(session_id=str(session_id)),
@@ -296,7 +296,7 @@ def test_ingest_recovers_from_duplicate_commit_race(client, auth_headers, sample
         emit_calls.append(kwargs)
         return True
 
-    monkeypatch.setattr("driftshield.api.ingest_workflow.TranscriptIngestService.ingest_bytes", fake_ingest_bytes)
+    monkeypatch.setattr("driftshield.api.ingest_workflow.TranscriptIngestService.ingest_run", fake_ingest_run)
     monkeypatch.setattr(PersistenceService, "get_ingest_outcome", fake_get_ingest_outcome)
     monkeypatch.setattr(
         "driftshield.api.ingest_workflow.TelemetryService.record_analysis_event",
@@ -430,7 +430,7 @@ def test_ingest_format_auto_with_unrecognised_content_still_422s(client, auth_he
         data={"format": "auto"},
     )
     assert response.status_code == 422
-    assert response.json()["detail"] == "Unsupported format: auto"
+    assert "unrecognised transcript format" in response.json()["detail"]
 
 
 def test_ingest_rejects_request_over_max_size_by_content_length(client, auth_headers, sample_transcript, monkeypatch):
@@ -516,7 +516,7 @@ def test_ingest_emits_matched_phase_2a_metrics_when_analysis_flags_risk(client, 
             inflection_explanation=None,
         )
 
-    monkeypatch.setattr("driftshield.db.ingest_service.analyze_session", fake_analyze_session)
+    monkeypatch.setattr("driftshield.public.analyze_session", fake_analyze_session)
 
     response = _post_ingest(client, auth_headers, sample_transcript)
 

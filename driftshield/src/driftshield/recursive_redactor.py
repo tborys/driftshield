@@ -1,8 +1,9 @@
 """Recursive redactor v2 for OSS submission payloads.
 
-driftshield#109 hard-gate scope. Extends the v1 redactor (driftshield#107,
-remote_submission.redact_payload) which only drops the top-level
-REQUIRED_REDACTION_FIELDS plus nested ``content`` / ``text`` keys.
+driftshield#109 hard-gate scope. Extends the v1 redactor (driftshield#107)
+which only dropped the top-level REQUIRED_REDACTION_FIELDS plus nested
+``content`` / ``text`` keys. :func:`driftshield.public.analyse_run` derives a
+run's ``redacted_transcript`` with :func:`redact`; nothing else calls it.
 
 What v2 adds:
 

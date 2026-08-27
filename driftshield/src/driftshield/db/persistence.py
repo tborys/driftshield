@@ -15,6 +15,7 @@ from driftshield.core.graph.builder import build_graph
 from driftshield.core.graph.models import DecisionNode, LineageGraph
 from driftshield.core.integrity import build_integrity_provenance, build_integrity_summary
 from driftshield.core.models import (
+    RunProvenance,
     CanonicalEvent,
     EventType,
     ForensicArtifactRef,
@@ -33,12 +34,8 @@ from driftshield.db.models import (
 
 
 @dataclass(frozen=True)
-class IngestProvenance:
-    transcript_hash: str
-    source_session_id: str | None
-    source_path: str | None
-    parser_version: str
-    ingested_at: datetime
+class IngestProvenance(RunProvenance):
+    """Persistence-side name for :class:`driftshield.core.models.RunProvenance`."""
 
 
 @dataclass(frozen=True)

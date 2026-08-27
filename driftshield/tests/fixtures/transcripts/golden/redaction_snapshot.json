@@ -1,0 +1,20 @@
+{
+  "dogfood/assumption_mutation_session.jsonl": "e51961c4737acca112eff930a4abd9a4267a80535cfa536a082beaa34d2a2bca",
+  "dogfood/clean_session.jsonl": "d63249b068c627ec0df3125ffad0b631418a0ab1b19df649f6e837f52c2a78ea",
+  "dogfood/constraint_violation_session.jsonl": "f5ca146e2dc72158aa1b572bce9b3f9b0d85df321a34239761600c8e15ceecff",
+  "dogfood/multi_flag_session.jsonl": "000f553626570917d0188b50acba4896a5dfc9fea6ceeebb78500500b524ed15",
+  "dogfood/policy_divergence_session.jsonl": "0863c472b4b9677c09b8dcd7340e49cf063b71348744a11dfcbda463dd3c9d48",
+  "redactor_corpus/claude_code.json": "0cbe5a9ce003761984908748e410b7f692b3e7d9995a8d05b94c2b5b960fe71f",
+  "redactor_corpus/claude_desktop.json": "ce173e5466e6b81336d0c9e1bd3e8a2ff89ea10fb442e69b22a55cae8a4cb61a",
+  "redactor_corpus/codex.json": "7d6937c1097fcdb443c2be81dfac089340b25d76f3fa5dac0754af20e069ec8d",
+  "redactor_corpus/crewai.json": "e5716460b6d015e6f3567aacb1fb19f184889a26d5702d0e81039a4a35b55dc2",
+  "redactor_corpus/langchain.json": "d4474b976b3db8b938192e777db5c0f2fee3aee72e24ec7f99207d741c660141",
+  "redactor_corpus/openai_chat.json": "20b7bba317441221d998ead61d2c59a7216436243896f90561561967f6e688b0",
+  "sample_claude_code_session.jsonl": "900a611b1b3af48dfff4804fd704649bd7188c28d169df1bb2e91017e62cb78b",
+  "sample_claude_desktop_session.json": "3f3ca9dcb4a3d9a358fc890a1c28022afeb10e8f51bd876a6ab019142c9ebfbe",
+  "sample_codex_cli_session.jsonl": "9b4706977a7bdc9cd1d4b1aece9a3b62a6ce8e32f6661a155c748deeb7f7fac6",
+  "sample_codex_desktop_session.json": "a008d7b2dcd329d757c3935cfb3057a6b0246df1fd2afa7b9d9be126c95021bc",
+  "sample_crewai_session.json": "7974a19ae1644e3d311ccfb718f5db9367d4dbfc8e73bc36da2a39c9d1a84644",
+  "sample_langchain_session.json": "92e6772fa39bbbc24ea64764c4c627720b0f9abed044a9735b0a6c21b7554f6d",
+  "sample_openclaw_trajectory.json": "a64df45e91919519645ea618c5d7ad461c0f4a898a670eb21708234b6c58f217"
+}

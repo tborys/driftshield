@@ -104,16 +104,12 @@ Both flags exit 0 without posting to the intake URL.
 
 ## Unknown shapes
 
-The redactor was designed against six known transcript shapes: Claude Code,
-Claude Desktop, Codex, OpenAI Chat Completions, LangChain, CrewAI, plus a
-`generic_session` fallback keyed on a top-level `session_id` field. A payload
-whose top-level shape matches none of these is refused with
-`UnknownTranscriptShapeError`.
-
-Override the refusal with `--force-unknown-shape` only if you have manually
-verified that the redactor's rule set covers every sensitive position in your
-payload. Silent under-redaction on unrecognised shapes is the failure mode
-this gate exists to prevent.
+Redaction only ever runs on a transcript the engine has recognised and
+parsed: `analyse_run` derives `redacted_transcript` from the same content it
+read events from, and `submit` sends nothing else. A file no parser
+recognises raises `NoParseableEventsError` before any redaction or upload
+happens, so silent under-redaction of an unknown shape cannot occur. See
+`docs/public-api.md` (repository root) for the two public calls.
 
 ## Adding new rules
 

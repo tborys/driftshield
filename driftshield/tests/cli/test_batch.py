@@ -19,7 +19,7 @@ from typer.testing import CliRunner
 
 from driftshield.cli._batch import _derive_workflow_reference, run_batch
 from driftshield.cli.main import app
-from driftshield.core.analysis.session import analyze_session
+from driftshield.public import analyse_run
 
 runner = CliRunner()
 
@@ -184,12 +184,12 @@ def _write_claude_code_jsonl_with_no_events(
 
 
 def test_batch_without_submit_makes_no_network_call(tmp_path, monkeypatch):
-    monkeypatch.setattr("driftshield.cli._submit.post_oss_submission", _network_forbidden)
+    monkeypatch.setattr("driftshield.public.post_oss_submission", _network_forbidden)
     monkeypatch.setattr(
-        "driftshield.cli._submit.submit_oss_via_presigned_upload", _network_forbidden
+        "driftshield.public.submit_oss_via_presigned_upload", _network_forbidden
     )
     monkeypatch.setattr(
-        "driftshield.cli._submit.submit_teams_via_presigned_upload", _network_forbidden
+        "driftshield.public.submit_teams_via_presigned_upload", _network_forbidden
     )
 
     _write_claude_code_jsonl(tmp_path / "a.jsonl")
@@ -224,7 +224,7 @@ def test_batch_submit_redacts_before_upload(tmp_path, monkeypatch):
     raw prompt/response text or raw tool-input values."""
     captured: dict = {}
     monkeypatch.setattr(
-        "driftshield.cli._submit.post_oss_submission", _fake_post_ok(captured)
+        "driftshield.public.post_oss_submission", _fake_post_ok(captured)
     )
     monkeypatch.setenv("DRIFTSHIELD_TELEMETRY_HOME", str(tmp_path / "tele"))
 
@@ -260,7 +260,7 @@ def test_batch_submit_redacts_before_upload(tmp_path, monkeypatch):
 def test_batch_submit_cli_flag_wires_through(tmp_path, monkeypatch):
     captured: dict = {}
     monkeypatch.setattr(
-        "driftshield.cli._submit.post_oss_submission", _fake_post_ok(captured)
+        "driftshield.public.post_oss_submission", _fake_post_ok(captured)
     )
     monkeypatch.setenv("DRIFTSHIELD_TELEMETRY_HOME", str(tmp_path / "tele"))
     _write_claude_code_jsonl(tmp_path / "session.jsonl", user_text="plain text prompt")
@@ -281,7 +281,7 @@ def test_batch_submit_cli_flag_wires_through(tmp_path, monkeypatch):
 def test_batch_backfill_teams_tier_sends_top_level_backfill_true(tmp_path, monkeypatch):
     captured: dict = {}
     monkeypatch.setattr(
-        "driftshield.cli._submit.submit_teams_via_presigned_upload",
+        "driftshield.public.submit_teams_via_presigned_upload",
         _fake_teams_upload_ok(captured),
     )
     monkeypatch.setenv("DRIFTSHIELD_API_KEY", "test-key")
@@ -301,12 +301,12 @@ def test_batch_backfill_teams_tier_sends_top_level_backfill_true(tmp_path, monke
 
 
 def test_batch_backfill_community_tier_exits_nonzero_before_any_upload(tmp_path, monkeypatch):
-    monkeypatch.setattr("driftshield.cli._submit.post_oss_submission", _network_forbidden)
+    monkeypatch.setattr("driftshield.public.post_oss_submission", _network_forbidden)
     monkeypatch.setattr(
-        "driftshield.cli._submit.submit_oss_via_presigned_upload", _network_forbidden
+        "driftshield.public.submit_oss_via_presigned_upload", _network_forbidden
     )
     monkeypatch.setattr(
-        "driftshield.cli._submit.submit_teams_via_presigned_upload", _network_forbidden
+        "driftshield.public.submit_teams_via_presigned_upload", _network_forbidden
     )
     _write_claude_code_jsonl(tmp_path / "session.jsonl")
 
@@ -320,12 +320,12 @@ def test_batch_backfill_community_tier_exits_nonzero_before_any_upload(tmp_path,
 
 
 def test_batch_backfill_without_submit_warns_and_uploads_nothing(tmp_path, monkeypatch):
-    monkeypatch.setattr("driftshield.cli._submit.post_oss_submission", _network_forbidden)
+    monkeypatch.setattr("driftshield.public.post_oss_submission", _network_forbidden)
     monkeypatch.setattr(
-        "driftshield.cli._submit.submit_oss_via_presigned_upload", _network_forbidden
+        "driftshield.public.submit_oss_via_presigned_upload", _network_forbidden
     )
     monkeypatch.setattr(
-        "driftshield.cli._submit.submit_teams_via_presigned_upload", _network_forbidden
+        "driftshield.public.submit_teams_via_presigned_upload", _network_forbidden
     )
     _write_claude_code_jsonl(tmp_path / "session.jsonl")
 
@@ -343,7 +343,7 @@ def test_batch_backfill_without_submit_warns_and_uploads_nothing(tmp_path, monke
 
 def test_batch_workflow_reference_flag_stamps_every_submitted_envelope(tmp_path, monkeypatch):
     captured: dict = {}
-    monkeypatch.setattr("driftshield.cli._submit.post_oss_submission", _fake_post_ok(captured))
+    monkeypatch.setattr("driftshield.public.post_oss_submission", _fake_post_ok(captured))
     monkeypatch.setenv("DRIFTSHIELD_TELEMETRY_HOME", str(tmp_path / "tele"))
     _write_claude_code_jsonl(tmp_path / "a.jsonl", session_id="wf-a")
     _write_claude_code_jsonl(tmp_path / "b.jsonl", session_id="wf-b")
@@ -357,7 +357,7 @@ def test_batch_workflow_reference_flag_stamps_every_submitted_envelope(tmp_path,
 
 def test_batch_workflow_reference_cli_flag_wires_through(tmp_path, monkeypatch):
     captured: dict = {}
-    monkeypatch.setattr("driftshield.cli._submit.post_oss_submission", _fake_post_ok(captured))
+    monkeypatch.setattr("driftshield.public.post_oss_submission", _fake_post_ok(captured))
     monkeypatch.setenv("DRIFTSHIELD_TELEMETRY_HOME", str(tmp_path / "tele"))
     _write_claude_code_jsonl(tmp_path / "session.jsonl")
 
@@ -376,7 +376,7 @@ def test_batch_without_workflow_reference_flag_derives_one_per_source_directory(
     containing at least two source directories produces submitted envelopes
     carrying different workflow references, one per directory."""
     captured: dict = {}
-    monkeypatch.setattr("driftshield.cli._submit.post_oss_submission", _fake_post_ok(captured))
+    monkeypatch.setattr("driftshield.public.post_oss_submission", _fake_post_ok(captured))
     monkeypatch.setenv("DRIFTSHIELD_TELEMETRY_HOME", str(tmp_path / "tele"))
 
     project_a = tmp_path / "project-a"
@@ -398,7 +398,7 @@ def test_batch_derived_workflow_reference_stable_across_runs_and_sanitised(tmp_p
     runs for the same directory, and sanitises a directory name containing
     characters the field does not accept."""
     captured: dict = {}
-    monkeypatch.setattr("driftshield.cli._submit.post_oss_submission", _fake_post_ok(captured))
+    monkeypatch.setattr("driftshield.public.post_oss_submission", _fake_post_ok(captured))
     monkeypatch.setenv("DRIFTSHIELD_TELEMETRY_HOME", str(tmp_path / "tele"))
 
     unsafe_dir = tmp_path / "My Project!! (v2)"
@@ -429,12 +429,12 @@ def test_derive_workflow_reference_falls_back_to_default_for_all_symbol_director
 
 
 def test_batch_workflow_reference_without_submit_warns_and_uploads_nothing(tmp_path, monkeypatch):
-    monkeypatch.setattr("driftshield.cli._submit.post_oss_submission", _network_forbidden)
+    monkeypatch.setattr("driftshield.public.post_oss_submission", _network_forbidden)
     monkeypatch.setattr(
-        "driftshield.cli._submit.submit_oss_via_presigned_upload", _network_forbidden
+        "driftshield.public.submit_oss_via_presigned_upload", _network_forbidden
     )
     monkeypatch.setattr(
-        "driftshield.cli._submit.submit_teams_via_presigned_upload", _network_forbidden
+        "driftshield.public.submit_teams_via_presigned_upload", _network_forbidden
     )
     _write_claude_code_jsonl(tmp_path / "session.jsonl")
 
@@ -462,7 +462,7 @@ def test_batch_backfill_sends_session_observed_at_on_inline_oss_envelope(tmp_pat
     """Inline lane: session_observed_at equals the session's last event
     timestamp on the envelope."""
     captured: dict = {}
-    monkeypatch.setattr("driftshield.cli._submit.post_oss_submission", _fake_post_ok(captured))
+    monkeypatch.setattr("driftshield.public.post_oss_submission", _fake_post_ok(captured))
     monkeypatch.setenv("DRIFTSHIELD_TELEMETRY_HOME", str(tmp_path / "tele"))
     _write_claude_code_jsonl_with_timestamps(
         tmp_path / "session.jsonl", assistant_timestamp="2026-01-01T00:05:30+00:00"
@@ -482,7 +482,7 @@ def test_batch_backfill_sends_session_observed_at_on_teams_finalise_body(tmp_pat
     dict), proven against a stubbed endpoint."""
     captured: dict = {}
     monkeypatch.setattr(
-        "driftshield.cli._submit.submit_teams_via_presigned_upload",
+        "driftshield.public.submit_teams_via_presigned_upload",
         _fake_teams_upload_ok(captured),
     )
     monkeypatch.setenv("DRIFTSHIELD_API_KEY", "test-key")
@@ -507,27 +507,11 @@ def test_batch_backfill_sends_session_observed_at_on_teams_finalise_body(tmp_pat
     assert captured["provenances"][0]["session_observed_at"] == "2026-01-01T00:05:30+00:00"
 
 
-def test_batch_no_parseable_timestamps_omits_session_observed_at(tmp_path, monkeypatch):
-    """A transcript that yields zero canonical events has nothing to date
-    it by: session_observed_at is omitted and the submission still goes
-    through."""
-    captured: dict = {}
-    monkeypatch.setattr("driftshield.cli._submit.post_oss_submission", _fake_post_ok(captured))
-    monkeypatch.setenv("DRIFTSHIELD_TELEMETRY_HOME", str(tmp_path / "tele"))
-    _write_claude_code_jsonl_with_no_events(tmp_path / "empty.jsonl")
-
-    report = run_batch(tmp_path, submit=True, tier="oss")
-
-    assert report.files[0].outcome == "submitted", report.files[0].reason
-    envelope = captured["submission"].envelope
-    assert envelope.session_observed_at is None
-
-
 def test_batch_session_observed_at_sent_without_backfill_flag(tmp_path, monkeypatch):
     """Not gated by --backfill: sent on ordinary submissions too (the
     server ignores it outside backfill)."""
     captured: dict = {}
-    monkeypatch.setattr("driftshield.cli._submit.post_oss_submission", _fake_post_ok(captured))
+    monkeypatch.setattr("driftshield.public.post_oss_submission", _fake_post_ok(captured))
     monkeypatch.setenv("DRIFTSHIELD_TELEMETRY_HOME", str(tmp_path / "tele"))
     _write_claude_code_jsonl_with_timestamps(
         tmp_path / "session.jsonl", assistant_timestamp="2026-02-02T12:00:00+00:00"
@@ -545,7 +529,7 @@ def test_batch_session_observed_at_does_not_affect_redaction(tmp_path, monkeypat
     """Regression: session_observed_at is envelope-level (a sibling of
     payload); adding it must not touch the redaction invariant."""
     captured: dict = {}
-    monkeypatch.setattr("driftshield.cli._submit.post_oss_submission", _fake_post_ok(captured))
+    monkeypatch.setattr("driftshield.public.post_oss_submission", _fake_post_ok(captured))
     monkeypatch.setenv("DRIFTSHIELD_TELEMETRY_HOME", str(tmp_path / "tele"))
 
     secret_user_text = "SECRET_USER_PROMPT_MARKER_XYZ"
@@ -636,9 +620,7 @@ def test_batch_detects_non_jsonl_transcript_in_zip_archive(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_batch_reidentifies_codex_fixture_by_content_when_path_default_is_wrong(
-    tmp_path, monkeypatch
-):
+def test_batch_reidentifies_codex_fixture_by_content_when_path_default_is_wrong(tmp_path):
     """driftshield#185: a codex_cli JSONL file copied into a plain directory
     (no `.codex/sessions/` path hint) has only the bare `.jsonl` suffix to go
     on, so ``detect_parser()`` defaults it to claude_code -- its historical
@@ -653,42 +635,34 @@ def test_batch_reidentifies_codex_fixture_by_content_when_path_default_is_wrong(
         tmp_path / "sample_codex_cli_session.jsonl",
     )
 
-    captured_events: list[list] = []
-    real_analyze_session = analyze_session
-
-    def _spy_analyze_session(events):
-        captured_events.append(events)
-        return real_analyze_session(events)
-
-    monkeypatch.setattr("driftshield.cli._batch.analyze_session", _spy_analyze_session)
-
     report = run_batch(tmp_path)
 
     entry = report.files[0]
     assert entry.outcome == "analysed-only"
     assert entry.reason is None  # recovered -- nothing to warn about
 
-    final_events = captured_events[-1]
-    assert len(final_events) == 3
+    run = analyse_run((tmp_path / "sample_codex_cli_session.jsonl").read_bytes(), source="x.jsonl")
+    assert run.detected_format == "codex_cli"
+    assert len(run.events) == 3
     assert all(
         any(ref.get("kind") == "parser" and ref.get("value") == "codex_cli" for ref in event.source_refs)
-        for event in final_events
+        for event in run.events
     )
 
 
 def test_batch_zero_events_from_both_path_and_content_detection_warns(tmp_path):
-    """driftshield#185: when the path-based parser yields zero events *and*
-    content detection either agrees or finds nothing better, batch must
-    record an explicit warning in the report instead of a silent
-    'analysed-only' with no reason."""
+    """driftshield#185: a file whose recognised format yields zero events is
+    an explicit skip with the reason on the report, never a silent
+    'analysed-only'."""
     _write_claude_code_jsonl_with_no_events(tmp_path / "empty.jsonl")
 
     report = run_batch(tmp_path)
 
     entry = report.files[0]
-    assert entry.outcome == "analysed-only"
+    assert entry.outcome == "skipped"
     assert entry.reason is not None
     assert "zero events" in entry.reason
+    assert report.has_failures is False
 
 
 def test_batch_isolates_a_file_that_raises_during_parsing(tmp_path):
@@ -864,7 +838,7 @@ def test_batch_submits_every_bundled_fixture_in_plain_directory(
     import shutil
 
     captured: dict = {}
-    monkeypatch.setattr("driftshield.cli._submit.post_oss_submission", _fake_post_ok(captured))
+    monkeypatch.setattr("driftshield.public.post_oss_submission", _fake_post_ok(captured))
     monkeypatch.setenv("DRIFTSHIELD_TELEMETRY_HOME", str(tmp_path / "tele"))
 
     source_dir = tmp_path / "transcripts"
@@ -883,7 +857,7 @@ def test_batch_submits_every_bundled_fixture_from_zip_archive(tmp_path, fixture_
     """Same fixture matrix, but extracted from a zip archive: no native
     path hints and no native directory structure survive extraction."""
     captured: dict = {}
-    monkeypatch.setattr("driftshield.cli._submit.post_oss_submission", _fake_post_ok(captured))
+    monkeypatch.setattr("driftshield.public.post_oss_submission", _fake_post_ok(captured))
     monkeypatch.setenv("DRIFTSHIELD_TELEMETRY_HOME", str(tmp_path / "tele"))
 
     archive_path = tmp_path / "sessions.zip"

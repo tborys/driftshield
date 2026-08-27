@@ -19,7 +19,7 @@ from driftshield.core.models import (
 )
 
 if TYPE_CHECKING:
-    from driftshield.db.persistence import IngestProvenance
+    from driftshield.core.models import RunProvenance
 
 ANALYSIS_SCHEMA_VERSION = "phase-3g-canonical-v1"
 QUALIFICATION_SCHEMA_VERSION = "qualification-v1"
@@ -60,7 +60,7 @@ def build_canonical_analysis(
     *,
     session: DomainSession,
     result: AnalysisResult,
-    provenance: IngestProvenance | None,
+    provenance: RunProvenance | None,
 ) -> dict[str, Any]:
     normalized_events = _canonical_event_payloads(result.events)
     missing_fields = sum(len(event["missing_fields"]) for event in normalized_events)
@@ -264,7 +264,7 @@ def _classifiability_inputs(
     }
 
 
-def _qualified_at(provenance: IngestProvenance | None, session: DomainSession) -> str | None:
+def _qualified_at(provenance: RunProvenance | None, session: DomainSession) -> str | None:
     """Stamp when qualification was computed.
 
     Anchored to a deterministic clock so re-analysis produces a stable, auditable
@@ -282,7 +282,7 @@ def _qualified_at(provenance: IngestProvenance | None, session: DomainSession) -
 
 def _compute_provenance_and_environment(
     session: DomainSession,
-    provenance: IngestProvenance | None,
+    provenance: RunProvenance | None,
 ) -> dict[str, Any]:
     """Classify origin attestation and run environment.
 
@@ -303,9 +303,9 @@ def _compute_provenance_and_environment(
 
 def _provenance_confidence(
     session: DomainSession,
-    provenance: IngestProvenance | None,
+    provenance: RunProvenance | None,
 ) -> ProvenanceConfidence:
-    # NOTE: IngestProvenance carries no connector signal today, so an attested
+    # NOTE: RunProvenance carries no connector signal today, so an attested
     # provenance is user_claimed. connector_verified becomes reachable once a
     # source-kind marker is threaded onto the provenance record.
     if provenance is not None:
@@ -317,7 +317,7 @@ def _provenance_confidence(
 
 def _environment_classification(
     session: DomainSession,
-    provenance: IngestProvenance | None,
+    provenance: RunProvenance | None,
 ) -> tuple[EnvironmentClass, EnvironmentSource]:
     declared = session.metadata.get("environment") if isinstance(session.metadata, dict) else None
     if isinstance(declared, str) and declared in DECLARED_ENVIRONMENTS:
@@ -822,7 +822,7 @@ def _state_transition_payload(event: CanonicalEvent) -> dict[str, Any] | None:
 
 
 
-def _parser_name(provenance: IngestProvenance | None) -> str | None:
+def _parser_name(provenance: RunProvenance | None) -> str | None:
     if provenance is None:
         return None
     return provenance.parser_version.split("@", 1)[0]

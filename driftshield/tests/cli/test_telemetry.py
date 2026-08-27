@@ -293,9 +293,25 @@ def test_remote_disable_does_not_clear_local_state(tmp_path, monkeypatch):
     assert config.remote_intake_url is None
 
 
+_EVENTS = [
+    {
+        "type": "user",
+        "sessionId": "sess-1",
+        "message": {"role": "user", "content": [{"type": "text", "text": "hello there"}]},
+    },
+    {
+        "type": "assistant",
+        "sessionId": "sess-1",
+        "message": {"model": "claude-test", "content": [{"type": "text", "text": "done"}]},
+    },
+]
+
+
 def _write_session(tmp_path, contents):
+    """A pre-built envelope payload: transcript records under ``events`` plus
+    whatever top-level keys the test wants to see ride through."""
     session_path = tmp_path / "session.json"
-    session_path.write_text(json.dumps(contents), encoding="utf-8")
+    session_path.write_text(json.dumps({"events": _EVENTS, **contents}), encoding="utf-8")
     return session_path
 
 
@@ -335,7 +351,7 @@ def test_submit_session_happy_path(tmp_path, monkeypatch):
         return _ok_result()
 
     monkeypatch.setattr(
-        "driftshield.cli._submit.post_oss_submission",
+        "driftshield.public.post_oss_submission",
         fake_post,
     )
 
@@ -368,7 +384,7 @@ def test_submit_session_defaults_workflow_reference_to_default(tmp_path, monkeyp
         return _ok_result()
 
     monkeypatch.setattr(
-        "driftshield.cli._submit.post_oss_submission", fake_post
+        "driftshield.public.post_oss_submission", fake_post
     )
 
     result = runner.invoke(
@@ -394,7 +410,7 @@ def test_submit_session_prefers_session_json_workflow_reference(tmp_path, monkey
         return _ok_result()
 
     monkeypatch.setattr(
-        "driftshield.cli._submit.post_oss_submission", fake_post
+        "driftshield.public.post_oss_submission", fake_post
     )
 
     result = runner.invoke(
@@ -420,7 +436,7 @@ def test_submit_session_flag_overrides_session_json_workflow_reference(tmp_path,
         return _ok_result()
 
     monkeypatch.setattr(
-        "driftshield.cli._submit.post_oss_submission", fake_post
+        "driftshield.public.post_oss_submission", fake_post
     )
 
     result = runner.invoke(
@@ -452,7 +468,7 @@ def test_submit_session_logs_deprecation_warning_when_server_on_phase3f_v1(
         return _ok_result(server_contract_version="phase3f.v1")
 
     monkeypatch.setattr(
-        "driftshield.cli._submit.post_oss_submission", fake_post
+        "driftshield.public.post_oss_submission", fake_post
     )
 
     result = runner.invoke(
@@ -475,7 +491,7 @@ def test_submit_session_no_deprecation_warning_when_server_on_phase3g_v1(
         return _ok_result(server_contract_version="phase3g.v1")
 
     monkeypatch.setattr(
-        "driftshield.cli._submit.post_oss_submission", fake_post
+        "driftshield.public.post_oss_submission", fake_post
     )
 
     result = runner.invoke(
@@ -512,11 +528,7 @@ def test_submit_session_fails_on_invalid_json(tmp_path, monkeypatch):
     )
 
     assert result.exit_code == 1
-    # After the JSON-or-JSONL loader landed, the file is parsed as
-    # JSONL: every line fails json.loads silently, leaving zero events.
-    # Rich may wrap the error string on whitespace, so match the stable
-    # prefix only.
-    assert "no parseable jsonl" in result.stdout.lower()
+    assert "unrecognised transcript format" in result.stdout.lower()
 
 
 def test_submit_session_fails_on_non_object_json(tmp_path, monkeypatch):
@@ -530,7 +542,7 @@ def test_submit_session_fails_on_non_object_json(tmp_path, monkeypatch):
     )
 
     assert result.exit_code == 1
-    assert "must contain a json object" in result.stdout.lower()
+    assert "unrecognised transcript format" in result.stdout.lower()
 
 
 def test_submit_session_dry_run_redaction_prints_entries_and_does_not_submit(
@@ -542,7 +554,7 @@ def test_submit_session_dry_run_redaction_prints_entries_and_does_not_submit(
         tmp_path,
         {
             "session_id": "sess-1",
-            "events": [{"type": "user", "note": "ssn 123-45-6789"}],
+            "events": [{**_EVENTS[0], "note": "ssn 123-45-6789"}],
         },
     )
     called = {"posted": False}
@@ -551,7 +563,7 @@ def test_submit_session_dry_run_redaction_prints_entries_and_does_not_submit(
         called["posted"] = True
 
     monkeypatch.setattr(
-        "driftshield.cli._submit.post_oss_submission", fake_post
+        "driftshield.public.post_oss_submission", fake_post
     )
 
     result = runner.invoke(
@@ -584,7 +596,7 @@ def test_submit_session_show_manifest_prints_manifest_and_does_not_submit(
     runner.invoke(app, _remote_enable_argv())
     session_path = _write_session(
         tmp_path,
-        {"session_id": "sess-1", "events": []},
+        {"session_id": "sess-1"},
     )
     called = {"posted": False}
 
@@ -592,7 +604,7 @@ def test_submit_session_show_manifest_prints_manifest_and_does_not_submit(
         called["posted"] = True
 
     monkeypatch.setattr(
-        "driftshield.cli._submit.post_oss_submission", fake_post
+        "driftshield.public.post_oss_submission", fake_post
     )
 
     result = runner.invoke(
@@ -621,10 +633,10 @@ def test_submit_session_show_manifest_matches_real_submission_manifest(
 
     monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
     runner.invoke(app, _remote_enable_argv())
-    payload = {"session_id": "sess-1", "events": []}
+    payload = {"session_id": "sess-1"}
     session_path = _write_session(tmp_path, payload)
     monkeypatch.setattr(
-        "driftshield.cli._submit.post_oss_submission",
+        "driftshield.public.post_oss_submission",
         lambda **_: (_ for _ in ()).throw(AssertionError("must not submit")),
     )
 
@@ -640,50 +652,25 @@ def test_submit_session_show_manifest_matches_real_submission_manifest(
     preview.pop("ruleset_entry_count", None)
 
     real_request = build_oss_submission_request(
-        source_session_id="sess-1", payload=payload
+        source_session_id="sess-1", redacted_payload=payload
     )
     real_manifest = real_request.envelope.redaction_manifest.model_dump(mode="json")
     assert preview == real_manifest
 
 
-def test_submit_session_refuses_unknown_shape_without_force(tmp_path, monkeypatch):
+def test_submit_session_refuses_unknown_shape(tmp_path, monkeypatch):
+    """A file no parser recognises never reaches the redactor or the network."""
     monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
     runner.invoke(app, _remote_enable_argv())
-    session_path = _write_session(tmp_path, {"unrelated_top_key": True})
+    session_path = tmp_path / "session.json"
+    session_path.write_text(json.dumps({"unrelated_top_key": True}), encoding="utf-8")
 
     result = runner.invoke(
         app, ["telemetry", "submit-session", "--path", str(session_path)]
     )
 
     assert result.exit_code == 1
-    assert "shape" in result.stdout.lower()
-
-
-def test_submit_session_accepts_unknown_shape_when_forced(tmp_path, monkeypatch):
-    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
-    runner.invoke(app, _remote_enable_argv())
-    session_path = _write_session(tmp_path, {"unrelated_top_key": True})
-
-    def fake_post(*, config, submission, opener=None):  # noqa: ARG001
-        return _ok_result(submission_id="sub_forced")
-
-    monkeypatch.setattr(
-        "driftshield.cli._submit.post_oss_submission", fake_post
-    )
-
-    result = runner.invoke(
-        app,
-        [
-            "telemetry",
-            "submit-session",
-            "--path",
-            str(session_path),
-            "--force-unknown-shape",
-        ],
-    )
-
-    assert result.exit_code == 0
-    assert "sub_forced" in result.stdout
+    assert "unrecognised transcript format" in result.stdout.lower()
 
 
 def test_submit_session_surfaces_remote_error(tmp_path, monkeypatch):
@@ -697,7 +684,7 @@ def test_submit_session_surfaces_remote_error(tmp_path, monkeypatch):
         raise RemoteSubmissionError("intake HTTP 422: invalid_redaction_manifest")
 
     monkeypatch.setattr(
-        "driftshield.cli._submit.post_oss_submission",
+        "driftshield.public.post_oss_submission",
         fake_post,
     )
 
@@ -727,7 +714,7 @@ def test_submit_session_default_no_signature_summary(tmp_path, monkeypatch):
         return _ok_result()
 
     monkeypatch.setattr(
-        "driftshield.cli._submit.post_oss_submission", fake_post
+        "driftshield.public.post_oss_submission", fake_post
     )
 
     result = runner.invoke(
@@ -736,162 +723,6 @@ def test_submit_session_default_no_signature_summary(tmp_path, monkeypatch):
 
     assert result.exit_code == 0
     assert captured["signature_summary"] is None
-
-
-def test_submit_session_with_include_analysis_populates_signature_summary(
-    tmp_path, monkeypatch
-):
-    """--include-analysis triggers the local matcher and attaches the block."""
-    from driftshield.intake_contract import (
-        SIGNATURE_SUMMARY_VERSION,
-        SignatureSummary,
-        SignatureSummaryEntry,
-    )
-
-    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
-    runner.invoke(app, _remote_enable_argv())
-    session_path = _write_session(tmp_path, {"session_id": "sess-1"})
-    captured = {}
-
-    def fake_post(*, config, submission, opener=None):  # noqa: ARG001
-        captured["signature_summary"] = submission.envelope.signature_summary
-        return _ok_result()
-
-    fake_summary = SignatureSummary(
-        schema_version=SIGNATURE_SUMMARY_VERSION,
-        matches=[
-            SignatureSummaryEntry(
-                signature_id="sig-abc",
-                match_status="matched",
-                community_pack_id="community-general",
-                community_pack_version="1.0.0",
-                matcher_id="phase-3g-deterministic-v1",
-                matcher_version="phase-3g-deterministic-rules-v1",
-                confidence=0.9,
-                confidence_band="high",
-            )
-        ],
-    )
-
-    monkeypatch.setattr(
-        "driftshield.cli._submit.post_oss_submission", fake_post
-    )
-    monkeypatch.setattr(
-        "driftshield.cli._submit.build_signature_summary_from_session",
-        lambda _path: fake_summary,
-    )
-
-    result = runner.invoke(
-        app,
-        [
-            "telemetry",
-            "submit-session",
-            "--path",
-            str(session_path),
-            "--include-analysis",
-        ],
-    )
-
-    assert result.exit_code == 0
-    assert captured["signature_summary"] is not None
-    assert captured["signature_summary"].schema_version == SIGNATURE_SUMMARY_VERSION
-    assert captured["signature_summary"].matches[0].signature_id == "sig-abc"
-
-
-def test_submit_session_include_analysis_strict_fail_on_builder_error(
-    tmp_path, monkeypatch
-):
-    """--include-analysis is strict: any builder exception fails the command.
-
-    The submission MUST NOT be sent and the exit code MUST be non-zero so the
-    operator notices that the explicit opt-in could not be honoured.
-    """
-    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
-    runner.invoke(app, _remote_enable_argv())
-    session_path = _write_session(tmp_path, {"session_id": "sess-1"})
-    posted = {"called": False}
-
-    def fake_post(*, config, submission, opener=None):  # noqa: ARG001
-        posted["called"] = True
-        return _ok_result()
-
-    def boom(_path):
-        raise RuntimeError("matcher exploded")
-
-    monkeypatch.setattr(
-        "driftshield.cli._submit.post_oss_submission", fake_post
-    )
-    monkeypatch.setattr(
-        "driftshield.cli._submit.build_signature_summary_from_session", boom
-    )
-
-    result = runner.invoke(
-        app,
-        [
-            "telemetry",
-            "submit-session",
-            "--path",
-            str(session_path),
-            "--include-analysis",
-        ],
-    )
-
-    assert result.exit_code != 0
-    assert posted["called"] is False
-    assert "build_signature_summary_from_session" in result.stderr
-    assert "matcher exploded" in result.stderr
-
-
-def test_submit_session_include_analysis_empty_matches_is_valid_success(
-    tmp_path, monkeypatch
-):
-    """An empty matches list IS a valid success path under --include-analysis.
-
-    Zero matches is not a builder failure: the submission proceeds with the
-    empty SignatureSummary attached.
-    """
-    from driftshield.intake_contract import (
-        SIGNATURE_SUMMARY_VERSION,
-        SignatureSummary,
-    )
-
-    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
-    runner.invoke(app, _remote_enable_argv())
-    session_path = _write_session(tmp_path, {"session_id": "sess-1"})
-    captured = {}
-
-    def fake_post(*, config, submission, opener=None):  # noqa: ARG001
-        captured["signature_summary"] = submission.envelope.signature_summary
-        return _ok_result()
-
-    empty_summary = SignatureSummary(
-        schema_version=SIGNATURE_SUMMARY_VERSION,
-        matches=[],
-    )
-
-    monkeypatch.setattr(
-        "driftshield.cli._submit.post_oss_submission", fake_post
-    )
-    monkeypatch.setattr(
-        "driftshield.cli._submit.build_signature_summary_from_session",
-        lambda _path: empty_summary,
-    )
-
-    result = runner.invoke(
-        app,
-        [
-            "telemetry",
-            "submit-session",
-            "--path",
-            str(session_path),
-            "--include-analysis",
-        ],
-    )
-
-    assert result.exit_code == 0
-    assert captured["signature_summary"] is not None
-    assert captured["signature_summary"].schema_version == SIGNATURE_SUMMARY_VERSION
-    assert captured["signature_summary"].matches == []
 
 
 def test_submit_session_accepts_jsonl_input(tmp_path, monkeypatch):
@@ -927,7 +758,7 @@ def test_submit_session_accepts_jsonl_input(tmp_path, monkeypatch):
         return _ok_result()
 
     monkeypatch.setattr(
-        "driftshield.cli._submit.post_oss_submission", fake_post
+        "driftshield.public.post_oss_submission", fake_post
     )
 
     result = runner.invoke(
@@ -974,11 +805,11 @@ def test_submit_session_large_oss_routes_to_presigned_upload(tmp_path, monkeypat
         return _ok_result()
 
     monkeypatch.setattr(
-        "driftshield.cli._submit.submit_oss_via_presigned_upload",
+        "driftshield.public.submit_oss_via_presigned_upload",
         fake_presigned,
     )
     monkeypatch.setattr(
-        "driftshield.cli._submit.post_oss_submission", fake_inline
+        "driftshield.public.post_oss_submission", fake_inline
     )
 
     result = runner.invoke(
@@ -1005,11 +836,11 @@ def test_submit_session_small_oss_stays_inline(tmp_path, monkeypatch):
         return _ok_result()
 
     monkeypatch.setattr(
-        "driftshield.cli._submit.submit_oss_via_presigned_upload",
+        "driftshield.public.submit_oss_via_presigned_upload",
         fake_presigned,
     )
     monkeypatch.setattr(
-        "driftshield.cli._submit.post_oss_submission", fake_inline
+        "driftshield.public.post_oss_submission", fake_inline
     )
 
     result = runner.invoke(
@@ -1033,7 +864,7 @@ def test_submit_session_teams_tier_uses_teams_lane_with_api_key(tmp_path, monkey
         return _ok_result()
 
     monkeypatch.setattr(
-        "driftshield.cli._submit.submit_teams_via_presigned_upload",
+        "driftshield.public.submit_teams_via_presigned_upload",
         fake_teams,
     )
 
@@ -1079,7 +910,7 @@ def test_submit_session_oss_defaults_to_community_intake_url(tmp_path, monkeypat
         return _ok_result()
 
     monkeypatch.setattr(
-        "driftshield.cli._submit.post_oss_submission", fake_post
+        "driftshield.public.post_oss_submission", fake_post
     )
 
     result = runner.invoke(
@@ -1108,7 +939,7 @@ def test_submit_session_oss_default_url_applies_to_presigned_lane(tmp_path, monk
         return _ok_result()
 
     monkeypatch.setattr(
-        "driftshield.cli._submit.submit_oss_via_presigned_upload",
+        "driftshield.public.submit_oss_via_presigned_upload",
         fake_presigned,
     )
 
@@ -1133,7 +964,7 @@ def test_submit_session_remote_enable_overrides_default_url(tmp_path, monkeypatc
         return _ok_result()
 
     monkeypatch.setattr(
-        "driftshield.cli._submit.post_oss_submission", fake_post
+        "driftshield.public.post_oss_submission", fake_post
     )
 
     result = runner.invoke(
@@ -1163,7 +994,7 @@ def test_submit_session_oss_defaults_environment_to_production_inline(
         return _ok_result()
 
     monkeypatch.setattr(
-        "driftshield.cli._submit.post_oss_submission", fake_post
+        "driftshield.public.post_oss_submission", fake_post
     )
 
     result = runner.invoke(
@@ -1191,7 +1022,7 @@ def test_submit_session_oss_defaults_environment_to_production_presigned(
         return _ok_result()
 
     monkeypatch.setattr(
-        "driftshield.cli._submit.submit_oss_via_presigned_upload",
+        "driftshield.public.submit_oss_via_presigned_upload",
         fake_presigned,
     )
 
@@ -1216,7 +1047,7 @@ def test_submit_session_environment_flag_overrides_production_default(
         return _ok_result()
 
     monkeypatch.setattr(
-        "driftshield.cli._submit.post_oss_submission", fake_post
+        "driftshield.public.post_oss_submission", fake_post
     )
 
     result = runner.invoke(
@@ -1254,7 +1085,7 @@ def test_submit_session_preserves_environment_declared_in_session_json(
         return _ok_result()
 
     monkeypatch.setattr(
-        "driftshield.cli._submit.post_oss_submission", fake_post
+        "driftshield.public.post_oss_submission", fake_post
     )
 
     result = runner.invoke(
@@ -1281,7 +1112,7 @@ def test_submit_session_environment_flag_wins_over_session_json_value(
         return _ok_result()
 
     monkeypatch.setattr(
-        "driftshield.cli._submit.post_oss_submission", fake_post
+        "driftshield.public.post_oss_submission", fake_post
     )
 
     result = runner.invoke(
@@ -1314,7 +1145,7 @@ def test_submit_session_rejects_invalid_environment(tmp_path, monkeypatch):
         return _ok_result()
 
     monkeypatch.setattr(
-        "driftshield.cli._submit.post_oss_submission", fake_post
+        "driftshield.public.post_oss_submission", fake_post
     )
 
     result = runner.invoke(
@@ -1332,7 +1163,7 @@ def test_submit_session_rejects_invalid_environment(tmp_path, monkeypatch):
     )
 
     assert result.exit_code == 1
-    assert "--environment must be one of" in result.stdout
+    assert "environment must be one of" in result.stdout
     assert submitted["called"] is False
 
 
@@ -1352,7 +1183,7 @@ def test_submit_session_environment_flag_accepted_on_teams_tier(tmp_path, monkey
         return _ok_result()
 
     monkeypatch.setattr(
-        "driftshield.cli._submit.submit_teams_via_presigned_upload",
+        "driftshield.public.submit_teams_via_presigned_upload",
         fake_teams,
     )
 
@@ -1392,7 +1223,7 @@ def test_submit_session_teams_tier_defaults_environment_to_production(tmp_path, 
         return _ok_result()
 
     monkeypatch.setattr(
-        "driftshield.cli._submit.submit_teams_via_presigned_upload",
+        "driftshield.public.submit_teams_via_presigned_upload",
         fake_teams,
     )
 
@@ -1424,7 +1255,7 @@ def test_submit_session_teams_tier_keeps_environment_declared_in_session(tmp_pat
         return _ok_result()
 
     monkeypatch.setattr(
-        "driftshield.cli._submit.submit_teams_via_presigned_upload",
+        "driftshield.public.submit_teams_via_presigned_upload",
         fake_teams,
     )
 
@@ -1464,7 +1295,7 @@ def test_community_lane_payload_classifies_production_submitter_declared(
         return _ok_result()
 
     monkeypatch.setattr(
-        "driftshield.cli._submit.post_oss_submission", fake_post
+        "driftshield.public.post_oss_submission", fake_post
     )
 
     result = runner.invoke(
@@ -1504,7 +1335,7 @@ def test_remote_disable_blocks_community_default(tmp_path, monkeypatch):
         return _ok_result()
 
     monkeypatch.setattr(
-        "driftshield.cli._submit.post_oss_submission", fake_post
+        "driftshield.public.post_oss_submission", fake_post
     )
 
     result = runner.invoke(
@@ -1530,7 +1361,7 @@ def test_remote_enable_after_disable_restores_submission(tmp_path, monkeypatch):
         return _ok_result()
 
     monkeypatch.setattr(
-        "driftshield.cli._submit.post_oss_submission", fake_post
+        "driftshield.public.post_oss_submission", fake_post
     )
 
     result = runner.invoke(
@@ -1643,7 +1474,7 @@ def test_submit_session_openclaw_trajectory_stamps_real_provenance(
         return _ok_result()
 
     monkeypatch.setattr(
-        "driftshield.cli._submit.post_oss_submission", fake_post
+        "driftshield.public.post_oss_submission", fake_post
     )
 
     result = runner.invoke(
@@ -1683,7 +1514,7 @@ def test_submit_session_explicit_provenance_flags_win_over_derived(
         return _ok_result()
 
     monkeypatch.setattr(
-        "driftshield.cli._submit.post_oss_submission", fake_post
+        "driftshield.public.post_oss_submission", fake_post
     )
 
     result = runner.invoke(
