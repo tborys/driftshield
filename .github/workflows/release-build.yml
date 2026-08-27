@@ -1,0 +1,33 @@
+name: release-build
+
+# Manual artefact build. Builds the sdist and wheel, runs twine check, asserts
+# the wheel contains only the package, smoke tests a fresh install and uploads
+# the dist directory as an artefact. See docs/release-runbook.md.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build and check artefact
+        run: ./scripts/release-build-check.sh
+
+      - name: Upload dist artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: driftshield/dist/*
+          if-no-files-found: error
