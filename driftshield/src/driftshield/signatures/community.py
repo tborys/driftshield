@@ -4,13 +4,9 @@ import json
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from importlib import resources
+from importlib.resources.abc import Traversable
 from pathlib import Path
 from typing import Any
-
-try:
-    from importlib.resources.abc import Traversable
-except ImportError:  # pragma: no cover - fallback for older Pythons
-    from importlib.abc import Traversable  # type: ignore[no-redef]
 
 from driftshield.signatures import (
     SignatureDefinition,
