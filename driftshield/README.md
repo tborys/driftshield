@@ -8,9 +8,13 @@ signatures. It reads Claude Code, Codex CLI, Claude Desktop, Codex Desktop,
 OpenClaw, CrewAI and LangChain transcripts.
 
 ```bash
-pip install driftshield
+pip install driftshield-sdk
 driftshield analyze session.jsonl
 ```
+
+The distribution is called `driftshield-sdk` on PyPI because the name
+`driftshield` was already too close to an unrelated project. The import
+package and the command are still `driftshield`.
 
 The library surface is two calls:
 

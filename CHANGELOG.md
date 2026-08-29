@@ -5,9 +5,19 @@ notes for each tag are taken from the matching section of this file.
 
 ## 0.2.0 - 2026-08-27
 
-First published release of `driftshield` on PyPI. Earlier versions were never
-published, so everything below is what you get when you install `driftshield`
-for the first time.
+First published release on PyPI, as `driftshield-sdk`. Earlier versions were
+never published, so everything below is what you get when you install it for
+the first time.
+
+The distribution is `driftshield-sdk` rather than `driftshield` because PyPI
+rejected the shorter name: it strips separators when checking for collisions,
+and an unrelated project called `drift-shield` has held the name since 2024.
+Nothing else changes. You install `driftshield-sdk`, you `import driftshield`
+and the command is still `driftshield`.
+
+```bash
+pip install driftshield-sdk
+```
 
 ### The public API is two calls
 

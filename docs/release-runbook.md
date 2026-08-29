@@ -1,8 +1,10 @@
 # Release runbook
 
-How a `driftshield` release is cut. The artefact is always built by CI, never
-on a laptop. The first release (v0.2.0) uploads to PyPI by hand because the
-PyPI project does not exist yet; every release after that is a tag push.
+How a `driftshield` release is cut. The distribution is published as
+`driftshield-sdk`; the import package and the CLI command stay `driftshield`.
+The artefact is always built by CI, never on a laptop. The first release
+(v0.2.0) uploads to PyPI by hand because the PyPI project does not exist yet;
+every release after that is a tag push.
 
 ## 1. Prepare the release PR
 
@@ -35,13 +37,13 @@ publisher, see below).
 - `python -m twine check dist/*`
 - `python -m twine upload dist/*` with `__token__` and a project scoped API
   token. Delete the token afterwards; it is not needed again.
-- Verify in a clean venv: `pip install driftshield==0.2.0`, then
+- Verify in a clean venv: `pip install driftshield-sdk==0.2.0`, then
   `driftshield --version` prints `driftshield 0.2.0` and
   `driftshield --help` lists `analyze` and `submit`.
 
 Then set up trusted publishing so the next release is automatic:
 
-- On PyPI, open the `driftshield` project, Publishing, and add a GitHub
+- On PyPI, open the `driftshield-sdk` project, Publishing, and add a GitHub
   publisher: owner `tborys`, repository `driftshield`, workflow
   `release-publish.yml`, environment `pypi`.
 - On GitHub, create the `pypi` environment (Settings, Environments) and add
@@ -70,7 +72,7 @@ this section is skipped.
 
 ## 5. Verify
 
-- `pip install driftshield==<version>` in a clean venv.
+- `pip install driftshield-sdk==<version>` in a clean venv.
 - `driftshield --version` reports the version.
 - The GitHub release exists with the right notes and both files attached.
 

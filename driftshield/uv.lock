@@ -162,7 +162,7 @@ wheels = [
 ]
 
 [[package]]
-name = "driftshield"
+name = "driftshield-sdk"
 version = "0.2.0"
 source = { editable = "." }
 dependencies = [
