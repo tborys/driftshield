@@ -56,6 +56,7 @@
 
 - Process: `docs/release-runbook.md`. Tag `v<version>` on `main` runs `.github/workflows/release-publish.yml` (PyPI trusted publishing behind the `pypi` environment, then a GitHub release from the matching `CHANGELOG.md` section). `scripts/release-build-check.sh` is the single build-and-verify step both release workflows run; run it locally from a venv before tagging.
 - Version lives in two places that must agree: `driftshield/pyproject.toml` and `driftshield/src/driftshield/__init__.py`.
+- The PyPI distribution is `driftshield-sdk` (`pip install driftshield-sdk`); the import package and the CLI command stay `driftshield`. PyPI refused `driftshield` as too similar to the unrelated `drift-shield`. Never rename the import package or the console scripts to match the distribution.
 
 ## Maintaining this file
 

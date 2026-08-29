@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the driftshield sdist and wheel, then prove the artefact is releasable:
+# Build the driftshield-sdk sdist and wheel, then prove the artefact is releasable:
 #   - twine check passes
 #   - the wheel contains only the driftshield package and its metadata
 #   - a fresh venv install exposes the CLI with the analyze and submit commands
@@ -21,15 +21,15 @@ echo "[release] building sdist and wheel"
 echo "[release] twine check"
 "$PYTHON" -m twine check --strict "$DIST_DIR"/*
 
-WHEEL="$(ls "$DIST_DIR"/driftshield-*.whl)"
-VERSION="$(basename "$WHEEL" | sed -E 's/^driftshield-([^-]+)-.*/\1/')"
+WHEEL="$(ls "$DIST_DIR"/driftshield_sdk-*.whl)"
+VERSION="$(basename "$WHEEL" | sed -E 's/^driftshield_sdk-([^-]+)-.*/\1/')"
 
 echo "[release] wheel contents check ($WHEEL)"
 UNEXPECTED="$("$PYTHON" - "$WHEEL" <<'PY'
 import sys, zipfile
 names = zipfile.ZipFile(sys.argv[1]).namelist()
 bad = [n for n in names
-       if not (n.startswith("driftshield/") or n.startswith("driftshield-") and ".dist-info/" in n)
+       if not (n.startswith("driftshield/") or n.startswith("driftshield_sdk-") and ".dist-info/" in n)
        or "__pycache__" in n or n.endswith(".pyc") or "/tests/" in n or "/frontend/" in n]
 print("\n".join(bad))
 PY
@@ -51,5 +51,5 @@ done
 "$VENV/bin/driftshield" --version | grep -q "driftshield $VERSION"
 "$VENV/bin/python" -c "import driftshield; assert driftshield.__version__ == '$VERSION', driftshield.__version__; from driftshield import analyse_run, submit"
 
-echo "[release] ok: driftshield $VERSION"
+echo "[release] ok: driftshield-sdk $VERSION"
 echo "$VERSION" > "$DIST_DIR/VERSION"

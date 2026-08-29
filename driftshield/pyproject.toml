@@ -1,7 +1,11 @@
 [project]
-name = "driftshield"
+name = "driftshield-sdk"
 version = "0.2.0"
 description = "Open-source AI decision forensics toolkit"
+authors = [
+    { name = "Tomasz Borys" },
+    { name = "Devinder Pharar" },
+]
 readme = "README.md"
 license = "AGPL-3.0-or-later"
 requires-python = ">=3.12"

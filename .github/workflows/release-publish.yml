@@ -69,7 +69,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/project/driftshield/${{ needs.build.outputs.version }}/
+      url: https://pypi.org/project/driftshield-sdk/${{ needs.build.outputs.version }}/
     permissions:
       id-token: write
     steps:
@@ -106,7 +106,7 @@ jobs:
         run: |
           set -euo pipefail
           gh release create "$GITHUB_REF_NAME" \
-            --title "driftshield ${{ needs.build.outputs.version }}" \
+            --title "driftshield-sdk ${{ needs.build.outputs.version }}" \
             --notes-file dist/RELEASE_NOTES.md \
             --verify-tag \
             dist/*.whl dist/*.tar.gz
