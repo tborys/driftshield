@@ -59,6 +59,8 @@ graph, inspect the inflection node, and read the generated forensic report.
 | Codex Desktop | JSON | Experimental |
 | OpenClaw | JSONL | Experimental |
 
+Codex CLI covers the rollout files under `~/.codex/sessions/`; the Codex app and its VS Code extension write the same files.
+
 DriftShield uses a parser protocol. New sources can be added by implementing a single interface.
 
 ## Community signature packs
