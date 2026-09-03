@@ -13,7 +13,7 @@ from typing import Any
 
 from driftshield.parsers.claude_code import ClaudeCodeParser
 from driftshield.parsers.claude_desktop import ClaudeDesktopParser
-from driftshield.parsers.codex_cli import CodexCliParser
+from driftshield.parsers.codex_cli import CodexCliParser, is_rollout_record
 from driftshield.parsers.codex_desktop import CodexDesktopParser
 from driftshield.parsers.crewai import CrewAIParser
 from driftshield.parsers.langchain import LangChainParser
@@ -164,8 +164,12 @@ def _detect_records(objects: list[dict[str, Any]]) -> str | None:
     ):
         return "claude_code"
 
-    if "session_meta" in types or any(
-        "session_id" in obj and obj.get("type") in {"session_meta", "message"} for obj in objects
+    # Codex: the rollout envelope (``{"timestamp","type","payload"}`` records
+    # under ~/.codex/sessions) or the older flat ``message`` lines.
+    if (
+        "session_meta" in types
+        or any(is_rollout_record(obj) for obj in objects)
+        or any("session_id" in obj and obj.get("type") in {"session_meta", "message"} for obj in objects)
     ):
         return "codex_cli"
 

@@ -21,6 +21,7 @@ FIXTURES_DIR = Path(__file__).parent.parent / "fixtures" / "transcripts"
         (LangChainParser(), "sample_langchain_session.json", "langchain"),
         (CrewAIParser(), "sample_crewai_session.json", "crewai"),
         (CodexCliParser(), "sample_codex_cli_session.jsonl", "codex_cli"),
+        (CodexCliParser(), "sample_codex_cli_rollout.jsonl", "codex_cli"),
     ],
 )
 def test_supported_parser_fixtures_share_normalized_event_contract(
