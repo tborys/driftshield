@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from uuid import UUID
 
+from driftshield.core.analysis.tool_outcomes import final_tool_error
 from driftshield.core.graph.models import DecisionNode, LineageGraph
 from driftshield.core.models import BreakPointStatus, CandidateBreakPoint, ExplanationPayload
 
@@ -354,3 +355,66 @@ def select_candidate_break_point(
 ) -> CandidateBreakPoint:
     """Return the OSS-safe candidate break-point finding for a failed run."""
     return select_inflection_node(graph, failure_node_id).candidate_break_point
+
+
+FINAL_TOOL_ERROR_STRATEGY = "final_tool_error"
+
+
+def select_final_tool_error_break_point(graph: LineageGraph) -> InflectionSelection | None:
+    """Prefer the run's final failed tool call as the break point.
+
+    A run that ends on a tool error nobody recovered visibly broke at that
+    call, whether or not any heuristic flagged an earlier step. Returns
+    ``None`` when the run's last tool call did not fail.
+    """
+    failed_event = final_tool_error([node.event for node in graph.nodes])
+    if failed_event is None:
+        return None
+    node = next((candidate for candidate in graph.nodes if candidate.id == failed_event.id), None)
+    if node is None:
+        return None
+
+    risk = node.event.risk_classification
+    risk_flags = risk.active_flags() if risk is not None else []
+    explanation = ExplanationPayload(
+        reason=(
+            "Selected as the break point because the run ended on a tool call that reported "
+            "an error and no later tool call completed."
+        ),
+        confidence=1.0,
+        evidence_refs=[
+            f"node:{node.id}",
+            *[f"risk:{flag}" for flag in risk_flags],
+            "inflection_reason:final tool call reported an error with no later completed tool call",
+        ],
+    )
+    uncertainty_reasons = ["selected step has lineage ambiguities"] if node.lineage_ambiguities else []
+    candidate_break_point = CandidateBreakPoint(
+        status=BreakPointStatus.IDENTIFIED,
+        summary=(
+            f"The run ended on event #{node.sequence_num} ({node.action}), a tool call that "
+            "reported an error and was never recovered."
+        ),
+        node_id=node.id,
+        sequence_num=node.sequence_num,
+        action=node.action,
+        confidence=1.0,
+        evidence_refs=_dedupe_refs(
+            [f"node:{node.id}"],
+            explanation.evidence_refs,
+            list(node.evidence_refs),
+            _risk_evidence_refs(node),
+        ),
+        risk_flags=risk_flags,
+        uncertainty_reasons=uncertainty_reasons,
+        strategy=FINAL_TOOL_ERROR_STRATEGY,
+    )
+    return InflectionSelection(
+        node=node,
+        explanation=explanation,
+        strategy=FINAL_TOOL_ERROR_STRATEGY,
+        candidate_break_point=candidate_break_point,
+        score=None,
+        runner_up_score=None,
+        runner_up_node=None,
+    )

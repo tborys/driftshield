@@ -274,6 +274,23 @@ Transcript → Parser → Canonical Events → Decision Graph → Risk Heuristic
 4. **Inflection detection** scores points in the session where the agent's trajectory changed
 5. **Reports** present findings as Markdown, JSON, or through the web dashboard
 
+### What counts as a failure
+
+A run qualifies as a failure (`qualification_state` is `qualified_failure`) when the
+transcript reads cleanly and shows a material gap between what was asked and what
+happened. Two kinds of evidence count:
+
+- A risk detector fired on at least one step (see the table below).
+- The session ended on a tool call that reported an error and no later tool call
+  completed. This is the failure signal for coding agent sessions such as Claude
+  Code, which rarely carry the inputs the risk detectors need. The verdict names the
+  reason `unrecovered_tool_error_at_session_end` and the break point is that final
+  failed call.
+
+A tool error the agent recovered from, meaning a later tool call completed, is not a
+failure on its own. A run with neither kind of evidence is `unclassified`, not a
+success claim.
+
 ## Built-in Risk Detectors
 
 | Detector | What it catches |

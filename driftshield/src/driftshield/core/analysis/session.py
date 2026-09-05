@@ -10,7 +10,10 @@ from driftshield.core.analysis.heuristics import (
     PolicyDivergenceHeuristic,
     load_analysis_context,
 )
-from driftshield.core.analysis.inflection import select_inflection_node
+from driftshield.core.analysis.inflection import (
+    select_final_tool_error_break_point,
+    select_inflection_node,
+)
 from driftshield.core.analysis.risk import RiskAnalyzer
 from driftshield.core.graph.builder import build_graph
 from driftshield.core.graph.models import DecisionNode, LineageGraph
@@ -101,7 +104,11 @@ def analyze_session(
     )
     if graph.nodes:
         last_node = graph.nodes[-1]
-        selection = select_inflection_node(graph, last_node.id)
+        # A run that ends on an unrecovered tool error broke at that call. That
+        # evidence outranks the weighted search over flagged steps.
+        selection = select_final_tool_error_break_point(graph) or select_inflection_node(
+            graph, last_node.id
+        )
         candidate_break_point = selection.candidate_break_point
         inflection_node = selection.node
         inflection_explanation = selection.explanation

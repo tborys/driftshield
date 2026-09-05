@@ -190,3 +190,53 @@ class TestAnalyzeCI:
         )
         assert result.exit_code == 0
         assert len(result.output.strip().split("\n")) <= 3
+
+
+class TestAnalyzeToolErrorAtSessionEnd:
+    """A session that ends on a failed tool call breaks at that call."""
+
+    def test_error_at_end_identifies_the_final_failed_tool_call(self):
+        result = runner.invoke(
+            app,
+            ["analyze", str(FIXTURES_DIR / "sample_claude_code_tool_error_at_end.jsonl")],
+        )
+        output = ANSI_RE.sub("", result.output)
+
+        assert result.exit_code == 0
+        assert "Status    : identified" in output
+        assert "Event     : #2 Bash" in output
+        assert "reported an" in output and "error and was never recovered" in output
+
+    def test_error_at_end_json_names_the_strategy(self):
+        result = runner.invoke(
+            app,
+            ["analyze", str(FIXTURES_DIR / "sample_claude_code_tool_error_at_end.jsonl"), "--json"],
+        )
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["flagged_events"] == 0
+        assert data["candidate_break_point"]["status"] == "identified"
+        assert data["candidate_break_point"]["action"] == "Bash"
+        assert data["candidate_break_point"]["sequence_num"] == 2
+        assert data["candidate_break_point"]["strategy"] == "final_tool_error"
+
+    def test_recovered_error_has_no_break_point(self):
+        result = runner.invoke(
+            app,
+            ["analyze", str(FIXTURES_DIR / "sample_claude_code_tool_error_recovered.jsonl"), "--json"],
+        )
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["candidate_break_point"]["status"] == "no_clear_break_point"
+
+    def test_successful_session_has_no_break_point(self):
+        result = runner.invoke(
+            app,
+            ["analyze", str(FIXTURES_DIR / "sample_claude_code_tool_success.jsonl"), "--json"],
+        )
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["candidate_break_point"]["status"] == "no_clear_break_point"
