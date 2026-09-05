@@ -43,7 +43,7 @@ The result. Local only; nothing in it leaves the machine until `submit`.
 | `events` | The parsed run in full detail (`CanonicalEvent` objects, in order). |
 | `findings` | What went wrong, anchored to events. Each `Finding` has `kind` (`"risk"` for a flagged event, `"break_point"` for the identified inflection), `event_index`, `event_id`, `risks` (flag names) and `summary`. |
 | `signature_hits` | Community signatures the deterministic matcher matched. Each `SignatureHit` has `signature_id`, `mechanism_id`, `confidence`, `confidence_band` (`high`, `medium`, `low`, `very_low`), `summary` and `event_ids`. |
-| `qualification_state` | The verdict: `qualified_failure`, `unclassified` or `not_classifiable`, with `qualification_reasons` alongside. |
+| `qualification_state` | The verdict: `qualified_failure`, `unclassified` or `not_classifiable`, with `qualification_reasons` alongside. A run qualifies when a risk detector flagged a step, or when the session ended on a tool call that reported an error and no later tool call completed (reason `unrecovered_tool_error_at_session_end`). A tool error a later completed tool call recovered is not a failure. |
 | `redacted_transcript` | The shareable copy, derived from the transcript by the redactor. This is exactly what a community submission sends. |
 | `source` | The `source` you passed, or `None`. |
 | `detected_format` | The parser that read the run (one of the names above, or `"events"` for an event sequence with no parser provenance). |

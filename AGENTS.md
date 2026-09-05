@@ -34,6 +34,7 @@
 - The engine's public API is `driftshield.analyse_run` and `driftshield.submit` (see `docs/public-api.md`). Every CLI command, the `/api/ingest` route and the connector watcher analyse through `analyse_run`; do not add a second parse-and-analyse chain.
 - Format detection lives in one place, `driftshield/src/driftshield/parsers/registry.py`: content decides, a path is only a hint. Add a parser there together with a fixture in `driftshield/tests/fixtures/transcripts/` and its hash in `golden/redaction_snapshot.json`.
 - Zero parseable events is an error (`NoParseableEventsError`), never an empty success. Redaction output for the bundled fixtures is pinned by the snapshot test in `driftshield/tests/test_door.py`.
+- The failure verdict (`qualification_state`) is decided in `driftshield/src/driftshield/core/canonical_analysis.py`; the structural tool outcome rules it relies on live in `core/analysis/tool_outcomes.py`. The product statement of what counts as a failure is the README section "What counts as a failure"; keep the two in step.
 
 ## Community signature opt-in
 
