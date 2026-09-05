@@ -3,6 +3,26 @@
 All notable changes to `driftshield` are recorded here. The GitHub release
 notes for each tag are taken from the matching section of this file.
 
+## 0.2.1 - 2026-09-05
+
+### A tool error never recovered before the session ends is a failure
+
+A run whose last tool call reported an error, with no later tool call
+completing, now qualifies as a failure. Before this release such a run was
+`unclassified` with `no_material_delta_detected` unless a risk detector also
+fired, which on coding agent sessions such as Claude Code it rarely did, so a
+session that died on a failed command looked the same as a successful one.
+
+- `qualification_state` is `qualified_failure` with the reason
+  `unrecovered_tool_error_at_session_end`, and the expected versus actual
+  delta carries the same delta type.
+- The candidate break point is that final failed tool call, so `analyze` and
+  `report` point at the call that ended the run.
+- A tool error a later completed tool call recovered is still not a failure.
+
+Verdicts change for affected runs, so re-analyse anything you compare across
+versions.
+
 ## 0.2.0 - 2026-08-27
 
 First published release on PyPI, as `driftshield-sdk`. Earlier versions were
