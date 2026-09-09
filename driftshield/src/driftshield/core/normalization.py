@@ -189,12 +189,17 @@ def _failure_context(event: CanonicalEvent) -> dict[str, Any] | None:
         return None
 
     status = "error" if error or is_error else "warning"
-    return {
+    context: dict[str, Any] = {
         "status": status,
         "error": str(error) if error else None,
         "signals": sorted(set(signals)),
         "declared_failure": bool(error or is_error or failure_language),
     }
+    # A command's exit code, when the parser could read one from the run.
+    exit_code = event.outputs.get("exit_code")
+    if isinstance(exit_code, int) and not isinstance(exit_code, bool):
+        context["exit_code"] = exit_code
+    return context
 
 
 def _tool_activity(event: CanonicalEvent) -> dict[str, Any] | None:

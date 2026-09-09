@@ -34,6 +34,29 @@ _HANDOFF_TOOLS = frozenset({"spawn_agent", "send_message"})
 # (``<environment_context>...``). They are not something the user typed.
 _CONTEXT_BLOCK_PATTERN = re.compile(r"^\s*<([a-z_]+)>.*</\1>\s*$", re.DOTALL)
 
+# A rollout carries a command's exit code inside the output text, not as a
+# structured flag. Two shapes: a plain ``exit=N`` line after a ``---K---``
+# chunk marker, or a JSON object carrying ``"exit_code": N``. Only one of
+# these clearly parsed integers counts as an exit code; words such as
+# "error" in the text never do.
+_EXIT_LINE_PATTERN = re.compile(r"^exit=(-?\d+)\s*$", re.MULTILINE)
+_EXIT_CODE_JSON_PATTERN = re.compile(r'"exit_code"\s*:\s*(-?\d+)\b')
+
+# How much of the output to keep next to a non zero exit code.
+_OUTPUT_TAIL_CHARS = 400
+
+
+def parse_exit_code(text: str) -> int | None:
+    """The exit code a Codex tool output reports, or ``None`` when it has none.
+
+    The last ``exit=N`` line wins, then the last ``"exit_code": N`` field.
+    """
+    for pattern in (_EXIT_LINE_PATTERN, _EXIT_CODE_JSON_PATTERN):
+        matches = pattern.findall(text)
+        if matches:
+            return int(matches[-1])
+    return None
+
 
 def is_rollout_record(entry: Any) -> bool:
     """True for a Codex rollout envelope record."""
@@ -246,7 +269,7 @@ class CodexCliParser(LocalChatTranscriptParser):
                 result = self._output_text(payload.get("output"))
                 for event in events:
                     if event.id == event_id:
-                        event.outputs = {"result": result}
+                        event.outputs = self._tool_result_outputs(result)
                         break
             return []
 
@@ -371,6 +394,23 @@ class CodexCliParser(LocalChatTranscriptParser):
         if isinstance(raw_input, str):
             return {"input": raw_input}
         return {}
+
+    def _tool_result_outputs(self, result: str) -> dict[str, Any]:
+        """Outputs for a tool result, flagging a non zero exit code as an error.
+
+        ``is_error`` and ``error`` are the same keys the other parsers use, so
+        normalisation turns them into ``failure_context`` and
+        ``tool_activity.status == "error"`` without a Codex specific branch.
+        """
+        outputs: dict[str, Any] = {"result": result}
+        exit_code = parse_exit_code(result)
+        if exit_code is None:
+            return outputs
+        outputs["exit_code"] = exit_code
+        if exit_code != 0:
+            outputs["is_error"] = True
+            outputs["error"] = result[-_OUTPUT_TAIL_CHARS:].strip()
+        return outputs
 
     def _output_text(self, output: object) -> str:
         if isinstance(output, str):
