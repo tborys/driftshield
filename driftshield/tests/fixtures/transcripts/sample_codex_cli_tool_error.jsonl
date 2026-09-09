@@ -1,0 +1,5 @@
+{"session_id": "codex-cli-session-2", "type": "session_meta", "timestamp": "2026-03-20T14:00:00Z"}
+{"session_id": "codex-cli-session-2", "type": "message", "role": "user", "timestamp": "2026-03-20T14:00:01Z", "content": "Build the docs."}
+{"session_id": "codex-cli-session-2", "type": "message", "role": "assistant", "timestamp": "2026-03-20T14:00:03Z", "tool_calls": [{"id": "tool-1", "name": "shell", "arguments": {"command": "make docs"}}]}
+{"session_id": "codex-cli-session-2", "type": "message", "role": "tool", "tool_call_id": "tool-1", "timestamp": "2026-03-20T14:00:04Z", "result": "make: *** No rule to make target 'docs'.  Stop.", "is_error": true, "error": "command exited with status 2"}
+{"session_id": "codex-cli-session-2", "type": "message", "role": "assistant", "timestamp": "2026-03-20T14:00:05Z", "content": "There is no docs target in this Makefile."}

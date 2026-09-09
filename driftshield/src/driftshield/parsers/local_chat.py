@@ -191,7 +191,17 @@ class LocalChatTranscriptParser:
                 elif isinstance(item, dict) and item.get("text"):
                     text_chunks.append(str(item["text"]))
             result = "\n".join(chunk for chunk in text_chunks if chunk)
-        return {"result": result} if result is not None else {}
+        outputs: dict = {"result": result} if result is not None else {}
+        # An explicit error flag or body on the tool output is the run's own
+        # verdict on the call. Keep both under the keys normalisation reads.
+        error = payload.get("error")
+        if isinstance(error, str) and error.strip():
+            outputs["error"] = error.strip()
+        elif isinstance(error, (dict, list)) and error:
+            outputs["error"] = json.dumps(error)
+        if payload.get("is_error") is True:
+            outputs["is_error"] = True
+        return outputs
 
     def _coerce_dict(self, value: object) -> dict:
         return value if isinstance(value, dict) else {}
