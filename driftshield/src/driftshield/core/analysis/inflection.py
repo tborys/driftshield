@@ -3,7 +3,11 @@
 from dataclasses import dataclass
 from uuid import UUID
 
-from driftshield.core.analysis.tool_outcomes import final_tool_error
+from driftshield.core.analysis.tool_outcomes import (
+    RECOVERY_REASON_KEY,
+    final_tool_error,
+    first_unrecovered_tool_error,
+)
 from driftshield.core.graph.models import DecisionNode, LineageGraph
 from driftshield.core.models import BreakPointStatus, CandidateBreakPoint, ExplanationPayload
 
@@ -413,6 +417,76 @@ def select_final_tool_error_break_point(graph: LineageGraph) -> InflectionSelect
         node=node,
         explanation=explanation,
         strategy=FINAL_TOOL_ERROR_STRATEGY,
+        candidate_break_point=candidate_break_point,
+        score=None,
+        runner_up_score=None,
+        runner_up_node=None,
+    )
+
+
+UNRECOVERED_TOOL_ERROR_STRATEGY = "unrecovered_tool_error"
+
+
+def select_unrecovered_tool_error_break_point(graph: LineageGraph) -> InflectionSelection | None:
+    """The earliest failed tool call the run carried on past without recovering.
+
+    Recovery needs evidence tied to the failure: a later completed call of the
+    same tool on the same command or target. A later call that merely
+    succeeded at something else clears nothing. Returns ``None`` when every
+    failed call was recovered, or when no tool call failed. A run that ends on
+    a failed call is handled first by ``select_final_tool_error_break_point``.
+    """
+    failed_event = first_unrecovered_tool_error([node.event for node in graph.nodes])
+    if failed_event is None:
+        return None
+    node = next((candidate for candidate in graph.nodes if candidate.id == failed_event.id), None)
+    if node is None:
+        return None
+
+    reason = str((failed_event.tool_activity or {}).get(RECOVERY_REASON_KEY) or "unrecovered")
+    risk = node.event.risk_classification
+    risk_flags = risk.active_flags() if risk is not None else []
+    explanation = ExplanationPayload(
+        reason=(
+            "Selected as the break point because this tool call reported an error and no "
+            "later completed call of the same tool on the same command or target recovered it."
+        ),
+        confidence=0.8,
+        evidence_refs=[
+            f"node:{node.id}",
+            *[f"risk:{flag}" for flag in risk_flags],
+            f"inflection_reason:tool call reported an error and was never recovered ({reason})",
+        ],
+    )
+    # The run went on after this call, so the claim that it broke here is
+    # weaker than for a run that ended on the failure.
+    uncertainty_reasons = ["later tool calls ran but none matched the failed call"]
+    if node.lineage_ambiguities:
+        uncertainty_reasons.append("selected step has lineage ambiguities")
+    candidate_break_point = CandidateBreakPoint(
+        status=BreakPointStatus.IDENTIFIED,
+        summary=(
+            f"Event #{node.sequence_num} ({node.action}) is a tool call that reported an "
+            f"error and was never recovered ({reason}), although the run carried on."
+        ),
+        node_id=node.id,
+        sequence_num=node.sequence_num,
+        action=node.action,
+        confidence=0.8,
+        evidence_refs=_dedupe_refs(
+            [f"node:{node.id}"],
+            explanation.evidence_refs,
+            list(node.evidence_refs),
+            _risk_evidence_refs(node),
+        ),
+        risk_flags=risk_flags,
+        uncertainty_reasons=uncertainty_reasons,
+        strategy=UNRECOVERED_TOOL_ERROR_STRATEGY,
+    )
+    return InflectionSelection(
+        node=node,
+        explanation=explanation,
+        strategy=UNRECOVERED_TOOL_ERROR_STRATEGY,
         candidate_break_point=candidate_break_point,
         score=None,
         runner_up_score=None,
