@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from driftshield.core.analysis.tool_outcomes import annotate_tool_recoveries
 from driftshield.core.models import CanonicalEvent, EventType
 
 
@@ -77,6 +78,10 @@ def normalize_events(
         event.tool_activity = _tool_activity(event)
         event.summary = _summary(event)
         event.ambiguities = _ambiguities(event)
+
+    # Recovery is a cross-event fact, so it is written once every tool_activity
+    # exists: a failed call names the later call that recovered it, or why none did.
+    annotate_tool_recoveries(events)
 
     return events
 

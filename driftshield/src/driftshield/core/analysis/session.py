@@ -13,6 +13,7 @@ from driftshield.core.analysis.heuristics import (
 from driftshield.core.analysis.inflection import (
     select_final_tool_error_break_point,
     select_inflection_node,
+    select_unrecovered_tool_error_break_point,
 )
 from driftshield.core.analysis.risk import RiskAnalyzer
 from driftshield.core.graph.builder import build_graph
@@ -105,9 +106,12 @@ def analyze_session(
     if graph.nodes:
         last_node = graph.nodes[-1]
         # A run that ends on an unrecovered tool error broke at that call. That
-        # evidence outranks the weighted search over flagged steps.
-        selection = select_final_tool_error_break_point(graph) or select_inflection_node(
-            graph, last_node.id
+        # evidence outranks the weighted search over flagged steps, and so does
+        # a failed call the run carried on past without recovering it.
+        selection = (
+            select_final_tool_error_break_point(graph)
+            or select_unrecovered_tool_error_break_point(graph)
+            or select_inflection_node(graph, last_node.id)
         )
         candidate_break_point = selection.candidate_break_point
         inflection_node = selection.node

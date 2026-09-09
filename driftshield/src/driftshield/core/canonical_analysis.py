@@ -9,7 +9,7 @@ from driftshield.core.analysis.session import AnalysisResult
 from driftshield.core.analysis.tool_outcomes import (
     UNRECOVERED_TOOL_ERROR_AT_SESSION_END,
     final_tool_error,
-    is_failed_tool_event,
+    first_unrecovered_tool_error,
     unrecovered_tool_failure,
 )
 from driftshield.core.models import (
@@ -410,9 +410,11 @@ def _refine_delta_records(
 
     if "tool_execution_failure" in delta_types and DeltaType.INCOMPLETE_EXECUTION.value not in seen:
         seen.add(DeltaType.INCOMPLETE_EXECUTION.value)
-        failed_tool_ref = next(
-            (str(event.id) for event in result.events if is_failed_tool_event(event) and str(event.id) in known_ids),
-            None,
+        unrecovered = first_unrecovered_tool_error(result.events)
+        failed_tool_ref = (
+            str(unrecovered.id)
+            if unrecovered is not None and str(unrecovered.id) in known_ids
+            else None
         )
         records.append(
             {

@@ -287,9 +287,14 @@ happened. Two kinds of evidence count:
   reason `unrecovered_tool_error_at_session_end` and the break point is that final
   failed call.
 
-A tool error the agent recovered from, meaning a later tool call completed, is not a
-failure on its own. A run with neither kind of evidence is `unclassified`, not a
-success claim.
+A tool error the agent recovered from is not a failure on its own, but recovery needs
+evidence tied to the failure: a later completed call of the same tool on the same
+command or target (the failed test rerun and passing, the file that failed to write
+written). A later call that merely succeeded at something else clears nothing. The
+failed event records the recovering call as `recovered_by`, or a `recovery_reason`
+code saying why none counted. A failure the run carried on past without recovering
+also qualifies, with that failed call as the break point. A run with neither kind of
+evidence is `unclassified`, not a success claim.
 
 ## Built-in Risk Detectors
 
