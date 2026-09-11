@@ -21,9 +21,10 @@ notes for each tag are taken from the matching section of this file.
 - The Codex rollout parser fills the structured tool inputs (command, file
   paths) from JSON string arguments, so the recovery rule and tool class
   policies apply to Codex sessions. (#218)
-
-Known gap: Codex shell failures reported only as a `Process exited with code
-N` line are not yet marked failed (#220).
+- A Codex shell call whose output reports only a `Process exited with code N`
+  line, the header Codex writes above `Output:`, is now a failed tool call when
+  N is non zero, with the same `exit_code` and `failure_context` fields. The
+  `exit=N` and JSON shapes keep precedence. (#220)
 
 Verdicts change for affected runs, so re-analyse anything you compare across
 versions. Expect many more candidate break points on real sessions: the
