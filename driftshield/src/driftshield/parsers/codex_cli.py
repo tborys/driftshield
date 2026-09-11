@@ -35,12 +35,17 @@ _HANDOFF_TOOLS = frozenset({"spawn_agent", "send_message"})
 _CONTEXT_BLOCK_PATTERN = re.compile(r"^\s*<([a-z_]+)>.*</\1>\s*$", re.DOTALL)
 
 # A rollout carries a command's exit code inside the output text, not as a
-# structured flag. Two shapes: a plain ``exit=N`` line after a ``---K---``
-# chunk marker, or a JSON object carrying ``"exit_code": N``. Only one of
-# these clearly parsed integers counts as an exit code; words such as
-# "error" in the text never do.
+# structured flag. Three shapes: a plain ``exit=N`` line after a ``---K---``
+# chunk marker, a JSON object carrying ``"exit_code": N``, or a
+# ``Process exited with code N`` line. Only one of these clearly parsed
+# integers counts as an exit code; words such as "error" in the text never do.
 _EXIT_LINE_PATTERN = re.compile(r"^exit=(-?\d+)\s*$", re.MULTILINE)
 _EXIT_CODE_JSON_PATTERN = re.compile(r'"exit_code"\s*:\s*(-?\d+)\b')
+# ``exec_command`` and ``write_stdin`` outputs open with a header above
+# ``Output:``: ``Chunk ID``, ``Wall time``, then ``Process exited with code N``
+# once the process has ended (``Process running with session ID N`` while it
+# still runs, which carries no exit code). Only the whole line counts.
+_PROCESS_EXITED_PATTERN = re.compile(r"^Process exited with code (-?\d+)\s*$", re.MULTILINE)
 
 # How much of the output to keep next to a non zero exit code.
 _OUTPUT_TAIL_CHARS = 400
@@ -74,12 +79,22 @@ _CODE_MODE_EXEC_COMMAND = re.compile(
 def parse_exit_code(text: str) -> int | None:
     """The exit code a Codex tool output reports, or ``None`` when it has none.
 
-    The last ``exit=N`` line wins, then the last ``"exit_code": N`` field.
+    The last ``exit=N`` line wins, then the last ``"exit_code": N`` field,
+    then the first ``Process exited with code N`` line.
+
+    The ``Process exited`` line is read only when neither older shape
+    appears, so it never changes an exit code those shapes already give. The
+    first such line wins, not the last: Codex writes it in the header above
+    ``Output:``, so a later matching line is text the command printed (a log
+    it showed, say), not the exit code of this call.
     """
     for pattern in (_EXIT_LINE_PATTERN, _EXIT_CODE_JSON_PATTERN):
         matches = pattern.findall(text)
         if matches:
             return int(matches[-1])
+    process_exited = _PROCESS_EXITED_PATTERN.search(text)
+    if process_exited is not None:
+        return int(process_exited.group(1))
     return None
 
 
