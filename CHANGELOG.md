@@ -3,6 +3,33 @@
 All notable changes to `driftshield` are recorded here. The GitHub release
 notes for each tag are taken from the matching section of this file.
 
+## 0.2.2 - 2026-09-11
+
+### Codex sessions can fail, and recovery needs matching evidence
+
+- A Codex tool call whose output reports a non zero exit code (an `exit=N`
+  line or a JSON `"exit_code": N`), or a flat record carrying `is_error` or a
+  non empty `error`, is now a failed tool call, with the exit code and the tail
+  of the output in `failure_context`. Before this release a Codex run could not
+  fail. (#208)
+- A failed tool call counts as recovered only when a later completed call of
+  the same tool ran the same command or touched the same target. The
+  recovering event is recorded on the failed one as `recovered_by`. An
+  unrelated later success, such as reading a file after a failed test, no
+  longer clears the failure. A failure that stays unrecovered mid run is a
+  candidate break point with the strategy `unrecovered_tool_error`. (#209)
+- The Codex rollout parser fills the structured tool inputs (command, file
+  paths) from JSON string arguments, so the recovery rule and tool class
+  policies apply to Codex sessions. (#218)
+
+Known gap: Codex shell failures reported only as a `Process exited with code
+N` line are not yet marked failed (#220).
+
+Verdicts change for affected runs, so re-analyse anything you compare across
+versions. Expect many more candidate break points on real sessions: the
+stricter recovery rule reports failures the agent never retried against the
+same target.
+
 ## 0.2.1 - 2026-09-05
 
 ### A tool error never recovered before the session ends is a failure
