@@ -45,6 +45,31 @@ _EXIT_CODE_JSON_PATTERN = re.compile(r'"exit_code"\s*:\s*(-?\d+)\b')
 # How much of the output to keep next to a non zero exit code.
 _OUTPUT_TAIL_CHARS = 400
 
+# Structured input keys. The recovery matcher and the tool class checks read
+# ``command`` / ``cmd``, a file path key and ``pattern`` / ``query`` / ``url``,
+# the keys the transcript parsers for other agents already produce. A rollout
+# states the same facts in other shapes, so the helpers below fill those keys
+# from what a call clearly says and abstain on anything else.
+_PATCH_BEGIN = "*** Begin Patch"
+# ``*** Add File: p``, ``*** Update File: p``, ``*** Delete File: p`` and the
+# ``*** Move to: p`` line of a rename, in patch order.
+_PATCH_PATH_PATTERN = re.compile(
+    r"^\*\*\* (?:(?:Add|Update|Delete) File|Move to): (.+?)\s*$", re.MULTILINE
+)
+# A code mode ``exec`` input is a script that calls tools as ``tools.name(...)``
+# or ``tools["name"](...)``.
+_CODE_MODE_TOOL_CALL = re.compile(
+    r"\btools\s*(?:\.\s*([A-Za-z_$][\w$]*)|\[\s*([\"'])([^\"'\n]+)\2\s*\])\s*\("
+)
+# ``tools.exec_command({cmd: <literal>, ...})`` with ``cmd`` as the first
+# property and a plain literal value: a double quoted string, a single quoted
+# string without escapes, or a template literal without escapes or
+# ``${...}`` interpolation.
+_CODE_MODE_EXEC_COMMAND = re.compile(
+    r"\btools\s*\.\s*exec_command\s*\(\s*\{\s*(?:cmd|\"cmd\"|'cmd')\s*:\s*"
+    r"(\"(?:[^\"\\\n]|\\.)*\"|'[^'\\\n]*'|`(?:[^`\\$]|\$(?!\{))*`)"
+)
+
 
 def parse_exit_code(text: str) -> int | None:
     """The exit code a Codex tool output reports, or ``None`` when it has none.
@@ -56,6 +81,71 @@ def parse_exit_code(text: str) -> int | None:
         if matches:
             return int(matches[-1])
     return None
+
+
+def patch_file_paths(patch: str) -> list[str]:
+    """The files an ``apply_patch`` body touches, in patch order.
+
+    Empty when the text is not a patch or any header path is not plain text
+    (a ``${...}`` placeholder from a script template, say).
+    """
+    if _PATCH_BEGIN not in patch:
+        return []
+    paths: list[str] = []
+    for path in _PATCH_PATH_PATTERN.findall(patch):
+        if not path.strip() or "${" in path:
+            return []
+        if path not in paths:
+            paths.append(path)
+    return paths
+
+
+def _patch_inputs(patch: str) -> dict[str, Any]:
+    paths = patch_file_paths(patch)
+    if not paths:
+        return {}
+    filled: dict[str, Any] = {"file_paths": paths}
+    # One target only when the patch touches exactly one file. A multi file
+    # patch has no single target to compare, so recovery abstains on it.
+    if len(paths) == 1:
+        filled["file_path"] = paths[0]
+    return filled
+
+
+def _code_mode_exec_command(script: str) -> str | None:
+    match = _CODE_MODE_EXEC_COMMAND.search(script)
+    if match is None:
+        return None
+    literal = match.group(1)
+    if literal.startswith('"'):
+        try:
+            value = json.loads(literal)
+        except json.JSONDecodeError:
+            # A JavaScript escape JSON does not know (``\'``, ``\x41``).
+            return None
+    else:
+        value = literal[1:-1]
+    return value if isinstance(value, str) and value.strip() else None
+
+
+def code_mode_inputs(script: str) -> dict[str, Any]:
+    """Structured inputs for a code mode ``exec`` script, or ``{}``.
+
+    Only a script that makes exactly one tool call is read: an
+    ``exec_command`` call with a plain literal ``cmd`` gives ``command``, an
+    ``apply_patch`` call gives the files its patch touches. Any other script,
+    including one that runs several tools, stays without structured inputs.
+    """
+    calls = list(_CODE_MODE_TOOL_CALL.finditer(script))
+    if len(calls) != 1:
+        return {}
+    name = calls[0].group(1) or calls[0].group(3)
+    if name == "exec_command":
+        command = _code_mode_exec_command(script)
+        return {"command": command} if command is not None else {}
+    if name == "apply_patch":
+        return _patch_inputs(script)
+    return {}
 
 
 def is_rollout_record(entry: Any) -> bool:
@@ -248,7 +338,7 @@ class CodexCliParser(LocalChatTranscriptParser):
                 agent_id=agent_id,
                 action=action,
                 parent_event_id=parent_id,
-                inputs=self._tool_inputs(payload),
+                inputs=self._structured_inputs(action, category, self._tool_inputs(payload)),
                 outputs={},
                 metadata={
                     "source_message_index": index,
@@ -394,6 +484,59 @@ class CodexCliParser(LocalChatTranscriptParser):
         if isinstance(raw_input, str):
             return {"input": raw_input}
         return {}
+
+    def _structured_inputs(
+        self, action: str, category: str, inputs: dict[str, Any]
+    ) -> dict[str, Any]:
+        """``inputs`` plus the structured keys a call's own inputs clearly state.
+
+        Adds ``command`` for a shell call (from ``cmd``, or from a code mode
+        ``exec`` script), ``file_path`` / ``file_paths`` for ``apply_patch``
+        and the file tools, and ``query`` for a ``run`` web search with one
+        query. A key the call already carries is never overwritten.
+        ``write_stdin`` sends keystrokes to a running session, not a command,
+        so it gets none.
+        """
+        name = action.lower()
+        filled: dict[str, Any] = {}
+        raw_text = inputs.get("input") if len(inputs) == 1 else None
+
+        if name == "apply_patch":
+            patch = next(
+                (inputs[key] for key in ("input", "patch") if isinstance(inputs.get(key), str)),
+                "",
+            )
+            filled = _patch_inputs(patch)
+        elif name == "write_stdin":
+            filled = {}
+        elif category == "shell":
+            if isinstance(inputs.get("cmd"), str):
+                filled["command"] = inputs["cmd"]
+            elif isinstance(raw_text, str):
+                filled = code_mode_inputs(raw_text)
+            queries = inputs.get("search_query")
+            if (
+                name == "run"
+                and isinstance(queries, list)
+                and len(queries) == 1
+                and isinstance(queries[0], dict)
+                and isinstance(queries[0].get("q"), str)
+            ):
+                filled["query"] = queries[0]["q"]
+        elif category == "file_io" and isinstance(inputs.get("path"), str):
+            filled["file_path"] = inputs["path"]
+
+        return {**inputs, **{key: value for key, value in filled.items() if key not in inputs}}
+
+    def _coerce_dict(self, value: object) -> dict:
+        """Flat shape tool arguments. A JSON object string is decoded, not dropped."""
+        if isinstance(value, str):
+            try:
+                decoded = json.loads(value)
+            except json.JSONDecodeError:
+                return {}
+            return decoded if isinstance(decoded, dict) else {}
+        return super()._coerce_dict(value)
 
     def _tool_result_outputs(self, result: str) -> dict[str, Any]:
         """Outputs for a tool result, flagging a non zero exit code as an error.
