@@ -9,9 +9,7 @@
 
 # Local agent/tooling state
 .serena/
-.claude/agents/
 .claude/commands/sessions.md
-.claude/settings.json
 .claude/settings.local.json
 .github/scripts/__pycache__/
 __pycache__/
