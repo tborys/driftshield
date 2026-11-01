@@ -1,0 +1,189 @@
+#!/usr/bin/env python3
+"""Run the repo's verification profile and record what happened.
+
+  ds-check --list                 the checks and when they are required
+  ds-check <id> [extra args...]   one check; extra args go to its command
+  ds-check --required <size>      every check the size requires on this diff
+
+In a delivery run each check appends to the run ledger at once, in order:
+one `check.completed` with totals, plus a `test.result` for every test that
+cites a checklist item (test_ac1_..., test_mnc2_...) or failed. A check that
+does not apply to this diff is a `check.skipped`. The JUnit report wins over
+the exit code: failures in it, or no tests collected, mean failed. Check
+commands run without the DRIFTSHIELD_* and DS_* variables. Exit code 0 only
+when everything ran green.
+"""
+
+from __future__ import annotations
+
+import fnmatch
+import os
+import shlex
+import subprocess
+import sys
+import time
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+sys.dont_write_bytecode = True  # keep the kit folder clean
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
+import dslib  # noqa: E402
+
+
+def changed_paths(base: str) -> list[str]:
+    out = dslib.git("diff", "--name-only", f"{base}...HEAD") if base else ""
+    dirty = dslib.git("status", "--porcelain")
+    return sorted({*out.splitlines(), *(l[3:] for l in dirty.splitlines())} - {""})
+
+
+def applies(check: dict, paths: list[str]) -> bool:
+    patterns = check.get("when_paths")
+    return not patterns or any(fnmatch.fnmatch(p, pat) for p in paths for pat in patterns)
+
+
+def test_id(case: ET.Element) -> str:
+    """`file::Class::name` from pytest's attributes, relative to the check's cwd."""
+    name, cls, file = case.get("name", ""), case.get("classname", ""), case.get("file")
+    parts = cls.split(".") if cls else []
+    klass = parts.pop() if parts and parts[-1][:1].isupper() else None
+    path = file or ("/".join(parts) + ".py" if parts else "")
+    return "::".join(x for x in (path, klass, name) if x)
+
+
+def parse_junit(path: Path) -> tuple[dict | None, list[dict]]:
+    """Totals and the rows worth keeping. (None, []) when the report is unreadable."""
+    totals = {"collected": 0, "passed": 0, "failed": 0, "errors": 0, "skipped": 0}
+    rows: list[dict] = []
+    try:
+        cases = list(ET.parse(path).getroot().iter("testcase"))
+    except (ET.ParseError, OSError):
+        return None, rows
+    for case in cases:
+        tags = {child.tag for child in case}
+        outcome = "error" if "error" in tags else "failed" if "failure" in tags else "skipped" if "skipped" in tags else "passed"
+        totals["collected"] += 1
+        totals[{"error": "errors", "failed": "failed", "skipped": "skipped", "passed": "passed"}[outcome]] += 1
+        refs = dslib.items_in(case.get("name", ""))
+        if refs or outcome in ("failed", "error"):
+            rows.append({"test_id": test_id(case), "outcome": outcome, "ac_refs": refs})
+    return totals, rows
+
+
+def check_env(junit: Path) -> dict:
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("DRIFTSHIELD_", "DS_"))}
+    env.update(DS_ROOT=str(dslib.root()), DS_JUNIT=str(junit), DS_VENV=str(dslib.work() / "venv"),
+               PLAYWRIGHT_JUNIT_OUTPUT_NAME=str(junit))
+    return env
+
+
+def env_failure(output: str, signatures: list[str]) -> bool:
+    return any(sig.lower() in output.lower() for sig in signatures)
+
+
+def run_check(check: dict, extra: list[str], prof: dict) -> dict:
+    out_dir = dslib.work() / "checks"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    junit = out_dir / f"junit-{check['id']}-{int(time.time() * 1000)}.xml"
+    env, cwd = check_env(junit), dslib.root() / check.get("cwd", ".")
+    signatures = prof.get("environment_signatures", [])
+    marker = dslib.work() / f"prepared-{check['id']}"
+    if check.get("prepare") and not marker.exists():
+        prep = subprocess.run(check["prepare"], shell=True, cwd=cwd, env=env, capture_output=True, text=True)
+        if prep.returncode != 0:
+            output = prep.stdout + prep.stderr
+            return {"check_id": check["id"], "exit_code": prep.returncode, "status": "error", "phase": "prepare",
+                    "cause": "environment" if env_failure(output, signatures) else "unknown", "tail": output[-1500:]}
+        marker.touch()
+    command = check["run"] + (" " + shlex.join(extra) if extra else "")
+    started = time.time()
+    proc = subprocess.run(command, shell=True, cwd=cwd, env=env, capture_output=True, text=True)
+    output = proc.stdout + proc.stderr
+    totals, rows = parse_junit(junit) if check.get("junit") else ({}, [])
+    status, note, cause = ("passed" if proc.returncode == 0 else "failed"), None, None
+    if check.get("junit") and totals is None:
+        status, note = "error", "report_unreadable"
+    elif check.get("junit") and (totals["failed"] or totals["errors"]):
+        status = "failed"
+    elif check.get("junit") and not totals["collected"]:
+        status, note = "failed", "no tests collected"
+    if status == "failed" and not rows and env_failure(output, signatures):
+        status, cause = "error", "environment"
+    return {"check_id": check["id"], "exit_code": proc.returncode, "status": status, "cause": cause, "note": note,
+            "duration_s": round(time.time() - started, 1), "totals": totals or None, "tests": rows,
+            "args": extra or None, "tail": output[-1500:]}
+
+
+def record(result: dict) -> None:
+    """Append this check's events to the run ledger now, so a red run is recorded in order."""
+    if not dslib.active() or not (dslib.work() / "run.json").exists():
+        return
+    head = dslib.git("rev-parse", "HEAD")
+    dirty = bool(dslib.git("status", "--porcelain", "--untracked-files=no"))
+    at = dslib.now()
+    with dslib.lock():
+        actor = dslib.current_actor()
+        common = {"actor": actor, "head_sha": head or None, "at": at}
+        if result["status"] == "skipped":
+            dslib.append_event("check.skipped", status="skipped", **common,
+                               data={"check_id": result["check_id"], "reason": result.get("reason")})
+            return
+        for row in result.get("tests", []):
+            dslib.append_event("test.result", status=row["outcome"], ac_refs=row["ac_refs"] or None, **common,
+                               evidence_refs=[{"kind": "test", "check_id": result["check_id"], "test_id": row["test_id"]}],
+                               data={"worktree_dirty": dirty})
+        dslib.append_event("check.completed", status=result["status"], **common, data={
+            "check_id": result["check_id"], "exit_code": result.get("exit_code"), "totals": result.get("totals"),
+            "cause": result.get("cause"), "note": result.get("note"), "args": result.get("args"),
+            "worktree_dirty": dirty, "duration_s": result.get("duration_s")})
+
+
+def summary(result: dict) -> str:
+    t = result.get("totals") or {}
+    counts = f", {t.get('passed', 0)} of {t.get('collected', 0)} passed" if t else ""
+    line = f"[ds-check] {result['check_id']}: {result['status']}{counts}" + (f" ({result['note']})" if result.get("note") else "")
+    failing = [r["test_id"] for r in result.get("tests", []) if r["outcome"] in ("failed", "error")]
+    if failing:
+        line += "\n  failing: " + "\n  failing: ".join(failing[:20])
+    if result["status"] != "passed" and result.get("tail"):
+        line += "\n--- last output ---\n" + result["tail"]
+    return line
+
+
+def main(argv: list[str]) -> int:
+    prof = dslib.profile()
+    checks = {c["id"]: c for c in prof.get("checks", [])}
+    if not argv or argv[0] in ("-h", "--help"):
+        print(__doc__)
+        return 0
+    if argv[0] == "--list":
+        for c in prof.get("checks", []):
+            when = f" when {', '.join(c['when_paths'])} change" if c.get("when_paths") else ""
+            print(f"{c['id']}: required for {', '.join(c.get('required', [])) or 'none'}{when}")
+        return 0
+    if argv[0] == "--required":
+        size = argv[1] if len(argv) > 1 else "small"
+        base = dslib.run_info().get("base_sha") or dslib.git("merge-base", "HEAD", f"origin/{prof.get('default_branch', 'main')}")
+        paths, worst = changed_paths(base), 0
+        for c in prof["checks"]:
+            if size not in c.get("required", []):
+                continue
+            if not applies(c, paths):
+                result = {"check_id": c["id"], "status": "skipped", "reason": "not_applicable", "exit_code": None}
+                print(f"[ds-check] {c['id']}: skipped, no matching paths changed")
+            else:
+                result = run_check(c, [], prof)
+                worst = worst or (0 if result["status"] == "passed" else 1)
+                print(summary(result))
+            record(result)
+        return worst
+    if argv[0] not in checks:
+        print(f"unknown check {argv[0]}; try ds-check --list", file=sys.stderr)
+        return 2
+    result = run_check(checks[argv[0]], argv[1:], prof)
+    record(result)
+    print(summary(result))
+    return 0 if result["status"] == "passed" else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

@@ -1,0 +1,50 @@
+#!/usr/bin/env python3
+"""git pre-push hook (cloud routine only): push only the run's branch,
+auto/<owner>-<repo>/issue-<claimed issue>-r<k>, never forced, never deleted,
+never a tag. Runs for every push, whoever starts it."""
+
+import subprocess
+import sys
+from pathlib import Path
+
+sys.dont_write_bytecode = True  # keep the kit folder clean
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
+import dslib  # noqa: E402
+
+ZERO = "0" * 40
+
+
+def refuse(line: str, run: dict) -> str | None:
+    parts = line.split()
+    if len(parts) != 4:
+        return None
+    _local_ref, local_sha, remote_ref, remote_sha = parts
+    if not remote_ref.startswith("refs/heads/"):
+        return f"only branches may be pushed, not {remote_ref}"
+    branch = remote_ref.removeprefix("refs/heads/")
+    if not dslib.branch_ok(branch, run.get("repository"), run.get("issue")):
+        slug = dslib.branch_slug(run.get("repository") or "")
+        return f"push only this run's branch, auto/{slug}/issue-{run.get('issue') or '<claimed issue>'}-r<k>, not {branch}"
+    if local_sha == ZERO:
+        return f"deleting {branch} is not allowed"
+    if remote_sha != ZERO:
+        known = subprocess.run(["git", "cat-file", "-e", remote_sha], capture_output=True).returncode == 0
+        ancestor = known and subprocess.run(["git", "merge-base", "--is-ancestor", remote_sha, local_sha],
+                                            capture_output=True).returncode == 0
+        if not ancestor:
+            return f"{branch} would lose commits: force pushes are not allowed, add a new commit instead"
+    return None
+
+
+def main() -> int:
+    if not dslib.active():
+        return 0
+    run = dslib.run_info()
+    reasons = [r for r in (refuse(l, run) for l in sys.stdin.read().splitlines()) if r]
+    for r in reasons:
+        print(f"pre-push: {r}", file=sys.stderr)
+    return 1 if reasons else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
