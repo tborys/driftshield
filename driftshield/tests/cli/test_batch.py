@@ -665,16 +665,42 @@ def test_batch_zero_events_from_both_path_and_content_detection_warns(tmp_path):
     assert report.has_failures is False
 
 
-def test_batch_isolates_a_file_that_raises_during_parsing(tmp_path):
+def test_batch_keeps_a_session_with_odd_records(tmp_path):
+    """Non-object records inside an otherwise valid session are skipped, so
+    the file is analysed rather than failed."""
+    _write_claude_code_jsonl(tmp_path / "odd.jsonl")
+    with (tmp_path / "odd.jsonl").open("a") as fh:
+        fh.write("[1, 2]\n\"stray\"\n42\n")
+        fh.write('{"type": "assistant", "message": null}\n')
+        fh.write('{"type": "assistant", "message": {"content": 5}}\n')
+
+    report = run_batch(tmp_path)
+
+    assert report.files[0].outcome == "analysed-only"
+    assert report.has_failures is False
+
+
+def _force_parser_crash(monkeypatch):
+    from driftshield.parsers.claude_code import ClaudeCodeParser
+
+    original = ClaudeCodeParser.parse
+
+    def _boom(self, content):
+        if "crash-marker" in content:
+            raise TypeError("forced parser crash")
+        return original(self, content)
+
+    monkeypatch.setattr(ClaudeCodeParser, "parse", _boom)
+
+
+def test_batch_isolates_a_file_that_raises_during_parsing(tmp_path, monkeypatch):
     """A file that auto-detects to a parser but blows up during parse/analyse
     must be recorded 'failed' with the exception message, and must not stop
     the rest of the batch from being processed."""
     _write_claude_code_jsonl(tmp_path / "good.jsonl")
-    # A bare JSON scalar is valid JSON but not a transcript record: the
-    # Claude Code parser's `"sessionId" in entry` check raises TypeError on
-    # a non-dict entry, so this is a genuine per-file parse failure rather
-    # than a "no parser detected" skip.
-    (tmp_path / "corrupt.jsonl").write_text("123\n")
+    # Force the parser to crash so this does not depend on any parser bug.
+    _write_claude_code_jsonl(tmp_path / "corrupt.jsonl", user_text="crash-marker")
+    _force_parser_crash(monkeypatch)
 
     report = run_batch(tmp_path)
 
@@ -685,8 +711,9 @@ def test_batch_isolates_a_file_that_raises_during_parsing(tmp_path):
     assert report.has_failures is True
 
 
-def test_batch_cli_exit_code_nonzero_on_failure(tmp_path):
-    (tmp_path / "corrupt.jsonl").write_text("123\n")
+def test_batch_cli_exit_code_nonzero_on_failure(tmp_path, monkeypatch):
+    _write_claude_code_jsonl(tmp_path / "corrupt.jsonl", user_text="crash-marker")
+    _force_parser_crash(monkeypatch)
 
     result = runner.invoke(app, ["batch", str(tmp_path)])
 
