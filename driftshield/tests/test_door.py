@@ -569,6 +569,25 @@ def test_submit_when_remote_is_disabled_raises_before_any_network(home, run, mon
         submit(run)
 
 
+def test_ac1_workspace_submit_uses_built_in_address_without_local_config(
+    tmp_path, run, monkeypatch
+):
+    from driftshield.telemetry import DEFAULT_COMMUNITY_INTAKE_URL
+
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    captured = {}
+
+    def fake_upload(*, config, payload, workflow_reference, file_name, provenance, backfill=False):
+        captured.update(url=config.intake_url, key=config.api_key)
+        return _Result("sub_ws")
+
+    monkeypatch.setattr("driftshield.public.submit_teams_via_presigned_upload", fake_upload)
+
+    submit(run, "teams", "ws-key")
+
+    assert captured == {"url": DEFAULT_COMMUNITY_INTAKE_URL, "key": "ws-key"}
+
+
 def test_cli_submit_include_analysis_rides_the_door(home, monkeypatch):
     captured = {}
 

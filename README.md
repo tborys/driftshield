@@ -176,7 +176,7 @@ driftshield submit --path <session.json> --include-analysis
 ```
 
 The hosted intel layer persists the investigation and makes it available on the investigation surface.
-Teams customers set `DRIFTSHIELD_API_KEY` and pass `--tier teams`; no other configuration is needed.
+Every tier uses the same built-in DriftShield address; the API key decides the workspace. Teams and Enterprise customers need only `DRIFTSHIELD_API_KEY` and `--tier teams`; no other configuration is needed.
 
 ### 5. Run the full local stack
 

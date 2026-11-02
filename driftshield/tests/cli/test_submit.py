@@ -138,3 +138,18 @@ def test_submit_teams_tier_uses_authenticated_presigned_upload(tmp_path, monkeyp
     assert result.exit_code == 0, result.output
     assert captured["api_key"] == "test-key"
     assert "sub_teams" in result.output
+
+
+def test_ac3_teams_without_api_key_fails_naming_the_key_and_makes_no_call(tmp_path, monkeypatch):
+    def boom(**_):
+        raise AssertionError("must not touch the network")
+
+    monkeypatch.setattr("driftshield.public.submit_teams_via_presigned_upload", boom)
+    monkeypatch.setattr("driftshield.public.post_oss_submission", boom)
+    monkeypatch.delenv("DRIFTSHIELD_API_KEY", raising=False)
+    monkeypatch.delenv("API_KEY", raising=False)
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    session = _write_session(tmp_path)
+    result = runner.invoke(app, ["submit", "--path", str(session), "--tier", "teams"])
+    assert result.exit_code != 0
+    assert "DRIFTSHIELD_API_KEY" in result.output

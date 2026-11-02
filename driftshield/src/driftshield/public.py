@@ -547,20 +547,13 @@ def submit(
             raise SubmitError(f"environment must be one of: {', '.join(sorted(DECLARED_ENVIRONMENTS))}.")
 
     config = TelemetryService().load_config()
-    if resolved == "community":
-        intake_url = effective_oss_intake_url(config)
-        if intake_url is None:
-            raise SubmitError(
-                "Remote submission is disabled (`telemetry remote-disable`). "
-                "Run `driftshield telemetry remote-enable --intake-url URL` to re-enable."
-            )
-    else:
-        intake_url = config.remote_intake_url
-        if intake_url is None:
-            raise SubmitError(
-                "Remote submission is not configured. Run `driftshield telemetry "
-                "remote-enable --intake-url URL` first."
-            )
+    # Every tier uses the same address; the API key decides the workspace.
+    intake_url = effective_oss_intake_url(config)
+    if intake_url is None:
+        raise SubmitError(
+            "Remote submission is disabled (`telemetry remote-disable`). "
+            "Run `driftshield telemetry remote-enable --intake-url URL` to re-enable."
+        )
 
     if workflow_reference is None:
         declared = run.transcript.get("workflow_reference")
