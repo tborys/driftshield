@@ -550,11 +550,100 @@ def unwrap(words: list[str]) -> list[list[str]]:
     return [words] if words else []
 
 
+def scan_shell(command: str, heredoc_body: bool = False) -> tuple[list[str], str]:
+    """The substitutions the shell would run in a command, and the command text. A backtick or $( counts unless it sits in single quotes,
+    behind a backslash, or in a quoted heredoc body (<<'EOF'). An unquoted heredoc
+    expands, so it stays strict. Best effort: it may over report, never under report."""
+    subs, kept, pending = [], [], []
+    single = double = False
+    i, n = 0, len(command)
+    while i < n:
+        c = command[i]
+        if single:
+            single = c != "'"
+        elif c == "\\":
+            kept.append(command[i:i + 2])
+            i += 2
+            continue
+        elif c == "'" and not double and not heredoc_body:
+            single = True
+        elif c == '"' and not heredoc_body:
+            double = not double
+        elif c == "`":
+            j = i + 1
+            while j < n and command[j] != "`":
+                j += 2 if command[j] == "\\" else 1
+            subs.append(command[i + 1:j])
+            kept.append(command[i:j + 1])
+            i = j + 1
+            continue
+        elif c == "$" and command.startswith("$(", i):
+            depth, j = 1, i + 2
+            while j < n and depth:
+                depth += (command[j] == "(") - (command[j] == ")")
+                j += 1
+            subs.append(command[i + 2:j - 1] if depth == 0 else command[i + 2:])
+            kept.append(command[i:j])
+            i = j
+            continue
+        elif c == "<" and command.startswith("<<", i) and not command.startswith("<<<", i) and not double and not heredoc_body:
+            j = i + 2
+            strip = command[j:j + 1] == "-"
+            j += strip
+            while j < n and command[j] in " \t":
+                j += 1
+            word, quoted, q = "", False, ""
+            while j < n and (q or command[j] not in " \t\n;&|()<>"):
+                ch = command[j]
+                if q:
+                    if ch == q:
+                        q = ""
+                    else:
+                        word += ch
+                elif ch in "'\"":
+                    q, quoted = ch, True
+                elif ch == "\\":
+                    quoted = True
+                else:
+                    word += ch
+                j += 1
+            pending.append((word, quoted, strip))
+            kept.append(command[i:j])
+            i = j
+            continue
+        elif c == "\n" and pending and not heredoc_body:
+            kept.append(c)
+            i += 1
+            for word, quoted, strip in pending:
+                start = i
+                while i < n:
+                    end = command.find("\n", i)
+                    end = n if end < 0 else end
+                    line = command[i:end]
+                    i = min(end + 1, n)
+                    if (line.lstrip("\t") if strip else line) == word:
+                        break
+                body = command[start:i]
+                if not quoted:
+                    subs += scan_shell(body, heredoc_body=True)[0]
+                kept.append(body)  # a body may be fed to a shell, so it is read as commands either way
+            pending = []
+            continue
+        kept.append(c)
+        i += 1
+    return subs, "".join(kept)
+
+
+def has_substitution(command: str) -> bool:
+    return bool(scan_shell(command or "")[0])
+
+
 def parse_command(command: str) -> tuple[list[list[str]], list[str]]:
     """Simple commands (argv words, wrappers removed) and output redirect targets.
     Quotes are respected; newlines count as `;`. Best effort: a heredoc body is
-    read as commands too, so it can only make the guard stricter."""
-    text = (command or "").replace("\n", " ; ")
+    read as commands too, quoted or not, so it can only make the guard stricter."""
+    subs, plain = scan_shell(command or "")
+    text = plain.replace("\n", " ; ")
     try:
         lex = shlex.shlex(text, posix=True, punctuation_chars=True)
         lex.whitespace_split = True
@@ -585,8 +674,8 @@ def parse_command(command: str) -> tuple[list[list[str]], list[str]]:
     out = []
     for s in segs:
         out.extend(unwrap(s))
-    for inner in re.findall(r"`([^`]*)`|\$\(([^()]*)\)", command or ""):
-        out.extend(parse_command(inner[0] or inner[1])[0])  # command substitutions are commands too
+    for inner in subs:
+        out.extend(parse_command(inner)[0])  # command substitutions are commands too
     return out, targets
 
 

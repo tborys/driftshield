@@ -257,7 +257,7 @@ def touches_protected_unsafely(segs: list[list[str]]) -> bool:
 
 def check_bash(command: str, agent: str) -> str | None:
     segs, targets = dslib.parse_command(command)
-    substitution = "$(" in command or "`" in command
+    substitution = dslib.has_substitution(command)
     if agent == "checker":
         if targets or substitution or not all(checker_may_run(w) for w in segs):
             return ("The checker is read only: cat head tail wc ls grep nl stat file, git diff log show status "
