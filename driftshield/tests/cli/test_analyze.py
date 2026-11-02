@@ -4,6 +4,7 @@ import json
 import re
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from driftshield.cli.main import app
@@ -98,6 +99,63 @@ class TestAnalyzeCommand:
         assert payload["total_events"] == 3
         assert "flagged_events" in payload
         assert "risks" in payload
+
+
+class TestAnalyzeParserWarnings:
+    def _session_with_bad_line(self, tmp_path: Path) -> Path:
+        fixture = FIXTURES_DIR / "sample_claude_code_session.jsonl"
+        session = tmp_path / "warn-session.jsonl"
+        session.write_text(fixture.read_text() + "this line is not json\n")
+        return session
+
+    def test_ac3_fixture_produces_a_parser_warning(self, tmp_path: Path) -> None:
+        from driftshield.public import analyse_run
+
+        session = self._session_with_bad_line(tmp_path)
+        run = analyse_run(session.read_bytes(), source=str(session), format=None)
+
+        assert run.warnings
+
+    def test_ac1_json_stdout_is_one_json_document_despite_warning(self, tmp_path: Path) -> None:
+        session = self._session_with_bad_line(tmp_path)
+
+        result = runner.invoke(app, ["analyze", str(session), "--json"])
+
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert "session_id" in payload
+
+    def test_ac2_warning_text_is_on_stderr(self, tmp_path: Path) -> None:
+        session = self._session_with_bad_line(tmp_path)
+
+        result = runner.invoke(app, ["analyze", str(session), "--json"])
+
+        assert result.exit_code == 0
+        assert "Warning:" in ANSI_RE.sub("", result.stderr)
+        assert "warn-session.jsonl" in ANSI_RE.sub("", result.stderr)
+        assert "Warning:" not in result.stdout
+
+    def test_ac1_ac2_skipped_file_warning_is_on_stderr(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from driftshield.cli.discovery import path_to_project_key
+
+        project_key = path_to_project_key(tmp_path)
+        sessions_dir = tmp_path / ".claude" / "projects" / project_key
+        sessions_dir.mkdir(parents=True)
+        fixture = FIXTURES_DIR / "sample_claude_code_session.jsonl"
+        (sessions_dir / "good-session.jsonl").write_text(fixture.read_text())
+        (sessions_dir / "empty-session.jsonl").write_text("this line is not json\n")
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("CLAUDE_HOME", str(tmp_path / ".claude"))
+
+        result = runner.invoke(app, ["analyze", "--project", "--json"])
+
+        assert result.exit_code == 0
+        json.loads(result.stdout)
+        assert "skipping" in ANSI_RE.sub("", result.stderr)
+        assert "empty-session.jsonl" in ANSI_RE.sub("", result.stderr)
+        assert "skipping" not in result.stdout
 
 
 class TestAnalyzeProject:
