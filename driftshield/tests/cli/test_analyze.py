@@ -100,6 +100,41 @@ class TestAnalyzeCommand:
         assert "risks" in payload
 
 
+class TestAnalyzeParserWarnings:
+    def _session_with_bad_line(self, tmp_path):
+        fixture = FIXTURES_DIR / "sample_claude_code_session.jsonl"
+        session = tmp_path / "warn-session.jsonl"
+        session.write_text(fixture.read_text() + "this line is not json\n")
+        return session
+
+    def test_ac3_fixture_produces_a_parser_warning(self, tmp_path):
+        from driftshield.public import analyse_run
+
+        session = self._session_with_bad_line(tmp_path)
+        run = analyse_run(session.read_bytes(), source=str(session), format=None)
+
+        assert run.warnings
+
+    def test_ac1_json_stdout_is_one_json_document_despite_warning(self, tmp_path):
+        session = self._session_with_bad_line(tmp_path)
+
+        result = runner.invoke(app, ["analyze", str(session), "--json"])
+
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert "session_id" in payload
+
+    def test_ac2_warning_text_is_on_stderr(self, tmp_path):
+        session = self._session_with_bad_line(tmp_path)
+
+        result = runner.invoke(app, ["analyze", str(session), "--json"])
+
+        assert result.exit_code == 0
+        assert "Warning:" in ANSI_RE.sub("", result.stderr)
+        assert "warn-session.jsonl" in ANSI_RE.sub("", result.stderr)
+        assert "Warning:" not in result.stdout
+
+
 class TestAnalyzeProject:
     def test_analyze_with_project_flag(self, tmp_path, monkeypatch):
         """Analyze --project analyzes all sessions."""
