@@ -31,6 +31,7 @@ These axes come from Matt Pocock's `code-review` skill (MIT, see `.claude/delive
 - Anything in the diff the issue did not ask for (scope creep), or files outside the plan.
 - Anything that looks implemented but wrong.
 - An open decision (`- [ ] D-n`) the change settles on its own is a blocking finding.
+- The After picture under `## After` in the PR body: does it match the diff, and the issue's `## Picture` when there is one? Green means the diff built it. A green box the diff does not show, a red dashed box the PR body does not explain, or no picture at all, contradicts it.
 
 **Standards: does the change follow this repo's rules?** Cite the rule (file and line). On top of the repo's rules, flag these smells as judgement calls, never as hard violations, and skip anything tooling already enforces: mysterious name, duplicated code, feature envy, data clumps, primitive obsession, repeated switches, shotgun surgery, divergent change, speculative generality, message chains, middle man, refused bequest. A repo rule overrides a smell.
 
@@ -39,8 +40,8 @@ Also look for security problems and regressions outside the changed lines.
 ## Severity
 
 - `blocking`: an item is not met, a must not change item broke, a test proves nothing, a security hole, an open decision settled.
-- `major`: wrong behaviour in an edge the issue implies, a missing test for a changed path, a clear repo rule broken.
-- `minor` and `nit`: everything else. These never force another round.
+- `major`: wrong behaviour in an edge the issue implies, a missing test for a changed path, a clear repo rule broken, an After picture that hides a real change (a changed part it leaves out or shows as unchanged).
+- `minor` and `nit`: everything else, including any other After picture that contradicts the diff or the Picture. These never force another round.
 
 Approve only when every checklist and must not change item is `met` with evidence and no `blocking` or `major` finding is open. The hook enforces this: it sends back a verdict that approves with a blocking or major finding, misses an item, or names a head that is not the PR's current head.
 
