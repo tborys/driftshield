@@ -141,7 +141,7 @@ Closes #<n>
 **Blast Radius:** <one word>
 ```
 
-   Run the diagram checker on `.driftshield/body.json` before the PATCH. The headings follow Matt Pocock's `pr` skill (MIT). For a practice run, add one line under the first: `Practice run: close this PR without merging.`
+   Run the diagram checker on `.driftshield/body.json` before the PATCH. The headings follow Matt Pocock's `pr` skill (MIT). For a practice run, add one line under the first: `Practice run: one checklist item was held back from the builder in round 1 on purpose, to test the checker. The final change is complete and can be merged.`
 3. **Add `agent:pr-ready`.** The guard allows it only when the latest checker verdict approves the current HEAD, every required check passed on that HEAD, and the PR head on GitHub is that HEAD. Then remove `agent:running`.
 4. Post the end comment on the issue: `Draft PR #<pr> is ready for review. <!-- driftshield-delivery-done:v1 run=<nonce> -->`
 5. Add your own line to `.driftshield/notes.md`: `- lead: <what slowed you down most, or nothing>`. This file goes to DriftShield only, never to GitHub.
