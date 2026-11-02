@@ -1,0 +1,61 @@
+{
+  "profile": "default",
+  "about": "The open source repo's CI jobs (.github/workflows/ci.yml) as commands the cloud VM can run. DS_VENV is a venv under .driftshield/, so nothing installs into the system Python.",
+  "default_branch": "main",
+  "caps": {"small": 2, "large": 3},
+  "checks": [
+    {
+      "id": "public-scope",
+      "ci_job": "public-scope",
+      "cwd": ".",
+      "run": "./scripts/check-public-scope.sh",
+      "required": ["small", "large"]
+    },
+    {
+      "id": "backend-tests",
+      "ci_job": "backend-tests",
+      "cwd": "driftshield",
+      "prepare": "python3 -m venv \"$DS_VENV\" && \"$DS_VENV/bin/pip\" install -q --upgrade pip && \"$DS_VENV/bin/pip\" install -q -e '.[dev]'",
+      "run": "PYTHONPATH=src \"$DS_VENV/bin/python\" -m pytest tests -q --junitxml=\"$DS_JUNIT\"",
+      "junit": true,
+      "required": ["small", "large"]
+    },
+    {
+      "id": "frontend-build",
+      "ci_job": "frontend-build",
+      "cwd": "driftshield/frontend",
+      "prepare": "npm ci --registry=https://registry.npmjs.org/",
+      "run": "npm run build",
+      "required": ["small", "large"],
+      "when_paths": ["driftshield/frontend/*", "driftshield/frontend/**"]
+    },
+    {
+      "id": "install-smoke",
+      "ci_job": "install-smoke",
+      "cwd": ".",
+      "prepare": "python3 -m venv \"$DS_VENV-release\"",
+      "run": "PYTHON=\"$DS_VENV-release/bin/python\" ./scripts/release-build-check.sh",
+      "required": ["large"],
+      "when_paths": ["driftshield/pyproject.toml", "driftshield/src/*", "driftshield/src/**", "scripts/release-build-check.sh"]
+    },
+    {
+      "id": "frontend-e2e",
+      "ci_job": "frontend-e2e",
+      "cwd": "driftshield/frontend",
+      "prepare": "npm ci --registry=https://registry.npmjs.org/ && npx playwright install chromium --with-deps",
+      "run": "npx playwright test --reporter=junit",
+      "junit": true,
+      "required": ["large"],
+      "when_paths": ["driftshield/frontend/*", "driftshield/frontend/**"]
+    }
+  ],
+  "environment_signatures": [
+    "host_not_allowed",
+    "Temporary failure in name resolution",
+    "Could not resolve host",
+    "ENOTFOUND",
+    "No space left on device",
+    "playwright install",
+    "Executable doesn't exist"
+  ]
+}

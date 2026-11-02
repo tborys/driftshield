@@ -1,0 +1,59 @@
+#!/usr/bin/env python3
+"""git commit-msg hook (cloud routine only): one line, a Conventional Commit
+prefix, the author the environment names, no attribution boilerplate, and
+nothing that must not go public. The subject may name a module such as
+claude_code; the vendor names are banned only in the author and in trailers
+or boilerplate."""
+
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+sys.dont_write_bytecode = True  # keep the kit folder clean
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
+import dslib  # noqa: E402
+
+PREFIX = re.compile(r"^(build|chore|ci|docs|feat|fix|perf|refactor|style|test|revert)(\([a-z0-9 ._-]+\))?!?: \S")
+BOILERPLATE = re.compile(r"co-authored-by\s*:|generated (with|by)\b|claude\.ai/code|\U0001F916", re.I)
+VENDOR = re.compile(r"claude|anthropic", re.I)
+
+
+def problems(message: str, author: str, want: str) -> list[str]:
+    lines = [l for l in message.splitlines() if l.strip() and not l.startswith("#")]
+    out = []
+    if len(lines) != 1:
+        out.append("the message must be exactly one line: no body, no trailers")
+    subject = lines[0] if lines else ""
+    if not PREFIX.match(subject):
+        out.append("the subject needs a Conventional Commit prefix such as `fix: ` or `feat: `")
+    if len(subject) > 100:
+        out.append("keep the subject under 100 characters")
+    if BOILERPLATE.search(message):
+        out.append('no attribution trailers or "Generated with" lines')
+    if VENDOR.search(author):
+        out.append("the author must be a person, not the assistant or its vendor")
+    if not want.strip("<> "):
+        out.append("DS_GIT_AUTHOR_NAME and DS_GIT_AUTHOR_EMAIL are not set in the environment")
+    elif author != want:
+        out.append(f"the author must be {want}, not {author}")
+    out += [f"the message contains {c}; commit messages are public" for c in dslib.unsafe(message)]
+    return out
+
+
+def main() -> int:
+    if not dslib.active():
+        return 0
+    message = open(sys.argv[1], encoding="utf-8").read()
+    ident = subprocess.run(["git", "var", "GIT_AUTHOR_IDENT"], capture_output=True, text=True).stdout
+    author = re.sub(r"\s+\d+\s+[+-]\d{4}\s*$", "", ident.strip())
+    want = f"{os.environ.get('DS_GIT_AUTHOR_NAME', '')} <{os.environ.get('DS_GIT_AUTHOR_EMAIL', '')}>"
+    found = problems(message, author, want)
+    for p in found:
+        print(f"commit-msg: {p}", file=sys.stderr)
+    return 1 if found else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

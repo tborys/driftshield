@@ -1,0 +1,70 @@
+name: Delivery task
+description: A bounded task with numbered checklist items, ready for the delivery agent
+title: ""
+labels: []
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What is wrong or missing, in one or two sentences.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+      description: What should happen instead.
+    validations:
+      required: true
+  - type: textarea
+    id: checklist
+    attributes:
+      label: Checklist
+      description: "One line each: id, observable outcome, proof (test, command, ci or manual)."
+      value: |
+        - [ ] AC-1: <outcome>. Proof: test
+    validations:
+      required: true
+  - type: textarea
+    id: must-not-change
+    attributes:
+      label: Must not change
+      description: "One line each: id, what stays as it is, and the paths that must not change or a guard test."
+      value: |
+        - MNC-1: <behaviour or contract>. Paths: <path>. Guard test: <tests/...::test_name>
+  - type: textarea
+    id: decisions
+    attributes:
+      label: Decisions
+      description: "Open questions the agent must not settle: `- [ ] D-1: question`. Decided: `- [x] D-1: answer`."
+      value: |
+        - [ ] D-1: <question>
+  - type: textarea
+    id: depends-on
+    attributes:
+      label: Depends on
+      description: "Issues that must be closed as completed first, one per line: `- #123` or `- owner/repo#123`. The agent waits for GitHub's native blocked by links."
+  - type: dropdown
+    id: size
+    attributes:
+      label: Size
+      description: "small: one module, no contract or schema change. large: anything else (stops once for approval)."
+      options:
+        - small
+        - large
+    validations:
+      required: true
+  - type: dropdown
+    id: profile
+    attributes:
+      label: Verification profile
+      options:
+        - default
+    validations:
+      required: true
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+      description: What this task must not touch.
