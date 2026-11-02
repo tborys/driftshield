@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import dslib  # noqa: E402
 
 ENV_NAMES = ("DS_GIT_AUTHOR_NAME", "DS_GIT_AUTHOR_EMAIL", "DS_DENY_TERMS", "DS_REPO", "DRIFTSHIELD_API_KEY",
-             "DRIFTSHIELD_INTAKE_URL", "DRIFTSHIELD_API_URL") + dslib.RUNS_ENV
+             "DRIFTSHIELD_INTAKE_URL", "DS_DRIFTSHIELD_API_BASE") + dslib.RUNS_ENV
 
 
 def session_env() -> list[str]:

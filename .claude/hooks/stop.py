@@ -160,8 +160,8 @@ def post_json(url: str, body: dict, deadline: float) -> tuple[int, dict | None]:
 
 
 def api_base() -> str | None:
-    if os.environ.get("DRIFTSHIELD_API_URL"):
-        return os.environ["DRIFTSHIELD_API_URL"].rstrip("/")
+    if os.environ.get("DS_DRIFTSHIELD_API_BASE"):
+        return os.environ["DS_DRIFTSHIELD_API_BASE"].rstrip("/")
     m = re.match(r"^(https?://[^/]+)", os.environ.get("DRIFTSHIELD_INTAKE_URL", ""))
     return m.group(1) if m else None
 
