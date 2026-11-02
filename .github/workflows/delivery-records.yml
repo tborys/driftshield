@@ -30,7 +30,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DRIFTSHIELD_API_KEY: ${{ secrets.DRIFTSHIELD_API_KEY }}
-          DS_REVIEW_PRODUCER: ${{ vars.DS_REVIEW_PRODUCER }}
           DS_REVIEWER_LOGINS: ${{ vars.DS_REVIEWER_LOGINS }}
           PULL_NUMBER: ${{ github.event.pull_request.number }}
         run: python3 .claude/hooks/records.py --pull "$PULL_NUMBER"
