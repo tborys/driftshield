@@ -10,7 +10,8 @@ one `check.completed` with totals, plus a `test.result` for every test that
 cites a checklist item (test_ac1_..., test_mnc2_...) or failed. A check that
 does not apply to this diff is a `check.skipped`. The JUnit report wins over
 the exit code: failures in it, or no tests collected, mean failed. Check
-commands run without the DRIFTSHIELD_* and DS_* variables. Exit code 0 only
+commands run without the DRIFTSHIELD_* and DS_* variables, and each check's
+full output is kept in .driftshield/checks/<id>-<time>.log. Exit code 0 only
 when everything ran green.
 """
 
@@ -70,7 +71,7 @@ def parse_junit(path: Path) -> tuple[dict | None, list[dict]]:
 
 
 def check_env(junit: Path) -> dict:
-    env = {k: v for k, v in os.environ.items() if not k.startswith(("DRIFTSHIELD_", "DS_"))}
+    env = dslib.child_env()
     env.update(DS_ROOT=str(dslib.root()), DS_JUNIT=str(junit), DS_VENV=str(dslib.work() / "venv"),
                PLAYWRIGHT_JUNIT_OUTPUT_NAME=str(junit))
     return env
@@ -83,7 +84,9 @@ def env_failure(output: str, signatures: list[str]) -> bool:
 def run_check(check: dict, extra: list[str], prof: dict) -> dict:
     out_dir = dslib.work() / "checks"
     out_dir.mkdir(parents=True, exist_ok=True)
-    junit = out_dir / f"junit-{check['id']}-{int(time.time() * 1000)}.xml"
+    stamp = int(time.time() * 1000)
+    junit = out_dir / f"junit-{check['id']}-{stamp}.xml"
+    log = out_dir / f"{check['id']}-{stamp}.log"
     env, cwd = check_env(junit), dslib.root() / check.get("cwd", ".")
     signatures = prof.get("environment_signatures", [])
     marker = dslib.work() / f"prepared-{check['id']}"
@@ -91,6 +94,7 @@ def run_check(check: dict, extra: list[str], prof: dict) -> dict:
         prep = subprocess.run(check["prepare"], shell=True, cwd=cwd, env=env, capture_output=True, text=True)
         if prep.returncode != 0:
             output = prep.stdout + prep.stderr
+            log.write_text(f"$ {check['prepare']}\n(prepare exit {prep.returncode})\n\n{output}")
             return {"check_id": check["id"], "exit_code": prep.returncode, "status": "error", "phase": "prepare",
                     "cause": "environment" if env_failure(output, signatures) else "unknown", "tail": output[-1500:]}
         marker.touch()
@@ -98,6 +102,7 @@ def run_check(check: dict, extra: list[str], prof: dict) -> dict:
     started = time.time()
     proc = subprocess.run(command, shell=True, cwd=cwd, env=env, capture_output=True, text=True)
     output = proc.stdout + proc.stderr
+    log.write_text(f"$ {command}\n(exit {proc.returncode})\n\n{output}")
     totals, rows = parse_junit(junit) if check.get("junit") else ({}, [])
     status, note, cause = ("passed" if proc.returncode == 0 else "failed"), None, None
     if check.get("junit") and totals is None:

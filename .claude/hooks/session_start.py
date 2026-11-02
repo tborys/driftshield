@@ -2,7 +2,8 @@
 """SessionStart (cloud routine only): open the run.
 
 Sets the commit identity and the git hooks path for this session only, as
-GIT_CONFIG_* variables in CLAUDE_ENV_FILE. Nothing is written to .git/config.
+GIT_CONFIG_* variables in CLAUDE_ENV_FILE, and unsets the run store variables
+for Bash commands there. Nothing is written to .git/config.
 The identity comes from DS_GIT_AUTHOR_NAME and DS_GIT_AUTHOR_EMAIL in the
 cloud environment. Records the run's identity in .driftshield/run.json and
 the remote branches and kit digest the Stop hook compares against.
@@ -23,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import dslib  # noqa: E402
 
 ENV_NAMES = ("DS_GIT_AUTHOR_NAME", "DS_GIT_AUTHOR_EMAIL", "DS_DENY_TERMS", "DS_REPO", "DRIFTSHIELD_API_KEY",
-             "DRIFTSHIELD_INTAKE_URL", "DRIFTSHIELD_API_URL", "DRIFTSHIELD_RECORD_URL")
+             "DRIFTSHIELD_INTAKE_URL", "DRIFTSHIELD_API_URL", "DRIFTSHIELD_RECORD_URL") + dslib.RUNS_ENV
 
 
 def session_env() -> list[str]:
@@ -36,6 +37,9 @@ def session_env() -> list[str]:
     for i, (k, v) in enumerate(pairs):
         lines += [f"export GIT_CONFIG_KEY_{i}={shlex.quote(k)}", f"export GIT_CONFIG_VALUE_{i}={shlex.quote(v)}"]
     lines.append(f'export PATH={shlex.quote(str(dslib.KIT / "bin"))}:"$PATH"')
+    # The run store keys are for the Stop hook, which gets the session's own environment. No
+    # Bash command, and nothing it starts, may see them.
+    lines.append("unset " + " ".join(dslib.RUNS_ENV))
     return lines
 
 
