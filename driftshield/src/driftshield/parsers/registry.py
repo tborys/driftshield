@@ -206,6 +206,10 @@ def detect_from_path(path_hint: str) -> str | None:
         return "openclaw_trajectory"
     for needles, name in _PATH_HINTS:
         if all(needle in path_hint for needle in needles):
+            # Only transcripts live in the Claude Code store; stray notes,
+            # locks and caches next to them are not transcripts.
+            if name == "claude_code" and not path_hint.endswith(".jsonl"):
+                return None
             return name
     if path_hint.endswith(".jsonl"):
         return "claude_code"

@@ -205,9 +205,9 @@ def test_unknown_explicit_format_is_a_caller_error():
     [
         (b"", "empty"),
         (b"   \n", "empty"),
-        (b'{"some": "unknown shape"}', "unrecognised_format"),
-        (b"not json at all", "unrecognised_format"),
-        (json.dumps([{"session_id": "x"}]).encode(), "unrecognised_format"),
+        (b'{"some": "unknown shape"}', "not_a_transcript"),
+        (b"not json at all", "not_a_transcript"),
+        (json.dumps([{"session_id": "x"}]).encode(), "not_a_transcript"),
         (json.dumps({"type": "summary", "sessionId": "s"}).encode(), "no_events"),
     ],
 )
@@ -215,6 +215,16 @@ def test_zero_parseable_events_is_an_explicit_error(content: bytes, reason: str)
     with pytest.raises(NoParseableEventsError) as excinfo:
         analyse_run(content)
     assert excinfo.value.reason == reason
+
+
+def test_non_jsonl_file_under_claude_projects_is_not_a_transcript():
+    with pytest.raises(NoParseableEventsError) as excinfo:
+        analyse_run(b"just some notes", source="/h/.claude/projects/p/notes.md")
+    assert excinfo.value.reason == "not_a_transcript"
+    assert "not_a_transcript" in str(excinfo.value)
+    doc = NoParseableEventsError.__doc__ or ""
+    assert "not_a_transcript" in doc
+    assert "unrecognised_format" not in doc
 
 
 def test_parser_crash_is_reported_as_parse_failed(monkeypatch):

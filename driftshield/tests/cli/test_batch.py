@@ -711,6 +711,26 @@ def test_batch_isolates_a_file_that_raises_during_parsing(tmp_path, monkeypatch)
     assert report.has_failures is True
 
 
+def test_batch_skips_non_transcript_files_under_claude_projects(tmp_path):
+    """driftshield#217: stray non-transcript files in a native session store
+    folder are skipped as not_a_transcript, never failed."""
+    folder = tmp_path / ".claude" / "projects" / "demo"
+    folder.mkdir(parents=True)
+    (folder / "notes.md").write_text("[1,2]")
+    (folder / "list.txt").write_text('["x"]')
+    (folder / ".consolidate-lock").write_text("12345")
+    (folder / "number.json").write_text("42")
+
+    report = run_batch(tmp_path)
+
+    entries = {entry.path.replace("\\", "/").split("/")[-1]: entry for entry in report.files}
+    assert set(entries) == {"notes.md", "list.txt", ".consolidate-lock", "number.json"}
+    for entry in entries.values():
+        assert entry.outcome == "skipped"
+        assert "not_a_transcript" in (entry.reason or "")
+    assert report.has_failures is False
+
+
 def test_batch_cli_exit_code_nonzero_on_failure(tmp_path, monkeypatch):
     _write_claude_code_jsonl(tmp_path / "corrupt.jsonl", user_text="crash-marker")
     _force_parser_crash(monkeypatch)
