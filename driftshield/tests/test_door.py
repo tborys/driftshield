@@ -217,9 +217,15 @@ def test_zero_parseable_events_is_an_explicit_error(content: bytes, reason: str)
     assert excinfo.value.reason == reason
 
 
-def test_parser_crash_is_reported_as_parse_failed():
+def test_parser_crash_is_reported_as_parse_failed(monkeypatch):
+    from driftshield.parsers.claude_code import ClaudeCodeParser
+
+    def _boom(self, content):
+        raise TypeError("forced parser crash")
+
+    monkeypatch.setattr(ClaudeCodeParser, "parse", _boom)
     with pytest.raises(NoParseableEventsError) as excinfo:
-        analyse_run(b"123\n", source="corrupt.jsonl")
+        analyse_run(_CLAUDE_CODE.read_bytes(), source="corrupt.jsonl")
     assert excinfo.value.reason == "parse_failed"
     assert "claude_code" in str(excinfo.value)
 

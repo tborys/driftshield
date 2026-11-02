@@ -163,3 +163,58 @@ class TestClaudeCodeParser:
             "input_keys": [],
             "has_outputs": False,
         }
+
+
+def _record(kind: str, message: object, **extra: object) -> str:
+    import json
+
+    return json.dumps({"type": kind, "sessionId": "synthetic-s1",
+                       "timestamp": "2026-01-01T00:00:00Z", "message": message, **extra})
+
+
+def _valid_lines() -> list[str]:
+    return [
+        _record("user", {"role": "user", "content": "please list the files"}),
+        _record("assistant", {"role": "assistant", "model": "m", "content": [
+            {"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "ls"}},
+        ]}),
+        _record("assistant", {"role": "assistant", "model": "m", "content": [
+            {"type": "text", "text": "done listing"},
+        ]}),
+    ]
+
+
+def _shape(events):
+    return [(e.event_type, e.action, e.inputs, e.outputs, e.agent_id) for e in events]
+
+
+def test_non_object_lines_are_skipped():
+    valid = _valid_lines()
+    clean = ClaudeCodeParser().parse("\n".join(valid))
+    odd = [valid[0], "[1, 2]", valid[1], '"just a string"', valid[2], "42"]
+    events = ClaudeCodeParser().parse("\n".join(odd))
+    assert len(clean) == 3
+    assert _shape(events) == _shape(clean)
+
+
+def test_non_object_message_is_skipped():
+    valid = _valid_lines()
+    clean = ClaudeCodeParser().parse("\n".join(valid))
+    bad = [
+        _record(kind, msg)
+        for kind in ("assistant", "user")
+        for msg in (None, [1], "text", 7)
+    ]
+    events = ClaudeCodeParser().parse("\n".join(bad[:4] + valid + bad[4:]))
+    assert _shape(events) == _shape(clean)
+
+
+def test_assistant_content_not_a_list_is_skipped():
+    valid = _valid_lines()
+    clean = ClaudeCodeParser().parse("\n".join(valid))
+    bad = [
+        _record("assistant", {"role": "assistant", "content": 5}),
+        _record("assistant", {"role": "assistant", "content": None}),
+    ]
+    events = ClaudeCodeParser().parse("\n".join(bad + valid))
+    assert _shape(events) == _shape(clean)
