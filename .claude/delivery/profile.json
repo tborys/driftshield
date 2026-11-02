@@ -2,6 +2,7 @@
   "profile": "default",
   "about": "The open source repo's CI jobs (.github/workflows/ci.yml) as commands the cloud VM can run. DS_VENV is a venv under .driftshield/, so nothing installs into the system Python.",
   "default_branch": "main",
+  "records_required_checks": ["public-scope", "backend-tests", "frontend-build", "frontend-e2e"],
   "caps": {"small": 2, "large": 3},
   "checks": [
     {

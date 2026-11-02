@@ -12,7 +12,10 @@ base, and the kit's digest at both ends.
 Then, inside one deadline under the hook's 600 s limit:
   1. every transcript through the public SDK (receipts kept as they arrive)
   2. session links that tie those uploads to the issue and PR
-  3. the run bundle, record included, for the private store, only if DS_RUNS_BUCKET and its keys
+  3. the work records body for the run's issue (records.py), within its own short budget (DS_RECORDS_BUDGET_S,
+     default 120 s, and always ending 150 s before the deadline); the outcome is a `records.posted` event, and
+     running out of time is a failed outcome, never a reason to skip the next step
+  4. the run bundle, record included, for the private store, only if DS_RUNS_BUCKET and its keys
      are set (runstore.py); last, so a failure there can never cost DriftShield its copy
 The record never goes to DriftShield: it is internal delivery data, kept in the private store.
 Prints nothing, never blocks, always exits 0.
@@ -28,11 +31,13 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.dont_write_bytecode = True  # keep the kit folder clean
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import dslib  # noqa: E402
+import records  # noqa: E402
 
 BUDGET_S = int(os.environ.get("DS_STOP_BUDGET_S", "540"))  # under the 600 s hook timeout
 END_LABELS = {"agent:pr-ready": ("pr_ready", None), "agent:needs-info": ("needs_info", "needs_info"),
@@ -139,26 +144,6 @@ def settle(paths: list[Path], max_wait: float = 10.0) -> None:
         time.sleep(1)
 
 
-def post_json(url: str, body: dict, deadline: float) -> tuple[int, dict | None]:
-    data, status = json.dumps(body).encode(), 0
-    for wait in (0, 3, 10, 30):
-        if time.time() + wait + 5 > deadline:
-            break
-        time.sleep(wait)
-        req = urllib.request.Request(url, data=data, method="POST", headers={
-            "Content-Type": "application/json", "X-API-Key": os.environ.get("DRIFTSHIELD_API_KEY", "")})
-        try:
-            with urllib.request.urlopen(req, timeout=min(30, max(5, deadline - time.time()))) as resp:
-                return resp.status, json.loads(resp.read() or b"null")
-        except urllib.error.HTTPError as exc:
-            status = exc.code
-            if status in (400, 401, 403, 404, 413, 422):
-                return status, None
-        except (urllib.error.URLError, OSError, ValueError):
-            status = 0
-    return status, None
-
-
 def api_base() -> str | None:
     if os.environ.get("DS_DRIFTSHIELD_API_BASE"):
         return os.environ["DS_DRIFTSHIELD_API_BASE"].rstrip("/")
@@ -244,13 +229,58 @@ def link_sessions(uploads: list[dict], ctx: dict, run: dict, events: list[dict],
         if not entries or time.time() > deadline - 30:
             return
         body = {"schema": "driftshield-work-session-links.v1", "observed_at": dslib.now(), "sessions": [e for _, e in entries]}
-        status, payload = post_json(f"{base}/v1/teams/work/evidence", body, deadline - 20)
+        posted = records.post_body(base, os.environ.get("DRIFTSHIELD_API_KEY", ""), body, deadline=deadline - 20, expect_schema=None)
+        status, payload = posted.status, posted.result
         results = {r.get("submission_id"): r for r in (payload or {}).get("sessions", [])} if isinstance(payload, dict) else {}
         for u, e in entries:
             r = results.get(e["submission_id"])
             u["link"] = r.get("status") if r else f"http {status}"
         entries = [(u, e) for u, e in entries if results.get(e["submission_id"], {}).get("retryable")]
         time.sleep(5)
+
+
+RECORDS_BUDGET_S = int(os.environ.get("DS_RECORDS_BUDGET_S", "120"))
+AFTER_END = {"records.posted", "hook.error", "bundle.uploaded"}  # events that may follow run.ended
+
+
+def post_records(ctx: dict, deadline: float) -> dict:
+    """Post the work records body for this run's issue and leave the outcome as an event. Whatever goes wrong
+    is a status here, never an exception: posted, stale_ignored, unchanged, failed or not_sent (not configured)."""
+    outcome = {"status": "not_sent", "error": None}
+    try:
+        key, base = os.environ.get("DRIFTSHIELD_API_KEY"), api_base()
+        until = min(deadline - 150, time.time() + RECORDS_BUDGET_S)  # leaves the final record and the bundle their time
+        if not key or not base:
+            outcome["error"] = "missing " + ", ".join(n for n, v in (("DRIFTSHIELD_API_KEY", key), ("an API base", base)) if not v)
+        else:
+            try:
+                profile, revision = records.load_profile(os.environ)
+                acceptance = records.settings_from_env(os.environ, profile, ctx["repo"], revision)
+            except records.NotConfigured as exc:
+                outcome["error"] = f"not configured: {exc}"
+            except records.AcceptanceError as exc:
+                outcome.update(status="failed", error=str(exc))
+            else:
+                with dslib.state("state.json") as st:
+                    previous = st.get("records_digest")
+                outcome = records.deliver(records.GhCli(deadline=until), ctx["repo"], ctx["issue"], key=key, api_base=base,
+                                          acceptance=acceptance, now=datetime.now(timezone.utc),
+                                          known_pulls=[ctx["pr"]] if ctx["pr"] else [], previous_digest=previous, deadline=until)
+                if outcome["status"] == "posted":
+                    with dslib.state("state.json") as st:
+                        st["records_digest"] = outcome["digest"]
+    except Exception as exc:
+        dslib.hook_error("stop", exc)
+        outcome = {"status": "failed", "error": type(exc).__name__}
+    data = {k: v for k, v in outcome.items() if k not in ("status", "repository", "issue", "digest") and v is not None}
+    dslib.append_event("records.posted", status=outcome["status"], data=data)
+    return outcome
+
+
+def sequence_complete(events: list[dict]) -> bool:
+    """Contiguous sequence numbers, and the last event that is not a post end event is run.ended."""
+    core = [e for e in events if e["type"] not in AFTER_END]
+    return bool(core) and [e["seq"] for e in events] == list(range(1, len(events) + 1)) and core[-1]["type"] == "run.ended"
 
 
 def send_bundle(found: list[dict], run: dict, ctx: dict, events: list[dict], deadline: float) -> dict:
@@ -294,7 +324,7 @@ def build_record(ctx: dict, run: dict, events: list[dict], uploads: list[dict], 
             "tokens": {k: sum(v[k] for v in tokens.values()) for k in ("input", "output", "cache_read", "cache_creation")}
             | {"by_role": {r: round(sum(v.values()) / total, 3) for r, v in tokens.items()}},
             "last_seq": max(seqs) if seqs else 0,
-            "sequence_complete": seqs == list(range(1, len(seqs) + 1)) and bool(events) and events[-1]["type"] == "run.ended",
+            "sequence_complete": sequence_complete(events),
         },
         "spec": spec,
         "integrity": facts,
@@ -341,6 +371,8 @@ def main() -> int:
     dslib.write_json(out / "record.json", build_record(ctx, run, events, pending, issue_data, facts))  # survives a timeout
     uploads = upload(found, run, ctx, deadline)
     link_sessions(uploads, ctx, run, events, deadline)
+    post_records(ctx, deadline)
+    events = dslib.ledger()  # now with the records outcome
     dslib.write_json(out / "record.json", build_record(ctx, run, events, uploads, issue_data, facts))
     dslib.write_json(out / "uploads.json", {"transcripts": uploads, "at": dslib.now()})
     bundle = send_bundle(found, run, ctx, events, deadline)
