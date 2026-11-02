@@ -229,6 +229,8 @@ def checker_may_run(words: list[str]) -> bool:
 def read_only(words: list[str]) -> bool:
     name = Path(words[0]).name
     if name == "git":
+        if words[1:2] == ["remote"]:
+            return len(words) == 2 or words[2] in ("get-url", "-v", "show")
         return len(words) > 1 and words[1] in GIT_READ
     if name == "gh":
         call = dslib.gh_api_call(words)
@@ -236,10 +238,18 @@ def read_only(words: list[str]) -> bool:
     return name in READ_CMDS or (name == "ds-check" and words[1:2] == ["--list"])
 
 
-def touches_protected(command: str, segs: list[list[str]]) -> bool:
+def segment_touches_protected(seg: list[str]) -> bool:
     """A protected path as an argument, or inside an interpreter's code string."""
-    text = re.sub(r"(\./)?\.claude/bin/ds-check", "", command)
-    return any(protected(w) for seg in segs for w in seg[1:]) or any(m in text for m in RAW_MARKS)
+    if any(protected(w) for w in seg[1:]):
+        return True
+    text = re.sub(r"(\./)?\.claude/bin/ds-check", "", " ".join(seg))
+    return any(m in text for m in RAW_MARKS)
+
+
+def touches_protected_unsafely(segs: list[list[str]]) -> bool:
+    """Only the segments that touch a protected path must be reads; an unrelated
+    segment in the same command line (python3 --version, which) is judged on its own."""
+    return any(segment_touches_protected(seg) and not read_only(seg) for seg in segs)
 
 
 def check_bash(command: str, agent: str) -> str | None:
@@ -253,7 +263,7 @@ def check_bash(command: str, agent: str) -> str | None:
         return "No command substitution in git, gh or curl commands: write the values out." + DONT_RETRY
     if any(protected(t) for t in targets):
         return "Kit and evidence files are read only in a delivery run." + DONT_RETRY
-    if touches_protected(command, segs) and not all(read_only(w) for w in segs):
+    if touches_protected_unsafely(segs):
         return "Commands that touch .claude/, .github/ or the run's evidence files may only read them." + DONT_RETRY
     for words in segs:
         name = Path(words[0]).name
