@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Stop and StopFailure (cloud routine only): end the run, build the record,
-send it to DriftShield.
+send the transcripts to DriftShield and the whole run to the private store.
 
 The end state comes from this run's own label writes, never from labels an
 earlier run left; agent:stop wins. A run that ends interrupted or unknown
@@ -12,9 +12,9 @@ base, and the kit's digest at both ends.
 Then, inside one deadline under the hook's 600 s limit:
   1. every transcript through the public SDK (receipts kept as they arrive)
   2. session links that tie those uploads to the issue and PR
-  3. the record, only if DRIFTSHIELD_RECORD_URL is set (no door yet)
-  4. the run bundle for the private store, only if DS_RUNS_BUCKET and its keys are set (runstore.py);
-     last, so a failure there can never cost DriftShield its copy
+  3. the run bundle, record included, for the private store, only if DS_RUNS_BUCKET and its keys
+     are set (runstore.py); last, so a failure there can never cost DriftShield its copy
+The record never goes to DriftShield: it is internal delivery data, kept in the private store.
 Prints nothing, never blocks, always exits 0.
 """
 
@@ -341,15 +341,10 @@ def main() -> int:
     dslib.write_json(out / "record.json", build_record(ctx, run, events, pending, issue_data, facts))  # survives a timeout
     uploads = upload(found, run, ctx, deadline)
     link_sessions(uploads, ctx, run, events, deadline)
-    record = build_record(ctx, run, events, uploads, issue_data, facts)
-    dslib.write_json(out / "record.json", record)
-    sent = {"status": "no_door", "detail": "DRIFTSHIELD_RECORD_URL is not set; intel has no route for the record yet"}
-    if os.environ.get("DRIFTSHIELD_RECORD_URL"):
-        status, _ = post_json(os.environ["DRIFTSHIELD_RECORD_URL"], record, deadline)
-        sent = {"status": "sent" if 200 <= status < 300 else "error", "http": status}
-    dslib.write_json(out / "uploads.json", {"transcripts": uploads, "record": sent, "at": dslib.now()})
+    dslib.write_json(out / "record.json", build_record(ctx, run, events, uploads, issue_data, facts))
+    dslib.write_json(out / "uploads.json", {"transcripts": uploads, "at": dslib.now()})
     bundle = send_bundle(found, run, ctx, events, deadline)
-    dslib.write_json(out / "uploads.json", {"transcripts": uploads, "record": sent, "bundle": bundle, "at": dslib.now()})
+    dslib.write_json(out / "uploads.json", {"transcripts": uploads, "bundle": bundle, "at": dslib.now()})
     return 0
 
 
