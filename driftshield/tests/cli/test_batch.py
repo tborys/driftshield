@@ -168,6 +168,12 @@ def _write_claude_code_jsonl_with_timestamps(
     return path
 
 
+_PARSER_CRASH_LINE = (
+    '{"type":"assistant","sessionId":"s","message":{"content":'
+    '[{"type":"tool_use","name":5}]}}\n'
+)
+
+
 def _write_claude_code_jsonl_with_no_events(
     path: Path, *, session_id: str = "batch-empty-session"
 ) -> Path:
@@ -670,11 +676,11 @@ def test_batch_isolates_a_file_that_raises_during_parsing(tmp_path):
     must be recorded 'failed' with the exception message, and must not stop
     the rest of the batch from being processed."""
     _write_claude_code_jsonl(tmp_path / "good.jsonl")
-    # A bare JSON scalar is valid JSON but not a transcript record: the
-    # Claude Code parser's `"sessionId" in entry` check raises TypeError on
-    # a non-dict entry, so this is a genuine per-file parse failure rather
-    # than a "no parser detected" skip.
-    (tmp_path / "corrupt.jsonl").write_text("123\n")
+    # A tool_use whose name is a number makes the Claude Code parser raise
+    # (AttributeError on `.lower()`), so this is a genuine per-file parse
+    # failure rather than a "no parser detected" skip. (Bare scalar lines no
+    # longer fail: the parser skips them.)
+    (tmp_path / "corrupt.jsonl").write_text(_PARSER_CRASH_LINE)
 
     report = run_batch(tmp_path)
 
@@ -685,8 +691,31 @@ def test_batch_isolates_a_file_that_raises_during_parsing(tmp_path):
     assert report.has_failures is True
 
 
+def test_batch_keeps_a_session_with_odd_records(tmp_path):
+    """Non-object lines and odd message shapes are skipped inside the parser,
+    so the session stays 'analysed-only' instead of failing the whole file."""
+    good = _write_claude_code_jsonl(tmp_path / "good.jsonl")
+    odd_lines = [
+        "[1, 2]",
+        '"just a string"',
+        "42",
+        json.dumps({"type": "assistant", "sessionId": "x", "message": None}),
+        json.dumps({"type": "user", "sessionId": "x", "message": "text"}),
+        json.dumps({"type": "assistant", "sessionId": "x", "message": {"content": 5}}),
+        json.dumps({"type": "assistant", "sessionId": "x", "message": {"content": None}}),
+    ]
+    lines = good.read_text().splitlines()
+    (tmp_path / "odd.jsonl").write_text("\n".join([lines[0], *odd_lines, lines[1]]) + "\n")
+
+    report = run_batch(tmp_path, submit=False)
+
+    outcomes = {entry.path: entry.outcome for entry in report.files}
+    assert outcomes == {"good.jsonl": "analysed-only", "odd.jsonl": "analysed-only"}
+    assert report.has_failures is False
+
+
 def test_batch_cli_exit_code_nonzero_on_failure(tmp_path):
-    (tmp_path / "corrupt.jsonl").write_text("123\n")
+    (tmp_path / "corrupt.jsonl").write_text(_PARSER_CRASH_LINE)
 
     result = runner.invoke(app, ["batch", str(tmp_path)])
 

@@ -219,7 +219,7 @@ def test_zero_parseable_events_is_an_explicit_error(content: bytes, reason: str)
 
 def test_parser_crash_is_reported_as_parse_failed():
     with pytest.raises(NoParseableEventsError) as excinfo:
-        analyse_run(b"123\n", source="corrupt.jsonl")
+        analyse_run(b'{"type":"assistant","sessionId":"s","message":{"content":[{"type":"tool_use","name":5}]}}\n', source="corrupt.jsonl")
     assert excinfo.value.reason == "parse_failed"
     assert "claude_code" in str(excinfo.value)
 

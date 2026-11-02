@@ -163,3 +163,71 @@ class TestClaudeCodeParser:
             "input_keys": [],
             "has_outputs": False,
         }
+
+
+def _jsonl(*records) -> str:
+    import json
+
+    return "\n".join(
+        r if isinstance(r, str) else json.dumps(r) for r in records
+    ) + "\n"
+
+
+def _valid_records() -> list[dict]:
+    return [
+        {
+            "type": "user",
+            "sessionId": "synthetic-odd",
+            "message": {"role": "user", "content": "first synthetic request"},
+        },
+        {
+            "type": "assistant",
+            "sessionId": "synthetic-odd",
+            "message": {
+                "model": "claude-test",
+                "content": [
+                    {"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "ls"}},
+                    {"type": "text", "text": "synthetic reply"},
+                ],
+            },
+        },
+    ]
+
+
+def _shape(events) -> list[tuple]:
+    return [(e.event_type, e.action, e.inputs, e.outputs) for e in events]
+
+
+def test_non_object_lines_are_skipped():
+    valid = _valid_records()
+    clean = ClaudeCodeParser().parse(_jsonl(*valid))
+    odd = ClaudeCodeParser().parse(
+        _jsonl("[1, 2]", valid[0], '"just a string"', valid[1], "42")
+    )
+
+    assert len(clean) == 3
+    assert _shape(odd) == _shape(clean)
+
+
+def test_non_object_message_is_skipped():
+    valid = _valid_records()
+    clean = ClaudeCodeParser().parse(_jsonl(*valid))
+    bad = []
+    for kind in ("assistant", "user"):
+        for message in (None, [1], "text", 7):
+            bad.append({"type": kind, "sessionId": "synthetic-odd", "message": message})
+    odd = ClaudeCodeParser().parse(_jsonl(bad[0], valid[0], *bad[1:], valid[1]))
+
+    assert _shape(odd) == _shape(clean)
+
+
+def test_assistant_content_not_a_list_is_skipped():
+    valid = _valid_records()
+    clean = ClaudeCodeParser().parse(_jsonl(*valid))
+    bad = [
+        {"type": "assistant", "sessionId": "synthetic-odd", "message": {"content": value}}
+        for value in (5, None)
+    ]
+    odd = ClaudeCodeParser().parse(_jsonl(valid[0], *bad, valid[1]))
+
+    assert _shape(odd) == _shape(clean)

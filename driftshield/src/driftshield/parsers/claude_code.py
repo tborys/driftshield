@@ -68,12 +68,17 @@ class ClaudeCodeParser:
             except json.JSONDecodeError:
                 continue
 
+            if not isinstance(entry, dict):
+                continue
+
             if session_id is None and "sessionId" in entry:
                 session_id = entry["sessionId"]
 
-            if entry.get("type") == "assistant" and "message" in entry:
+            if entry.get("type") == "assistant" and isinstance(entry.get("message"), dict):
                 message = entry["message"]
                 content_items = message.get("content", [])
+                if not isinstance(content_items, list):
+                    content_items = []
 
                 for item in content_items:
                     if not isinstance(item, dict):
@@ -112,7 +117,7 @@ class ClaudeCodeParser:
                     events.append(progress_event)
                     prev_event_id = progress_event.id
 
-            if entry.get("type") == "user" and "message" in entry:
+            if entry.get("type") == "user" and isinstance(entry.get("message"), dict):
                 message = entry["message"]
                 content_items = message.get("content", [])
 
