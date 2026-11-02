@@ -34,6 +34,7 @@ CHECKER_CMDS = {"cat", "head", "tail", "wc", "ls", "grep", "nl", "stat", "file"}
 CHECKER_GIT = {"diff", "log", "show", "status", "rev-parse", "ls-files", "blame", "cat-file"}
 GIT_READ = CHECKER_GIT | {"branch", "fetch", "merge-base", "describe", "for-each-ref", "ls-remote", "show-ref", "grep"}
 PUSH_FLAGS = {"-u", "--set-upstream", "-q", "--quiet", "-v", "--verbose", "--progress", "--porcelain"}
+DIAGRAM_CHECK = ".claude/skills/issue-diagram/check_diagram.py"  # reads the file it is given, writes nothing
 ALLOWED_WRITES = ("POST issues/<n>/comments with --input, POST issues/<n>/labels, DELETE issues/<n>/labels/<name>, "
                   "POST pulls with draft true, PATCH pulls/<n> with body or title only")
 
@@ -235,6 +236,8 @@ def read_only(words: list[str]) -> bool:
     if name == "gh":
         call = dslib.gh_api_call(words)
         return call is not None and call["method"] == "GET"
+    if name in ("python3", "python") and len(words) > 1 and rel(words[1]) == DIAGRAM_CHECK:
+        return True
     return name in READ_CMDS or (name == "ds-check" and words[1:2] == ["--list"])
 
 

@@ -76,13 +76,14 @@ Copy the checklist and must not change items from the issue word for word, with 
 3. When the builder returns, read its report. Copy its `slowed me down:` line into `.driftshield/notes.md` as `- builder: <text>`.
 4. **Push**: `git push -u origin HEAD`.
 5. **Open the draft PR once**, after the first push: `gh api --method POST repos/{owner}/{repo}/pulls --input .driftshield/pr.json` with `{"title": "<type>: <summary> (#n)", "head": "<branch>", "base": "<default branch>", "draft": true, "body": "Closes #n\n\nWork in progress."}`.
-6. **Run the checker** (`checker` subagent). The brief is exactly: `Review PR #<pr>, round <k>, for issue #<n>.` Nothing more.
-7. **Read the verdict** the hook posted on the PR. If the comment says it was withheld from GitHub, read `.driftshield/verdicts/round-<k>.json` instead.
+6. **Draw the After picture**, following `.claude/skills/issue-diagram/SKILL.md`. Build it from `git diff <default branch>...HEAD`, starting from the issue's `## Picture` when it has one. Write the PR body to `.driftshield/body.json` with the picture and its `Legend:` line under `## After`, run `python3 .claude/skills/issue-diagram/check_diagram.py .driftshield/body.json` until it prints `clean`, then PATCH the PR body. Redraw it in every later round, so the checker always sees the picture of the head it reviews.
+7. **Run the checker** (`checker` subagent). The brief is exactly: `Review PR #<pr>, round <k>, for issue #<n>.` Nothing more.
+8. **Read the verdict** the hook posted on the PR. If the comment says it was withheld from GitHub, read `.driftshield/verdicts/round-<k>.json` instead.
    - `approve`: go to step 5.
    - `changes` with a `blocking` or `major` finding: brief the builder with those finding ids, then repeat from step 3 of this list (round k+1).
    - `changes` with only `minor` or `nit` findings: treat as approve and list them in the PR body.
    - `invalid: true`: the checker gave no valid verdict even after a retry. **Escalate and stop.**
-8. The guard counts rounds from the run's own record and the verdicts on the PR. At the cap (2 small, 3 large) it refuses the next launch: **Escalate and stop**.
+9. The guard counts rounds from the run's own record and the verdicts on the PR. At the cap (2 small, 3 large) it refuses the next launch: **Escalate and stop**.
 
 Also escalate when: the same finding comes back after a fix; the fix needs files outside the plan, `.github/` or a new design decision; a must not change item would break; a critical security finding; the guard blocks the same action twice.
 
@@ -106,6 +107,10 @@ Closes #<n>
 ## Summary
 
 <the smallest view that shows the change: a call tree, a diff sketch or a file tree>
+
+## After
+
+<the After picture from step 4.6 with its Legend: line, redrawn if the code changed since>
 
 ## Checklist
 
@@ -136,7 +141,7 @@ Closes #<n>
 **Blast Radius:** <one word>
 ```
 
-   The headings follow Matt Pocock's `pr` skill (MIT). For a practice run, add one line under the first: `Practice run: close this PR without merging.`
+   Run the diagram checker on `.driftshield/body.json` before the PATCH. The headings follow Matt Pocock's `pr` skill (MIT). For a practice run, add one line under the first: `Practice run: close this PR without merging.`
 3. **Add `agent:pr-ready`.** The guard allows it only when the latest checker verdict approves the current HEAD, every required check passed on that HEAD, and the PR head on GitHub is that HEAD. Then remove `agent:running`.
 4. Post the end comment on the issue: `Draft PR #<pr> is ready for review. <!-- driftshield-delivery-done:v1 run=<nonce> -->`
 5. Add your own line to `.driftshield/notes.md`: `- lead: <what slowed you down most, or nothing>`. This file goes to DriftShield only, never to GitHub.

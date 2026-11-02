@@ -18,6 +18,18 @@ body:
     validations:
       required: true
   - type: textarea
+    id: picture
+    attributes:
+      label: Picture
+      description: "One Mermaid diagram of the change, then one line that starts `Legend:`. Software change: Before and After. Workflow: who does what, in order. Infra: systems with their parts. Rules, examples and a checker: `.claude/skills/issue-diagram/`."
+      placeholder: |
+        ```mermaid
+        flowchart LR
+          ...
+        ```
+
+        Legend: red outline is broken today, red dashed outline is still to build.
+  - type: textarea
     id: checklist
     attributes:
       label: Checklist
