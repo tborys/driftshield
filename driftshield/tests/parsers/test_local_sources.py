@@ -244,3 +244,16 @@ def test_codex_legacy_message_lines_still_detected_and_parsed():
     content = (FIXTURES_DIR / "sample_codex_cli_session.jsonl").read_text()
     assert detect_format(content) == ("codex_cli", None)
     assert len(CodexCliParser().parse(content)) == 3
+
+
+def test_claude_projects_hint_needs_jsonl_suffix():
+    from driftshield.parsers.registry import detect_format
+
+    assert detect_format("just some notes", path_hint="/h/.claude/projects/p/notes.md") == (
+        None,
+        None,
+    )
+    assert detect_format("just some notes", path_hint="C:\\h\\.claude\\projects\\p\\n.md") == (
+        None,
+        None,
+    )

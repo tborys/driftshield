@@ -59,7 +59,7 @@ detail for DriftShield's own CLI and API and are not part of the contract.
 | Error | When |
 |-------|------|
 | `UnsupportedFormatError` | `format` names a parser DriftShield does not have. A caller error; the message lists the available names. |
-| `NoParseableEventsError` | Not a single event could be read. `.reason` is `empty` (blank content), `unrecognised_format` (no parser matches and no path hint helps), `parse_failed` (the parser raised on the content) or `no_events` (a recognised format that yielded nothing). `.warnings` carries what was learned before giving up. |
+| `NoParseableEventsError` | Not a single event could be read. `.reason` is `empty` (blank content), `not_a_transcript` (no parser matches and no path hint helps, including stray non-`.jsonl` files in a native session store), `parse_failed` (the parser raised on the content) or `no_events` (a recognised format that yielded nothing). `.warnings` carries what was learned before giving up. |
 
 Both subclass `ValueError`. Zero parseable events is always an error, never
 an empty success.

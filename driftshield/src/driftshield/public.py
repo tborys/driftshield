@@ -101,7 +101,7 @@ SubmitError = RemoteSubmissionError
 class NoParseableEventsError(ValueError):
     """``analyse_run`` could not read a single event from the content.
 
-    ``reason`` is one of ``empty``, ``unrecognised_format``, ``parse_failed``
+    ``reason`` is one of ``empty``, ``not_a_transcript``, ``parse_failed``
     or ``no_events``; ``warnings`` carries whatever was learned on the way.
     """
 
@@ -331,8 +331,8 @@ def _parse_bytes(
             warnings.append(hint_warning)
     if detected is None:
         raise NoParseableEventsError(
-            "unrecognised_format",
-            "unrecognised transcript format: no known parser matches the content",
+            "not_a_transcript",
+            "unrecognised transcript format (not_a_transcript): no parser matches the content",
             warnings,
         )
 
