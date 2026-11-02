@@ -10,9 +10,8 @@ It reads GitHub through the `gh` CLI, with whatever token `gh` already has (the 
 workflow's GITHUB_TOKEN, or your own login), and posts with the DriftShield API key. No new token.
 
 Variables: DRIFTSHIELD_API_KEY (not needed for --dry-run), DS_DRIFTSHIELD_API_BASE (default
-https://api.driftshield.ai), DS_REVIEW_PRODUCER (the one value the receiving contract accepts for the
-review producer; temporary, see REVIEW_PRODUCER_ENV), DS_REVIEWER_LOGINS (comma separated GitHub logins
-whose reviews count; required, never guessed from the repository owner), DS_PROFILE (default
+https://api.driftshield.ai), DS_REVIEWER_LOGINS (comma separated GitHub logins whose reviews count;
+required, never guessed from the repository owner), DS_PROFILE (default
 .claude/delivery/profile.json, whose `records_required_checks` names the checks the work must pass).
 A missing setting is "not configured": the merge workflow skips with exit 0, the Stop hook records not_sent.
 The key is never printed. Standard library only. The receiving side validates the body; its 422 list is
@@ -46,13 +45,9 @@ RETRY_DELAYS = (0, 3, 10, 30)  # seconds before each attempt; the first call in 
 
 EVIDENCE_SCHEMA = "driftshield-work-evidence.v1"
 RESULT_SCHEMA = "driftshield-work-evidence-result.v1"
-POLICY_VERSION = "coding-acceptance.v2"
-# TEMPORARY. The receiving contract (v1) accepts exactly one value for `acceptance.required_review_producer`,
-# a name from the old review lane. We rely on our own reviewer, the delivery checker, so that name must not
-# live in a public file (the sync refuses it). It is read from this variable instead, set in the private
-# cloud environment and as a variable on each delivery repository. This is the only place it is used.
-# Remove it when the contract accepts a generic reviewer producer.
-REVIEW_PRODUCER_ENV = "DS_REVIEW_PRODUCER"
+POLICY_VERSION = "coding-acceptance.v3"
+REVIEWER_NAME = "Reviewer"
+REVIEWER_SOURCES = ["github_review", "verdict_comment"]
 
 # Comments kept when a body is over the limit: the kit's own markers (dslib.py).
 MARKERS = ("driftshield-agent-review:v1", "driftshield-claim:v1", "driftshield-delivery-blocked:v1")
@@ -312,13 +307,6 @@ def map_review(repository: str, pull_number: int, review, dismissed: dict):
             "dismissal": dismissal}, None
 
 
-def review_producer(env) -> str:
-    value = (env.get(REVIEW_PRODUCER_ENV) or "").strip()
-    if not value:
-        raise NotConfigured(f"{REVIEW_PRODUCER_ENV} is not set (the contract needs a review producer name)")
-    return value
-
-
 def required_checks_from_profile(profile) -> list[str]:
     checks = (profile or {}).get("records_required_checks")
     if not isinstance(checks, list) or not checks:
@@ -326,14 +314,15 @@ def required_checks_from_profile(profile) -> list[str]:
     return checks
 
 
-def acceptance_for(repository: str, checks, logins, producer: str, revision=None) -> dict:
+def acceptance_for(repository: str, checks, logins, revision=None) -> dict:
     if not checks or not all(isinstance(name, str) and name.strip() for name in checks):
         raise AcceptanceError(f"the required checks for {repository} are empty or blank")
     logins = [str(x).strip() for x in logins if str(x).strip()]
     if not logins:
         raise AcceptanceError("no reviewer logins")
-    return {"policy_version": POLICY_VERSION, "required_checks": list(checks), "required_review_producer": producer,
-            "merge_required": True, "review_producer_logins": logins, "manifest_revision": revision}
+    return {"policy_version": POLICY_VERSION, "required_checks": list(checks),
+            "reviewer": {"name": REVIEWER_NAME, "logins": logins, "sources": list(REVIEWER_SOURCES)},
+            "merge_required": True, "manifest_revision": revision}
 
 
 def encode_body(body) -> bytes:
@@ -545,11 +534,10 @@ def describe(outcome: dict) -> str:
 def settings_from_env(env: dict, profile: dict, repository: str, revision=None) -> dict:
     """Acceptance for a repository from the environment and the profile. Raises NotConfigured for a missing setting."""
     checks = required_checks_from_profile(profile)
-    producer = review_producer(env)
     logins = [x for x in (env.get("DS_REVIEWER_LOGINS") or "").split(",") if x.strip()]
     if not logins:
         raise NotConfigured("DS_REVIEWER_LOGINS is not set (the GitHub logins whose reviews count)")
-    return acceptance_for(repository, checks, logins, producer, revision)
+    return acceptance_for(repository, checks, logins, revision)
 
 
 def load_profile(env: dict):
