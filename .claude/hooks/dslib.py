@@ -42,6 +42,12 @@ NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, "urn:driftshield:delivery-kit:v1")
 LEAD_ADDS = {"agent:running", "agent:needs-info", "agent:awaiting-approval", "agent:pr-ready",
              "agent:escalated", "agent:blocked-env"}
 LEAD_REMOVES = LEAD_ADDS | {"agent:go", "agent:approved", "agent:interrupted"}
+# Optional run bundle upload (runstore.py). The hooks read these from the cloud environment;
+# nothing the agent runs may see them.
+RUNS_KEYS = ("DS_RUNS_AWS_ACCESS_KEY_ID", "DS_RUNS_AWS_SECRET_ACCESS_KEY",
+             "DS_RUNS_READ_AWS_ACCESS_KEY_ID", "DS_RUNS_READ_AWS_SECRET_ACCESS_KEY")
+RUNS_ENV = ("DS_RUNS_BUCKET", "DS_RUNS_AWS_REGION", "DS_RUNS_S3_ENDPOINT") + RUNS_KEYS
+SECRET_ENV = ("DRIFTSHIELD_API_KEY",) + RUNS_KEYS
 
 
 # ---------- the gate ----------
@@ -65,6 +71,13 @@ def work() -> Path:
     d = root() / ".driftshield"
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+def child_env(env: dict | None = None) -> dict:
+    """The environment for anything that runs the agent's code: no DRIFTSHIELD_* or DS_*
+    variable. The run store ones are named too, so the rule survives a narrower prefix."""
+    return {k: v for k, v in (os.environ if env is None else env).items()
+            if not k.startswith(("DRIFTSHIELD_", "DS_")) and k not in RUNS_ENV}
 
 
 def now() -> str:
@@ -467,6 +480,7 @@ SECRETS = [
     re.compile(r"(?<![A-Za-z0-9_])ds_[A-Za-z0-9_-]{43}(?![A-Za-z0-9_-])"),  # DriftShield workspace key
     re.compile(r"sk-ant-[A-Za-z0-9_-]{16,}"),
     re.compile(r"\b(?:ghp|gho|ghs|ghu)_[A-Za-z0-9]{30,}|\bgithub_pat_[A-Za-z0-9_]{40,}"),
+    re.compile(r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b"),  # AWS access key id
     re.compile(r"execute-api\.[a-z0-9-]+\.amazonaws\.com", re.I),
 ]
 
