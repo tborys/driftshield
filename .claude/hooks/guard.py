@@ -10,8 +10,8 @@ agent:stop, on an open blocker, or when GitHub cannot be read.
 
 This is a seatbelt. The lock is GitHub's branch protection on main (admins
 included) and the proxy's GraphQL block. The guard lives in files the agent
-could change; the Stop hook records the kit's state so DriftShield can flag
-a breach after the fact.
+could change; the Stop hook records the kit's state so a breach can be
+flagged after the fact.
 """
 
 from __future__ import annotations
