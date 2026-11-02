@@ -153,3 +153,33 @@ def test_ac3_teams_without_api_key_fails_naming_the_key_and_makes_no_call(tmp_pa
     result = runner.invoke(app, ["submit", "--path", str(session), "--tier", "teams"])
     assert result.exit_code != 0
     assert "DRIFTSHIELD_API_KEY" in result.output
+
+
+def test_ac2_teams_uses_configured_intake_address_over_builtin(tmp_path, monkeypatch):
+    captured = {}
+
+    def fake_teams_upload(*, config, payload, workflow_reference, file_name, provenance):
+        captured["intake_url"] = config.intake_url
+
+        class _Resp:
+            submission_id = "sub_teams"
+            processing_status = "received"
+
+        class _Result:
+            response = _Resp()
+            server_contract_version = None
+
+        return _Result()
+
+    monkeypatch.setattr(
+        "driftshield.public.submit_teams_via_presigned_upload", fake_teams_upload
+    )
+    monkeypatch.setenv("DRIFTSHIELD_API_KEY", "test-key")
+    monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
+    custom = "https://custom.example.test/v1/oss/submissions"
+    enable = runner.invoke(app, _remote_enable_argv(intake_url=custom))
+    assert enable.exit_code == 0, enable.output
+    session = _write_session(tmp_path)
+    result = runner.invoke(app, ["submit", "--path", str(session), "--tier", "teams"])
+    assert result.exit_code == 0, result.output
+    assert captured["intake_url"] == custom
