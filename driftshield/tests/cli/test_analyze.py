@@ -240,3 +240,36 @@ class TestAnalyzeToolErrorAtSessionEnd:
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert data["candidate_break_point"]["status"] == "no_clear_break_point"
+
+
+def _session_with_bad_line(tmp_path: Path) -> Path:
+    src = (FIXTURES_DIR / "sample_claude_code_session.jsonl").read_text()
+    lines = src.splitlines()
+    lines.insert(1, "this line is not valid json {")
+    path = tmp_path / "warn_session.jsonl"
+    path.write_text("\n".join(lines) + "\n")
+    return path
+
+
+class TestAnalyzeWarningsToStderr:
+    def test_ac3_fixture_produces_parser_warning(self, tmp_path):
+        from driftshield.public import analyse_run
+
+        path = _session_with_bad_line(tmp_path)
+        run = analyse_run(path.read_bytes(), source=str(path), format=None)
+        assert run.warnings
+
+    def test_ac1_json_stdout_is_one_document(self, tmp_path):
+        path = _session_with_bad_line(tmp_path)
+        result = runner.invoke(app, ["analyze", str(path), "--json"])
+
+        assert result.exit_code == 0
+        doc = json.loads(result.stdout)
+        assert "total_events" in doc
+
+    def test_ac2_warning_text_goes_to_stderr(self, tmp_path):
+        path = _session_with_bad_line(tmp_path)
+        result = runner.invoke(app, ["analyze", str(path), "--json"])
+
+        assert "Warning" in ANSI_RE.sub("", result.stderr)
+        assert "Warning" not in result.stdout

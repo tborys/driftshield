@@ -13,6 +13,7 @@ from driftshield.public import NoParseableEventsError, UnsupportedFormatError, a
 
 
 console = Console(force_terminal=True)
+err_console = Console(stderr=True, force_terminal=True)
 
 
 def analyze(
@@ -99,7 +100,7 @@ def analyze(
             console.print(f"[red]Error:[/red] {e}")
             raise typer.Exit(1)
         except NoParseableEventsError as e:
-            console.print(f"[yellow]Warning:[/yellow] {file_path.name}: {e}, skipping")
+            err_console.print(f"[yellow]Warning:[/yellow] {file_path.name}: {e}, skipping")
             continue
         except Exception as e:
             console.print(f"[red]Error:[/red] Failed to analyze {file_path.name}: {e}")
@@ -107,7 +108,7 @@ def analyze(
                 raise typer.Exit(1)
             continue
         for warning in run.warnings:
-            console.print(f"[yellow]Warning:[/yellow] {file_path.name}: {warning}")
+            err_console.print(f"[yellow]Warning:[/yellow] {file_path.name}: {warning}")
         all_results.append((file_path, run.analysis))
 
     if not all_results:
