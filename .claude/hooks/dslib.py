@@ -239,10 +239,19 @@ def branch_slug(repository: str) -> str:
     return re.sub(r"[^A-Za-z0-9]+", "-", repository).lower()
 
 
+def lineage_issue(branch, repository: str | None = None, *, strict: bool = True, prefixes: tuple = ("auto",)) -> int | None:
+    """The issue number of a run branch `<prefix>/<slug>/issue-N-rK`, else None. Strict (the default, for pushes)
+    needs the slug of `repository`. Not strict takes any slug: a reader that has already checked the PR head is
+    the same repository can still read a branch opened before the repository changed owner."""
+    if not isinstance(branch, str) or (strict and not repository):
+        return None
+    slug = re.escape(branch_slug(repository)) if strict else r"[A-Za-z0-9-]+"
+    match = re.fullmatch(rf"(?:{'|'.join(map(re.escape, prefixes))})/{slug}/issue-(\d+)-r\d+", branch)
+    return int(match.group(1)) if match else None
+
+
 def branch_ok(name: str, repository: str | None, issue: int | None) -> bool:
-    if not (name and repository and issue):
-        return False
-    return re.fullmatch(rf"auto/{re.escape(branch_slug(repository))}/issue-{issue}-r\d+", name) is not None
+    return bool(name and repository and issue) and lineage_issue(name, repository) == issue
 
 
 def kit_disk_digest() -> str:
