@@ -502,19 +502,27 @@ def test_submit_session_no_deprecation_warning_when_server_on_phase3g_v1(
     assert "deprecation" not in result.stdout.lower()
 
 
-def test_submit_session_teams_fails_when_remote_not_configured(tmp_path, monkeypatch):
-    """The baked community default is OSS-only; teams still needs remote-enable."""
+def test_submit_session_teams_uses_built_in_address_when_remote_not_configured(
+    tmp_path, monkeypatch
+):
+    """Every tier shares the built-in address; the API key picks the workspace."""
+    captured = {}
+
+    def fake_upload(*, config, **_):
+        captured["url"] = config.intake_url
+        raise AssertionError("stop here")
+
+    monkeypatch.setattr("driftshield.public.submit_teams_via_presigned_upload", fake_upload)
     monkeypatch.setenv("DRIFTSHIELD_HOME", str(tmp_path))
     monkeypatch.setenv("DRIFTSHIELD_API_KEY", "ds_teams_key")
     session_path = _write_session(tmp_path, {"session_id": "sess-1"})
 
-    result = runner.invoke(
+    runner.invoke(
         app,
         ["telemetry", "submit-session", "--path", str(session_path), "--tier", "teams"],
     )
 
-    assert result.exit_code == 1
-    assert "not configured" in result.stdout.lower()
+    assert captured["url"] == "https://api.driftshield.ai/v1/intake"
 
 
 def test_submit_session_fails_on_invalid_json(tmp_path, monkeypatch):
