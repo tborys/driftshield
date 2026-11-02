@@ -13,6 +13,8 @@ Then, inside one deadline under the hook's 600 s limit:
   1. every transcript through the public SDK (receipts kept as they arrive)
   2. session links that tie those uploads to the issue and PR
   3. the record, only if DRIFTSHIELD_RECORD_URL is set (no door yet)
+  4. the run bundle for the private store, only if DS_RUNS_BUCKET and its keys are set (runstore.py);
+     last, so a failure there can never cost DriftShield its copy
 Prints nothing, never blocks, always exits 0.
 """
 
@@ -251,6 +253,17 @@ def link_sessions(uploads: list[dict], ctx: dict, run: dict, events: list[dict],
         time.sleep(5)
 
 
+def send_bundle(found: list[dict], run: dict, ctx: dict, events: list[dict], deadline: float) -> dict:
+    """The private run bundle. Whatever goes wrong is a status here, never an exception."""
+    try:
+        import runstore  # here, so a fault in the bundle code can never stop the DriftShield upload
+
+        return runstore.upload_run(found, run, ctx, events, deadline)
+    except Exception as exc:
+        dslib.hook_error("stop", exc)
+        return {"status": "error", "errors": [type(exc).__name__]}
+
+
 def build_record(ctx: dict, run: dict, events: list[dict], uploads: list[dict], issue_data: dict, facts: dict) -> dict:
     spec = dslib.read_json(dslib.work() / "spec.json", None)
     parsed = dslib.parse_issue(issue_data.get("body") or "")
@@ -335,6 +348,8 @@ def main() -> int:
         status, _ = post_json(os.environ["DRIFTSHIELD_RECORD_URL"], record, deadline)
         sent = {"status": "sent" if 200 <= status < 300 else "error", "http": status}
     dslib.write_json(out / "uploads.json", {"transcripts": uploads, "record": sent, "at": dslib.now()})
+    bundle = send_bundle(found, run, ctx, events, deadline)
+    dslib.write_json(out / "uploads.json", {"transcripts": uploads, "record": sent, "bundle": bundle, "at": dslib.now()})
     return 0
 
 
