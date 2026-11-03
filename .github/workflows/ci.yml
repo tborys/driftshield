@@ -93,7 +93,8 @@ jobs:
         run: npm run build
 
   frontend-e2e:
-    runs-on: ubuntu-latest
+    # Playwright cannot install chromium on ubuntu-latest (26.04) yet.
+    runs-on: ubuntu-24.04
     needs: [public-scope, frontend-build]
     defaults:
       run:

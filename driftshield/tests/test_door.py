@@ -150,6 +150,7 @@ def test_content_alone_detects_every_supported_format(expected: str, fixture: Pa
     run = analyse_run(fixture.read_bytes())
     assert run.detected_format == expected
     assert run.events and run.source is None
+    assert run.canonical_analysis["extraction_quality_summary"]["skipped_records_by_reason"] == {}
     assert run.warnings == []
 
 
@@ -619,3 +620,36 @@ def test_cli_submit_include_analysis_rides_the_door(home, monkeypatch):
 
     assert result.exit_code == 0, result.output
     assert captured["summary"] is not None and captured["summary"].matches
+
+
+_SKIP_GOOD_LINES = (
+    '{"type":"user","sessionId":"s1","timestamp":"2026-01-01T00:00:00Z",'
+    '"message":{"role":"user","content":"hello"}}\n'
+    '{"type":"assistant","sessionId":"s1","timestamp":"2026-01-01T00:00:01Z",'
+    '"message":{"role":"assistant","model":"m","content":[{"type":"text","text":"hi"}]}}\n'
+)
+
+
+def test_ac1_skipped_records_are_counted_in_extraction_quality_summary():
+    text = _SKIP_GOOD_LINES + "{not json\n[1, 2]\n" + '{"type":"user","message":"oops"}\n'
+    run = analyse_run(text.encode(), format="claude_code")
+    assert run.canonical_analysis["extraction_quality_summary"]["skipped_record_count"] == 3
+
+
+def test_ac2_skipped_records_are_grouped_by_reason_in_summary():
+    text = _SKIP_GOOD_LINES + "{not json\n{also bad\n[1, 2]\n" + '{"type":"user","message":"oops"}\n'
+    run = analyse_run(text.encode(), format="claude_code")
+    summary = run.canonical_analysis["extraction_quality_summary"]
+    assert summary["skipped_records_by_reason"] == {
+        "not_json": 2,
+        "not_an_object": 1,
+        "message_not_an_object": 1,
+    }
+    assert summary["skipped_record_count"] == 4
+
+
+def test_ac3_no_skipped_records_reports_zero_and_no_extra_warning():
+    run = analyse_run(_SKIP_GOOD_LINES.encode(), format="claude_code")
+    assert run.canonical_analysis["extraction_quality_summary"]["skipped_record_count"] == 0
+    assert run.canonical_analysis["extraction_quality_summary"]["skipped_records_by_reason"] == {}
+    assert run.warnings == []
