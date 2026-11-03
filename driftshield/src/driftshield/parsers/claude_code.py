@@ -39,6 +39,18 @@ class ClaudeCodeParser:
         "web_fetch": "network",
     }
 
+    def __init__(self) -> None:
+        # Records the last parse() could not use (not JSON, not an object, or an
+        # assistant/user record whose message is not an object).
+        self.skipped_records_by_reason: dict[str, int] = {}
+
+    @property
+    def skipped_record_count(self) -> int:
+        return sum(self.skipped_records_by_reason.values())
+
+    def _skip(self, reason: str) -> None:
+        self.skipped_records_by_reason[reason] = self.skipped_records_by_reason.get(reason, 0) + 1
+
     @property
     def source_type(self) -> str:
         return "claude_code"
@@ -58,6 +70,7 @@ class ClaudeCodeParser:
         session_id: str | None = None
         uuid_map: dict[str, UUID] = {}  # tool_use_id -> our UUID
         prev_event_id: UUID | None = None
+        self.skipped_records_by_reason = {}
 
         for line in content.strip().split("\n"):
             if not line.strip():
@@ -66,9 +79,11 @@ class ClaudeCodeParser:
             try:
                 entry = json.loads(line)
             except json.JSONDecodeError:
+                self._skip("not_json")
                 continue
 
             if not isinstance(entry, dict):
+                self._skip("not_an_object")
                 continue
 
             if session_id is None and "sessionId" in entry:
@@ -81,6 +96,7 @@ class ClaudeCodeParser:
                 and not isinstance(message_value, dict)
             ):
                 # message is null, a list, a string or a number: not a usable record.
+                self._skip("message_not_an_object")
                 continue
 
             if entry.get("type") == "assistant" and "message" in entry:

@@ -239,13 +239,16 @@ def analyse_run(
     run_id = run_id or uuid.uuid4()
     if isinstance(content, (bytes, str)):
         raw = content if isinstance(content, bytes) else content.encode("utf-8")
-        events, detected, transcript, warnings = _parse_bytes(raw, source=source, format=format)
+        events, detected, transcript, warnings, skipped = _parse_bytes(
+            raw, source=source, format=format
+        )
     else:
         events = list(content)
         detected = format or _events_format(events)
         transcript = {"events": [_event_record(event) for event in events]}
         raw = json.dumps(transcript, sort_keys=True, default=str).encode("utf-8")
         warnings = []
+        skipped = {}
 
     if not events:
         raise NoParseableEventsError(
@@ -257,6 +260,7 @@ def analyse_run(
     _stabilise_event_ids(events, run_id)
     normalize_events(events, source_type=detected, source_path=source)
     analysis = analyze_session(events, session_id=events[0].session_id or str(run_id))
+    analysis.skipped_records_by_reason = skipped
 
     session = Session(
         id=run_id,
@@ -315,7 +319,7 @@ def analyse_run(
 
 def _parse_bytes(
     raw: bytes, *, source: str | None, format: str | None
-) -> tuple[list[CanonicalEvent], str, dict[str, Any], list[str]]:
+) -> tuple[list[CanonicalEvent], str, dict[str, Any], list[str], dict[str, int]]:
     warnings: list[str] = []
     text = raw.decode("utf-8", errors="replace")
     replaced = text.count("�")
@@ -354,12 +358,14 @@ def _parse_bytes(
         transcript = _line_records(text, warnings)
 
     try:
-        events = get_parser(detected).parse(parse_input)
+        parser = get_parser(detected)
+        events = parser.parse(parse_input)
     except Exception as exc:  # noqa: BLE001 - a malformed transcript is data, not a crash
         raise NoParseableEventsError(
             "parse_failed", f"failed to parse as '{detected}': {exc}", warnings
         ) from exc
-    return events, detected, transcript, warnings
+    skipped = getattr(parser, "skipped_records_by_reason", None)
+    return events, detected, transcript, warnings, dict(skipped) if isinstance(skipped, dict) else {}
 
 
 def _line_records(text: str, warnings: list[str]) -> dict[str, Any]:
