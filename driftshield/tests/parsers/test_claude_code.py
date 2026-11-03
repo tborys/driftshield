@@ -218,3 +218,26 @@ def test_assistant_content_not_a_list_is_skipped():
     ]
     events = ClaudeCodeParser().parse("\n".join(bad + valid))
     assert _shape(events) == _shape(clean)
+
+
+def test_ac1_ac2_parser_groups_skipped_records_by_reason():
+    valid = _valid_lines()
+    lines = [
+        valid[0], "{not json", "also not json", "[1, 2]", valid[1],
+        _record("user", "oops"), _record("assistant", None), valid[2],
+    ]
+    parser = ClaudeCodeParser()
+    parser.parse("\n".join(lines))
+    assert parser.skipped_records_by_reason == {
+        "not_json": 2,
+        "not_an_object": 1,
+        "message_not_an_object": 2,
+    }
+    assert parser.skipped_record_count == 5
+
+
+def test_ac3_parser_with_no_skipped_records_reports_zero():
+    parser = ClaudeCodeParser()
+    parser.parse("\n".join(_valid_lines()))
+    assert parser.skipped_records_by_reason == {}
+    assert parser.skipped_record_count == 0

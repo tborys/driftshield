@@ -248,7 +248,7 @@ def analyse_run(
         transcript = {"events": [_event_record(event) for event in events]}
         raw = json.dumps(transcript, sort_keys=True, default=str).encode("utf-8")
         warnings = []
-        skipped = 0
+        skipped = {}
 
     if not events:
         raise NoParseableEventsError(
@@ -260,7 +260,7 @@ def analyse_run(
     _stabilise_event_ids(events, run_id)
     normalize_events(events, source_type=detected, source_path=source)
     analysis = analyze_session(events, session_id=events[0].session_id or str(run_id))
-    analysis.skipped_record_count = skipped
+    analysis.skipped_records_by_reason = skipped
 
     session = Session(
         id=run_id,
@@ -319,7 +319,7 @@ def analyse_run(
 
 def _parse_bytes(
     raw: bytes, *, source: str | None, format: str | None
-) -> tuple[list[CanonicalEvent], str, dict[str, Any], list[str], int]:
+) -> tuple[list[CanonicalEvent], str, dict[str, Any], list[str], dict[str, int]]:
     warnings: list[str] = []
     text = raw.decode("utf-8", errors="replace")
     replaced = text.count("�")
@@ -364,8 +364,8 @@ def _parse_bytes(
         raise NoParseableEventsError(
             "parse_failed", f"failed to parse as '{detected}': {exc}", warnings
         ) from exc
-    skipped = getattr(parser, "skipped_record_count", 0)
-    return events, detected, transcript, warnings, skipped if isinstance(skipped, int) else 0
+    skipped = getattr(parser, "skipped_records_by_reason", None)
+    return events, detected, transcript, warnings, dict(skipped) if isinstance(skipped, dict) else {}
 
 
 def _line_records(text: str, warnings: list[str]) -> dict[str, Any]:
