@@ -33,6 +33,8 @@ class AnalysisResult:
     flagged_events: int
     inflection_explanation: ExplanationPayload | None = None
     candidate_break_point: CandidateBreakPoint | None = None
+    # Source records the parser could not use. Set by the caller that parsed.
+    skipped_record_count: int = 0
 
     @property
     def has_risks(self) -> bool:
