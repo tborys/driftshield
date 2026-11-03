@@ -150,7 +150,6 @@ def test_content_alone_detects_every_supported_format(expected: str, fixture: Pa
     run = analyse_run(fixture.read_bytes())
     assert run.detected_format == expected
     assert run.events and run.source is None
-    assert run.canonical_analysis["extraction_quality_summary"]["skipped_records_by_reason"] == {}
     assert run.warnings == []
 
 
@@ -653,3 +652,64 @@ def test_ac3_no_skipped_records_reports_zero_and_no_extra_warning():
     assert run.canonical_analysis["extraction_quality_summary"]["skipped_record_count"] == 0
     assert run.canonical_analysis["extraction_quality_summary"]["skipped_records_by_reason"] == {}
     assert run.warnings == []
+
+
+@pytest.mark.parametrize(
+    "fmt", [name for name in _SOURCE_FIXTURES if name != "claude_code"]
+)
+def test_ac1_uncounted_format_reports_null_skip_counts(fmt: str):
+    run = analyse_run(_SOURCE_FIXTURES[fmt].read_bytes(), format=fmt)
+    summary = run.canonical_analysis["extraction_quality_summary"]
+    assert summary["skipped_record_count"] is None
+    assert summary["skipped_records_by_reason"] is None
+
+
+def test_ac1_event_list_input_reports_null_skip_counts():
+    events = analyse_run(_SKIP_GOOD_LINES.encode(), format="claude_code").events
+    summary = analyse_run(events).canonical_analysis["extraction_quality_summary"]
+    assert summary["skipped_record_count"] is None
+    assert summary["skipped_records_by_reason"] is None
+
+
+def test_ac4_every_parser_declares_skip_counts_and_protocol_names_them():
+    from driftshield.parsers.protocol import TranscriptParser
+    from driftshield.parsers.registry import PARSERS
+
+    assert hasattr(TranscriptParser, "skipped_records_by_reason")
+    assert hasattr(TranscriptParser, "skipped_record_count")
+    for name, cls in PARSERS.items():
+        parser = cls()
+        for _ in range(2):  # a second pass proves parse() resets the counts
+            value = parser.skipped_records_by_reason
+            count = parser.skipped_record_count
+            if value is None:
+                assert count is None, name
+            else:
+                assert isinstance(value, dict), name
+                assert all(isinstance(k, str) and type(v) is int for k, v in value.items()), name
+                assert count == sum(value.values()), name
+            if name == "claude_code":
+                parser.parse("{not json\n" + _SKIP_GOOD_LINES)
+            elif name in _SOURCE_FIXTURES:
+                parser.parse(_SOURCE_FIXTURES[name].read_text())
+
+
+def test_ac4_claude_code_counts_reset_between_parses():
+    from driftshield.parsers.claude_code import ClaudeCodeParser
+
+    parser = ClaudeCodeParser()
+    parser.parse("{not json")
+    assert parser.skipped_record_count == 1
+    parser.parse(_SKIP_GOOD_LINES)
+    assert parser.skipped_records_by_reason == {}
+    assert parser.skipped_record_count == 0
+
+
+def test_ac2_door_reports_unusable_content_under_its_own_reason():
+    bad = json.dumps({"type": "assistant", "message": {"role": "assistant", "content": 5}})
+    text = bad + "\n" + _SKIP_GOOD_LINES
+    summary = analyse_run(text.encode(), format="claude_code").canonical_analysis[
+        "extraction_quality_summary"
+    ]
+    assert summary["skipped_records_by_reason"] == {"content_not_usable": 1}
+    assert summary["skipped_record_count"] == 1

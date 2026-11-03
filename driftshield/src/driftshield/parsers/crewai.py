@@ -9,9 +9,10 @@ from uuid import UUID, uuid4
 
 from driftshield.core.models import CanonicalEvent, EventType
 from driftshield.core.normalization import normalize_events
+from driftshield.parsers.protocol import UncountedSkips
 
 
-class CrewAIParser:
+class CrewAIParser(UncountedSkips):
     """Parse a representative CrewAI run export into canonical events."""
 
     @property

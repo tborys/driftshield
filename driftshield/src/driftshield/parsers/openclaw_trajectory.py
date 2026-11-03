@@ -35,10 +35,11 @@ from uuid import UUID, uuid4
 
 from driftshield.core.models import CanonicalEvent, EventType
 from driftshield.core.normalization import normalize_events
+from driftshield.parsers.protocol import UncountedSkips
 from driftshield.parsers.openclaw import OpenClawParser
 
 
-class OpenClawTrajectoryParser:
+class OpenClawTrajectoryParser(UncountedSkips):
     """Parse OpenClaw runtime trajectories into canonical events."""
 
     # Same handoff/category semantics as the session-transcript parser, so

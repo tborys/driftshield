@@ -9,9 +9,10 @@ from uuid import UUID, uuid4
 
 from driftshield.core.models import CanonicalEvent, EventType
 from driftshield.core.normalization import normalize_events
+from driftshield.parsers.protocol import UncountedSkips
 
 
-class LangChainParser:
+class LangChainParser(UncountedSkips):
     """Parse bounded LangSmith / LangChain exported run JSON into canonical events."""
 
     def __init__(self) -> None:

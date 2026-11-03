@@ -241,3 +241,19 @@ def test_ac3_parser_with_no_skipped_records_reports_zero():
     parser.parse("\n".join(_valid_lines()))
     assert parser.skipped_records_by_reason == {}
     assert parser.skipped_record_count == 0
+
+
+def test_ac2_parser_counts_unusable_content_under_its_own_reason():
+    valid = _valid_lines()
+    clean = ClaudeCodeParser().parse("\n".join(valid))
+    bad = [
+        _record("assistant", {"role": "assistant", "content": 5}),
+        _record("assistant", {"role": "assistant", "content": None}),
+        _record("user", {"role": "user", "content": 7}),
+        _record("user", {"role": "user", "content": None}),
+    ]
+    parser = ClaudeCodeParser()
+    events = parser.parse("\n".join(bad + valid))
+    assert _shape(events) == _shape(clean)
+    assert parser.skipped_records_by_reason == {"content_not_usable": 4}
+    assert parser.skipped_record_count == 4
