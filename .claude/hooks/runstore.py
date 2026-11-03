@@ -170,6 +170,11 @@ def secret_values(env: dict | None = None) -> list[str]:
     characters with a letter and a digit, no spaces, not a path)."""
     env = os.environ if env is None else env
     found = {env[n] for n in dslib.SECRET_ENV if len(env.get(n, "")) >= 4}
+    try:  # the App key is also hidden as the PEM it decodes to, and as each of its lines
+        pem = dslib.decode_app_key(env.get("DS_REVIEWER_APP_KEY") or "")
+        found |= {pem.strip(), *(l for l in pem.splitlines() if len(l) >= 16)}
+    except dslib.ReviewerAppError:
+        pass
     for name, value in env.items():
         if SECRET_WORDS & set(name.upper().split("_")) and len(value) >= 16 and not re.search(r"\s", value) \
                 and re.search(r"\d", value) and re.search(r"[A-Za-z]", value) and not value.startswith(("/", ".", "~")):

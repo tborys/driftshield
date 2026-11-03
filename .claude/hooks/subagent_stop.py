@@ -113,18 +113,28 @@ def main() -> int:
         raw, verdict = parsed
     dslib.write_json(dslib.work() / "verdicts" / f"round-{round_no}.json", verdict)
     withheld = dslib.unsafe(raw)
-    comment_id = None
+    comment_id, posted_as, reviewer_login, app_note = None, None, None, None
     if pr:
-        posted = dslib.gh_json(f"repos/{run.get('repository')}/issues/{pr['number']}/comments",
-                               body={"body": comment_body(round_no, raw, verdict, withheld)})
+        text = comment_body(round_no, raw, verdict, withheld)
+        # As the reviewer's own GitHub App when it is set up; if not, or it fails, as the run's identity, and say so.
+        posted, app_note = dslib.post_as_reviewer(run.get("repository"), pr["number"], text)
+        posted_as = "reviewer_app" if posted is not None else "run_identity"
+        if posted is None:
+            posted = dslib.gh_json(f"repos/{run.get('repository')}/issues/{pr['number']}/comments", body={"body": text})
         comment_id = posted.get("id") if isinstance(posted, dict) else None
+        if posted_as == "reviewer_app":
+            reviewer_login = (posted.get("user") or {}).get("login")
+            if reviewer_login:
+                with dslib.state("run.json") as info:
+                    info["reviewer_login"] = reviewer_login
     findings = [{**f, "finding": str(f.get("finding", ""))[:300]} for f in verdict.get("findings") or [] if isinstance(f, dict)]
     dslib.append_event(
         "review.verdict", actor=actor, tier="C", round=round_no, pr=pr["number"] if pr else None,
         head_sha=verdict.get("head_sha"), status=verdict["verdict"],
         ac_refs=dslib.items_in(" ".join(str(a.get("ac")) for a in verdict.get("ac_assessment") or [] if isinstance(a, dict))) or None,
         data={"ac_assessment": verdict.get("ac_assessment"), "findings": findings, "resolved": verdict.get("resolved"),
-              "comment_id": comment_id, "posted": comment_id is not None, "withheld": bool(withheld),
+              "comment_id": comment_id, "posted": comment_id is not None, "posted_as": posted_as,
+              "reviewer_login": reviewer_login, "reviewer_app_note": app_note, "withheld": bool(withheld),
               "invalid": bool(errors), "checker_round": verdict.get("round")})
     dslib.append_event("agent.finished", actor=actor, data=finished)
     return 0

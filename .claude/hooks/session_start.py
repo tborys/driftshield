@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import dslib  # noqa: E402
 
 ENV_NAMES = ("DS_GIT_AUTHOR_NAME", "DS_GIT_AUTHOR_EMAIL", "DS_DENY_TERMS", "DS_REPO", "DRIFTSHIELD_API_KEY",
-             "DRIFTSHIELD_INTAKE_URL", "DS_DRIFTSHIELD_API_BASE") + dslib.RUNS_ENV
+             "DRIFTSHIELD_INTAKE_URL", "DS_DRIFTSHIELD_API_BASE") + dslib.RUNS_ENV + dslib.REVIEWER_ENV
 
 
 def session_env() -> list[str]:
@@ -37,9 +37,10 @@ def session_env() -> list[str]:
     for i, (k, v) in enumerate(pairs):
         lines += [f"export GIT_CONFIG_KEY_{i}={shlex.quote(k)}", f"export GIT_CONFIG_VALUE_{i}={shlex.quote(v)}"]
     lines.append(f'export PATH={shlex.quote(str(dslib.KIT / "bin"))}:"$PATH"')
-    # The run store keys are for the Stop hook, which gets the session's own environment. No
-    # Bash command, and nothing it starts, may see them.
-    lines.append("unset " + " ".join(dslib.RUNS_ENV))
+    # The run store keys and the reviewer App's key are for the hooks, which get the session's own
+    # environment. No Bash command, and nothing it starts, may see them: a builder with the App key
+    # could sign as the reviewer.
+    lines.append("unset " + " ".join(dslib.RUNS_ENV + dslib.REVIEWER_ENV))
     return lines
 
 
