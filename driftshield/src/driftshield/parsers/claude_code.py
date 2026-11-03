@@ -41,7 +41,7 @@ class ClaudeCodeParser:
 
     def __init__(self) -> None:
         # Records the last parse() could not use (not JSON, not an object, or an
-        # assistant/user record whose message is not an object).
+        # assistant/user record whose message or content is not usable).
         self.skipped_records_by_reason: dict[str, int] = {}
 
     @property
@@ -103,6 +103,7 @@ class ClaudeCodeParser:
                 message = entry["message"]
                 content_items = message.get("content", [])
                 if not isinstance(content_items, list):
+                    self._skip("content_not_usable")
                     continue
 
                 for item in content_items:
@@ -159,6 +160,7 @@ class ClaudeCodeParser:
                     continue
 
                 if not isinstance(content_items, list):
+                    self._skip("content_not_usable")
                     continue
 
                 for item in content_items:

@@ -10,7 +10,10 @@ class TranscriptParser(Protocol):
 
     # Records the last parse() could not use, by reason. ``None`` means this
     # parser does not count skipped records (not "none were skipped").
-    skipped_records_by_reason: dict[str, int] | None
+    @property
+    def skipped_records_by_reason(self) -> dict[str, int] | None:
+        """Skipped records by reason, or ``None`` when the parser does not count."""
+        ...
 
     @property
     def skipped_record_count(self) -> int | None:
@@ -34,7 +37,9 @@ class TranscriptParser(Protocol):
 class UncountedSkips:
     """Mixin for parsers that do not count skipped records."""
 
-    skipped_records_by_reason: dict[str, int] | None = None
+    @property
+    def skipped_records_by_reason(self) -> dict[str, int] | None:
+        return None
 
     @property
     def skipped_record_count(self) -> int | None:

@@ -372,7 +372,8 @@ def _line_records(text: str, warnings: list[str]) -> dict[str, Any]:
     """Collect JSONL records into the shareable ``{"events": [...]}`` shape.
 
     Lines that are not JSON are named in ``warnings`` here; the parser counts
-    its own skipped records separately, if it counts them at all. A ``sessionId`` on any record is promoted to ``session_id``.
+    its own skipped records separately, if it counts them at all. A ``sessionId``
+    on any record is promoted to ``session_id``.
     """
     events: list[Any] = []
     session_id: str | None = None
