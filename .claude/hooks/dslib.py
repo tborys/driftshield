@@ -14,6 +14,7 @@ All are read and written under one lock.
 
 from __future__ import annotations
 
+import base64
 import fcntl
 import hashlib
 import ipaddress
@@ -23,7 +24,10 @@ import re
 import shlex
 import subprocess
 import sys
+import tempfile
 import time
+import urllib.error
+import urllib.request
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -47,7 +51,9 @@ LEAD_REMOVES = LEAD_ADDS | {"agent:go", "agent:approved", "agent:interrupted"}
 RUNS_KEYS = ("DS_RUNS_AWS_ACCESS_KEY_ID", "DS_RUNS_AWS_SECRET_ACCESS_KEY",
              "DS_RUNS_READ_AWS_ACCESS_KEY_ID", "DS_RUNS_READ_AWS_SECRET_ACCESS_KEY")
 RUNS_ENV = ("DS_RUNS_BUCKET", "DS_RUNS_AWS_REGION", "DS_RUNS_S3_ENDPOINT") + RUNS_KEYS
-SECRET_ENV = ("DRIFTSHIELD_API_KEY",) + RUNS_KEYS
+# The reviewer's GitHub App (see "the reviewer's GitHub App" below). The key is the PEM, base64 encoded on one line.
+REVIEWER_ENV = ("DS_REVIEWER_APP_ID", "DS_REVIEWER_INSTALLATION_ID", "DS_REVIEWER_APP_KEY")
+SECRET_ENV = ("DRIFTSHIELD_API_KEY", "DS_REVIEWER_APP_KEY") + RUNS_KEYS
 
 
 # ---------- the gate ----------
@@ -300,6 +306,103 @@ def gh_json(*args: str, body: dict | None = None, retry: bool = False):
     return None
 
 
+# ---------- the reviewer's GitHub App ----------
+# The verdict comment is posted as the App, so GitHub shows a login (`<slug>[bot]`) that is not the builder's.
+# Python's standard library has no RSA, so the JWT is signed by the `openssl` CLI, with the key in a 0600
+# temp file that is deleted at once. Nothing here may ever print, log or store the key, a JWT or a token.
+
+class ReviewerAppError(Exception):
+    """A failure whose message is safe to record: it names a step and a status, never a value."""
+
+
+def reviewer_app(env: dict | None = None) -> dict | None:
+    """The App's three settings, or None unless all three are set."""
+    env = os.environ if env is None else env
+    found = {n: (env.get(n) or "").strip() for n in REVIEWER_ENV}
+    return found if all(found.values()) else None
+
+
+def decode_app_key(value: str) -> str:
+    """The PEM from the environment value: base64 on one line, or the PEM itself (newlines may be written \\n)."""
+    value = value.strip()
+    if not value.startswith("-----BEGIN"):
+        try:
+            value = base64.b64decode(value, validate=True).decode().strip()
+        except (ValueError, UnicodeDecodeError):
+            raise ReviewerAppError("the App key is not base64 text") from None
+    value = value.replace("\\n", "\n")
+    if not re.match(r"-----BEGIN [A-Z ]*PRIVATE KEY-----", value):
+        raise ReviewerAppError("the App key is not a PEM private key")
+    return value.strip() + "\n"
+
+
+def _b64url(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+
+
+def app_jwt(app_id: str, pem: str, now: int | None = None) -> str:
+    """A GitHub App JWT: RS256, issued 60 s ago (clock drift), valid for 9 more minutes."""
+    now = int(time.time()) if now is None else now
+    signing_input = ".".join(_b64url(json.dumps(part, separators=(",", ":")).encode()) for part in
+                             ({"alg": "RS256", "typ": "JWT"}, {"iat": now - 60, "exp": now + 540, "iss": str(app_id)}))
+    fd, name = tempfile.mkstemp(prefix="ds-reviewer-")  # mode 0600
+    try:
+        with os.fdopen(fd, "w") as fh:
+            fh.write(pem)
+        proc = subprocess.run([os.environ.get("DS_OPENSSL", "openssl"), "dgst", "-sha256", "-sign", name],
+                              input=signing_input.encode(), capture_output=True, timeout=20)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise ReviewerAppError(f"openssl did not run ({type(exc).__name__})") from None
+    finally:
+        try:
+            os.unlink(name)
+        except OSError:
+            pass
+    if proc.returncode != 0 or not proc.stdout:
+        raise ReviewerAppError(f"openssl could not sign with the App key (exit {proc.returncode})")
+    return f"{signing_input}.{_b64url(proc.stdout)}"
+
+
+def github_api(method: str, path: str, bearer: str, body: dict | None = None) -> dict:
+    """One direct call to api.github.com (DS_GITHUB_API_URL for tests). Raises ReviewerAppError with the status only."""
+    base = os.environ.get("DS_GITHUB_API_URL") or "https://api.github.com"
+    request = urllib.request.Request(
+        f"{base.rstrip('/')}/{path}", method=method, data=json.dumps(body).encode() if body is not None else None,
+        headers={"Authorization": f"Bearer {bearer}", "Accept": "application/vnd.github+json", "Content-Type": "application/json",
+                 "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "driftshield-reviewer"})
+    try:
+        with urllib.request.urlopen(request, timeout=20) as resp:
+            data = json.loads(resp.read() or b"{}")
+    except urllib.error.HTTPError as exc:
+        raise ReviewerAppError(f"{method} {path.split('?')[0].rsplit('/', 1)[-1]}: http {exc.code}") from None
+    except (OSError, ValueError) as exc:
+        raise ReviewerAppError(f"{method} {path.split('?')[0].rsplit('/', 1)[-1]}: {type(exc).__name__}") from None
+    if not isinstance(data, dict):
+        raise ReviewerAppError(f"{method} {path.rsplit('/', 1)[-1]}: unexpected answer")
+    return data
+
+
+def post_as_reviewer(repository: str, number: int, body: str) -> tuple[dict | None, str | None]:
+    """(the posted comment, None), or (None, why not). `why` is safe to write to the ledger. When the App
+    is not configured, nothing is called and the reason says so. Never raises."""
+    app = reviewer_app()
+    if app is None:
+        return None, "DS_REVIEWER_APP_ID, DS_REVIEWER_INSTALLATION_ID or DS_REVIEWER_APP_KEY is not set"
+    try:
+        jwt = app_jwt(app["DS_REVIEWER_APP_ID"], decode_app_key(app["DS_REVIEWER_APP_KEY"]))
+        minted = github_api("POST", f"app/installations/{app['DS_REVIEWER_INSTALLATION_ID']}/access_tokens", jwt,
+                            {"repositories": [repository.split("/")[-1]],
+                             "permissions": {"issues": "write", "pull_requests": "write"}})
+        token = minted.get("token")
+        if not isinstance(token, str) or not token:
+            raise ReviewerAppError("access_tokens: no token in the answer")
+        return github_api("POST", f"repos/{repository}/issues/{number}/comments", token, {"body": body}), None
+    except ReviewerAppError as exc:
+        return None, str(exc)[:200]
+    except Exception as exc:  # the hook must never fail on this
+        return None, f"unexpected {type(exc).__name__}"
+
+
 def own(comment: dict, login: str | None) -> bool:
     """Written by this run's GitHub identity: the token's login, or the repo owner."""
     user = (comment.get("user") or {}).get("login")
@@ -315,9 +418,11 @@ def review_markers(pr_number: int) -> int | None:
     found = comments(pr_number)
     if found is None:
         return None
-    login = run_info().get("login")
-    return sum(1 for c in found if own(c, login) and f"<!-- {REVIEW_MARKER}" in
-               (c.get("body") or "").replace("&lt;", "<"))
+    run = run_info()
+    # the run's own identity, and the reviewer App's login once it has posted or DS_REVIEWER_LOGINS names it
+    app = {run.get("reviewer_login")} | {x.strip() for x in os.environ.get("DS_REVIEWER_LOGINS", "").split(",") if x.strip()}
+    return sum(1 for c in found if (own(c, run.get("login")) or (c.get("user") or {}).get("login") in app - {None})
+               and f"<!-- {REVIEW_MARKER}" in (c.get("body") or "").replace("&lt;", "<"))
 
 
 def open_pr(name: str | None = None) -> tuple[bool, dict | None]:
@@ -491,6 +596,8 @@ SECRETS = [
     re.compile(r"\b(?:ghp|gho|ghs|ghu)_[A-Za-z0-9]{30,}|\bgithub_pat_[A-Za-z0-9_]{40,}"),
     re.compile(r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b"),  # AWS access key id
     re.compile(r"execute-api\.[a-z0-9-]+\.amazonaws\.com", re.I),
+    re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?(?:-----END [A-Z ]*PRIVATE KEY-----|\Z)", re.S),
+    re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{16,}"),  # a JWT, such as the App's
 ]
 
 
