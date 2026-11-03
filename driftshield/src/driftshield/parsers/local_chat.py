@@ -7,11 +7,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID, uuid4
 
+from driftshield.parsers.protocol import UncountedSkips
 from driftshield.core.models import CanonicalEvent, EventType
 from driftshield.core.normalization import normalize_events
 
 
-class LocalChatTranscriptParser:
+class LocalChatTranscriptParser(UncountedSkips):
     TOOL_CATEGORY_MAP = {
         "read": "file_io",
         "write": "file_io",

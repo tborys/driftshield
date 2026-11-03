@@ -1,6 +1,6 @@
 """Session analysis orchestration."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from driftshield.core.analysis.heuristics import (
     AssumptionMutationHeuristic,
@@ -34,10 +34,13 @@ class AnalysisResult:
     inflection_explanation: ExplanationPayload | None = None
     candidate_break_point: CandidateBreakPoint | None = None
     # Source records the parser could not use. Set by the caller that parsed.
-    skipped_records_by_reason: dict[str, int] = field(default_factory=dict)
+    # None means not measured (the parser does not count, or no parser ran).
+    skipped_records_by_reason: dict[str, int] | None = None
 
     @property
-    def skipped_record_count(self) -> int:
+    def skipped_record_count(self) -> int | None:
+        if self.skipped_records_by_reason is None:
+            return None
         return sum(self.skipped_records_by_reason.values())
 
     @property

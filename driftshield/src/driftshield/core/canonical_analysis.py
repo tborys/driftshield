@@ -157,7 +157,11 @@ def build_canonical_analysis(
             ),
             "ambiguity_count": ambiguity_count,
             "skipped_record_count": result.skipped_record_count,
-            "skipped_records_by_reason": dict(result.skipped_records_by_reason),
+            "skipped_records_by_reason": (
+                None
+                if result.skipped_records_by_reason is None
+                else dict(result.skipped_records_by_reason)
+            ),
             "field_recovery_summary": {
                 "direct_event_count": direct_events,
                 "normalised_event_count": normalised_events,

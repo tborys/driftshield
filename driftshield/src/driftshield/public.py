@@ -248,7 +248,7 @@ def analyse_run(
         transcript = {"events": [_event_record(event) for event in events]}
         raw = json.dumps(transcript, sort_keys=True, default=str).encode("utf-8")
         warnings = []
-        skipped = {}
+        skipped = None
 
     if not events:
         raise NoParseableEventsError(
@@ -319,7 +319,7 @@ def analyse_run(
 
 def _parse_bytes(
     raw: bytes, *, source: str | None, format: str | None
-) -> tuple[list[CanonicalEvent], str, dict[str, Any], list[str], dict[str, int]]:
+) -> tuple[list[CanonicalEvent], str, dict[str, Any], list[str], dict[str, int] | None]:
     warnings: list[str] = []
     text = raw.decode("utf-8", errors="replace")
     replaced = text.count("�")
@@ -364,15 +364,15 @@ def _parse_bytes(
         raise NoParseableEventsError(
             "parse_failed", f"failed to parse as '{detected}': {exc}", warnings
         ) from exc
-    skipped = getattr(parser, "skipped_records_by_reason", None)
-    return events, detected, transcript, warnings, dict(skipped) if isinstance(skipped, dict) else {}
+    skipped = parser.skipped_records_by_reason
+    return events, detected, transcript, warnings, None if skipped is None else dict(skipped)
 
 
 def _line_records(text: str, warnings: list[str]) -> dict[str, Any]:
     """Collect JSONL records into the shareable ``{"events": [...]}`` shape.
 
-    Lines that are not JSON are named in ``warnings`` (the parsers skip them
-    silently). A ``sessionId`` on any record is promoted to ``session_id``.
+    Lines that are not JSON are named in ``warnings`` here; the parser counts
+    its own skipped records separately, if it counts them at all. A ``sessionId`` on any record is promoted to ``session_id``.
     """
     events: list[Any] = []
     session_id: str | None = None

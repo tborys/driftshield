@@ -150,7 +150,6 @@ def test_content_alone_detects_every_supported_format(expected: str, fixture: Pa
     run = analyse_run(fixture.read_bytes())
     assert run.detected_format == expected
     assert run.events and run.source is None
-    assert run.canonical_analysis["extraction_quality_summary"]["skipped_records_by_reason"] == {}
     assert run.warnings == []
 
 
@@ -653,3 +652,35 @@ def test_ac3_no_skipped_records_reports_zero_and_no_extra_warning():
     assert run.canonical_analysis["extraction_quality_summary"]["skipped_record_count"] == 0
     assert run.canonical_analysis["extraction_quality_summary"]["skipped_records_by_reason"] == {}
     assert run.warnings == []
+
+
+@pytest.mark.parametrize(
+    "fmt", [name for name in _SOURCE_FIXTURES if name != "claude_code"]
+)
+def test_ac1_uncounted_format_reports_null_skip_counts(fmt: str):
+    run = analyse_run(_SOURCE_FIXTURES[fmt].read_bytes(), format=fmt)
+    summary = run.canonical_analysis["extraction_quality_summary"]
+    assert summary["skipped_record_count"] is None
+    assert summary["skipped_records_by_reason"] is None
+
+
+def test_ac1_event_list_input_reports_null_skip_counts():
+    events = analyse_run(_SKIP_GOOD_LINES.encode(), format="claude_code").events
+    summary = analyse_run(events).canonical_analysis["extraction_quality_summary"]
+    assert summary["skipped_record_count"] is None
+    assert summary["skipped_records_by_reason"] is None
+
+
+def test_ac4_every_parser_declares_skip_counts_and_protocol_names_them():
+    from typing import get_type_hints
+
+    from driftshield.parsers.protocol import TranscriptParser
+    from driftshield.parsers.registry import PARSERS
+
+    assert "skipped_records_by_reason" in get_type_hints(TranscriptParser)
+    for name, cls in PARSERS.items():
+        parser = cls()
+        value = parser.skipped_records_by_reason
+        assert value is None or isinstance(value, dict), name
+        count = parser.skipped_record_count
+        assert (count is None) == (value is None), name
