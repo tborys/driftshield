@@ -83,6 +83,12 @@ PUBLIC_REPO_BASES = (
     "http://github.com/driftshield/driftshield",
     "git@github.com:driftshield/driftshield",
     "ssh://git@github.com/driftshield/driftshield",
+    "driftshield/driftshield-sdk",
+    "github.com/driftshield/driftshield-sdk",
+    "https://github.com/driftshield/driftshield-sdk",
+    "http://github.com/driftshield/driftshield-sdk",
+    "git@github.com:driftshield/driftshield-sdk",
+    "ssh://git@github.com/driftshield/driftshield-sdk",
 )
 SAME_OWNER_PREFIXES = (
     "tborys/",
