@@ -175,7 +175,8 @@ def hook_error(hook: str, exc: BaseException) -> None:
 
 
 def role_of(agent_type: str | None) -> str:
-    return {"": "lead", None: "lead", "builder": "builder", "checker": "checker"}.get(agent_type, agent_type or "lead")
+    # "checker" was the reviewer's name until 2 Nov 2026; old agent types still read as reviewer
+    return {"": "lead", None: "lead", "builder": "builder", "reviewer": "reviewer", "checker": "reviewer"}.get(agent_type, agent_type or "lead")
 
 
 def norm_agent(agent_id: str | None) -> str | None:
@@ -414,7 +415,7 @@ def comments(number: int) -> list[dict] | None:
 
 
 def review_markers(pr_number: int) -> int | None:
-    """Checker verdicts this identity posted on the PR. None when unreadable."""
+    """Reviewer verdicts this identity posted on the PR. None when unreadable."""
     found = comments(pr_number)
     if found is None:
         return None

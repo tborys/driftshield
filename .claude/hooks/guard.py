@@ -4,8 +4,8 @@
 GitHub writes are an allowlist: exactly the five that lead.md uses, on this
 run's repository, issue, branch and PR. Everything else that writes is
 refused, including merges, issue edits, comment deletes and dependency
-links. Git pushes go only to the run's branch, never forced. The checker
-may only read. Builder and checker launches stop at the round cap, on
+links. Git pushes go only to the run's branch, never forced. The reviewer
+may only read. Builder and reviewer launches stop at the round cap, on
 agent:stop, on an open blocker, or when GitHub cannot be read.
 
 This is a seatbelt. The lock is GitHub's branch protection on main (admins
@@ -30,9 +30,9 @@ PROTECTED = (".claude/", ".git/hooks/", ".github/", ".driftshield/ledger.jsonl",
              ".driftshield/state.json", ".driftshield/agents.json", ".driftshield/verdicts/", ".driftshield/out/")
 RAW_MARKS = tuple(p for p in PROTECTED if p != ".github/") + (".github/ISSUE_TEMPLATE", ".github/workflows")
 READ_CMDS = {"cat", "head", "tail", "ls", "wc", "grep", "diff", "stat", "file", "nl", "sha256sum", "md5sum", "test", "true"}
-CHECKER_CMDS = {"cat", "head", "tail", "wc", "ls", "grep", "nl", "stat", "file"}
-CHECKER_GIT = {"diff", "log", "show", "status", "rev-parse", "ls-files", "blame", "cat-file"}
-GIT_READ = CHECKER_GIT | {"branch", "fetch", "merge-base", "describe", "for-each-ref", "ls-remote", "show-ref", "grep"}
+REVIEWER_CMDS = {"cat", "head", "tail", "wc", "ls", "grep", "nl", "stat", "file"}
+REVIEWER_GIT = {"diff", "log", "show", "status", "rev-parse", "ls-files", "blame", "cat-file"}
+GIT_READ = REVIEWER_GIT | {"branch", "fetch", "merge-base", "describe", "for-each-ref", "ls-remote", "show-ref", "grep"}
 PUSH_FLAGS = {"-u", "--set-upstream", "-q", "--quiet", "-v", "--verbose", "--progress", "--porcelain"}
 DIAGRAM_CHECK = ".claude/skills/issue-diagram/check_diagram.py"  # reads the file it is given, writes nothing
 ALLOWED_WRITES = ("POST issues/<n>/comments with --input, POST issues/<n>/labels, DELETE issues/<n>/labels/<name>, "
@@ -52,8 +52,8 @@ def protected(path: str) -> bool:
 
 
 def check_path(path: str, agent: str) -> str | None:
-    if agent == "checker":
-        return "The checker is read only." + DONT_RETRY
+    if agent == "reviewer":
+        return "The reviewer is read only." + DONT_RETRY
     if path and protected(path):
         return "The kit, .github/ and the run's own evidence files are read only in a delivery run." + DONT_RETRY
     return None
@@ -132,7 +132,7 @@ def pr_ready_problem(run: dict) -> str | None:
     head = dslib.git("rev-parse", "HEAD")
     verdicts = [e for e in dslib.ledger() if e["type"] == "review.verdict"]
     if not verdicts or verdicts[-1].get("status") != "approve" or verdicts[-1].get("head_sha") != head:
-        return "agent:pr-ready needs the latest checker verdict to approve the current HEAD."
+        return "agent:pr-ready needs the latest reviewer verdict to approve the current HEAD."
     data = dslib.gh_json(f"repos/{run['repository']}/issues/{run['issue']}", retry=True)
     if not isinstance(data, dict):
         return "Could not read the issue to check the required checks; try once more, then escalate."
@@ -214,17 +214,17 @@ def check_gh(words: list[str]) -> str | None:
 
 # ---------- Bash ----------
 
-def checker_may_run(words: list[str]) -> bool:
+def reviewer_may_run(words: list[str]) -> bool:
     name = Path(words[0]).name
     if name == "git":
         sub = words[1] if len(words) > 1 else ""
-        return sub in CHECKER_GIT and not any(w.startswith(("--output", "-o", "--ext-diff")) for w in words[2:])
+        return sub in REVIEWER_GIT and not any(w.startswith(("--output", "-o", "--ext-diff")) for w in words[2:])
     if name == "gh":
         call = dslib.gh_api_call(words)
         return call is not None and call["method"] == "GET"
     if name == "ds-check":
         return words[1:] == ["--list"]
-    return name in CHECKER_CMDS
+    return name in REVIEWER_CMDS
 
 
 def read_only(words: list[str]) -> bool:
@@ -258,9 +258,9 @@ def touches_protected_unsafely(segs: list[list[str]]) -> bool:
 def check_bash(command: str, agent: str) -> str | None:
     segs, targets = dslib.parse_command(command)
     substitution = dslib.has_substitution(command)
-    if agent == "checker":
-        if targets or substitution or not all(checker_may_run(w) for w in segs):
-            return ("The checker is read only: cat head tail wc ls grep nl stat file, git diff log show status "
+    if agent == "reviewer":
+        if targets or substitution or not all(reviewer_may_run(w) for w in segs):
+            return ("The reviewer is read only: cat head tail wc ls grep nl stat file, git diff log show status "
                     "rev-parse ls-files blame cat-file, gh api GET and ds-check --list." + DONT_RETRY)
     if substitution and any(Path(w[0]).name in ("git", "gh", "curl", "wget") for w in segs):
         return "No command substitution in git, gh or curl commands: write the values out." + DONT_RETRY
@@ -287,7 +287,7 @@ def check_bash(command: str, agent: str) -> str | None:
 
 def check_agent(tool_input: dict, hook_input: dict) -> str | None:
     kind = tool_input.get("subagent_type") or ""
-    if kind not in ("builder", "checker"):
+    if kind not in ("builder", "reviewer"):
         return None
     run = dslib.run_info()
     if not run.get("issue") or not dslib.branch_ok(dslib.branch(), run.get("repository"), run["issue"]):
@@ -305,8 +305,8 @@ def check_agent(tool_input: dict, hook_input: dict) -> str | None:
     ok, pr = dslib.open_pr()
     if not ok:
         return "Could not read the run's pull request. Try once more; if it fails again, escalate."
-    if kind == "checker" and pr is None:
-        return "Push the first commit and open the draft PR before running the checker."
+    if kind == "reviewer" and pr is None:
+        return "Push the first commit and open the draft PR before running the reviewer."
     markers = dslib.review_markers(pr["number"]) if pr else 0
     if markers is None:
         return "Could not read the PR's comments to count review rounds. Try once more; if it fails again, escalate."

@@ -2,9 +2,9 @@
 
 You are the lead of one delivery run in this repository. You take one GitHub issue to a verified **draft** pull request, or you stop early with questions, a blocked note or an escalation. You never wait for a person inside the run, you never merge, and you never mark a PR ready.
 
-Your helpers are two subagents: `builder` (writes the code, test first) and `checker` (reviews it, read only). Run them one at a time and wait for each result.
+Your helpers are two subagents: `builder` (writes the code, test first) and `reviewer` (reviews it, read only). Run them one at a time and wait for each result.
 
-Hooks do the bookkeeping: they record commits, checks, GitHub calls and agent launches, post the checker's verdict, enforce the round cap and the GitHub write rules, and send the run's evidence away at the end. You write only the files under `.driftshield/` named below.
+Hooks do the bookkeeping: they record commits, checks, GitHub calls and agent launches, post the reviewer's verdict, enforce the round cap and the GitHub write rules, and send the run's evidence away at the end. You write only the files under `.driftshield/` named below.
 
 ## Ground rules
 
@@ -71,18 +71,18 @@ Copy the checklist and must not change items from the issue word for word, with 
 ## 4. Build, push, open the PR, check: in rounds
 
 1. **Branch.** Create the run's branch from the default branch.
-2. **Brief the builder** (`builder` subagent): the issue number, the items it owns with their text and proof, the must not change items, the tasks with paths, the testing seams, the check ids (`ds-check --list`), and in later rounds the checker's finding ids with their text. Never your opinion of how hard it is.
+2. **Brief the builder** (`builder` subagent): the issue number, the items it owns with their text and proof, the must not change items, the tasks with paths, the testing seams, the check ids (`ds-check --list`), and in later rounds the reviewer's finding ids with their text. Never your opinion of how hard it is.
    **Practice run**: if `.driftshield/drill.json` says `{"kind": "ac_dropped_from_brief", "target": "AC-3"}`, leave that item out of the round 1 brief only. Everything else stays normal.
 3. When the builder returns, read its report. Copy its `slowed me down:` line into `.driftshield/notes.md` as `- builder: <text>`.
 4. **Push**: `git push -u origin HEAD`.
 5. **Open the draft PR once**, after the first push: `gh api --method POST repos/{owner}/{repo}/pulls --input .driftshield/pr.json` with `{"title": "<type>: <summary> (#n)", "head": "<branch>", "base": "<default branch>", "draft": true, "body": "Closes #n\n\nWork in progress."}`.
-6. **Draw the After picture**, following `.claude/skills/issue-diagram/SKILL.md`. Build it from `git diff <default branch>...HEAD`, starting from the issue's `## Picture` when it has one. Write the PR body to `.driftshield/body.json` with the picture and its `Legend:` line under `## After`, run `python3 .claude/skills/issue-diagram/check_diagram.py .driftshield/body.json` until it prints `clean`, then PATCH the PR body. Redraw it in every later round, so the checker always sees the picture of the head it reviews.
-7. **Run the checker** (`checker` subagent). The brief is exactly: `Review PR #<pr>, round <k>, for issue #<n>.` Nothing more.
+6. **Draw the After picture**, following `.claude/skills/issue-diagram/SKILL.md`. Build it from `git diff <default branch>...HEAD`, starting from the issue's `## Picture` when it has one. Write the PR body to `.driftshield/body.json` with the picture and its `Legend:` line under `## After`, run `python3 .claude/skills/issue-diagram/check_diagram.py .driftshield/body.json` until it prints `clean`, then PATCH the PR body. Redraw it in every later round, so the reviewer always sees the picture of the head it reviews.
+7. **Run the reviewer** (`reviewer` subagent). The brief is exactly: `Review PR #<pr>, round <k>, for issue #<n>.` Nothing more.
 8. **Read the verdict** the hook posted on the PR. If the comment says it was withheld from GitHub, read `.driftshield/verdicts/round-<k>.json` instead.
    - `approve`: go to step 5.
    - `changes` with a `blocking` or `major` finding: brief the builder with those finding ids, then repeat from step 3 of this list (round k+1).
    - `changes` with only `minor` or `nit` findings: treat as approve and list them in the PR body.
-   - `invalid: true`: the checker gave no valid verdict even after a retry. **Escalate and stop.**
+   - `invalid: true`: the reviewer gave no valid verdict even after a retry. **Escalate and stop.**
 9. The guard counts rounds from the run's own record and the verdicts on the PR. At the cap (2 small, 3 large) it refuses the next launch: **Escalate and stop**.
 
 Also escalate when: the same finding comes back after a fix; the fix needs files outside the plan, `.github/` or a new design decision; a must not change item would break; a critical security finding; the guard blocks the same action twice.
@@ -141,8 +141,8 @@ Closes #<n>
 **Blast Radius:** <one word>
 ```
 
-   Run the diagram checker on `.driftshield/body.json` before the PATCH. The headings follow Matt Pocock's `pr` skill (MIT). For a practice run, add one line under the first: `Practice run: one checklist item was held back from the builder in round 1 on purpose, to test the checker. The final change is complete and can be merged.`
-3. **Add `agent:pr-ready`.** The guard allows it only when the latest checker verdict approves the current HEAD, every required check passed on that HEAD, and the PR head on GitHub is that HEAD. Then remove `agent:running`.
+   Run the diagram checker on `.driftshield/body.json` before the PATCH. The headings follow Matt Pocock's `pr` skill (MIT). For a practice run, add one line under the first: `Practice run: one checklist item was held back from the builder in round 1 on purpose, to test the reviewer. The final change is complete and can be merged.`
+3. **Add `agent:pr-ready`.** The guard allows it only when the latest reviewer verdict approves the current HEAD, every required check passed on that HEAD, and the PR head on GitHub is that HEAD. Then remove `agent:running`.
 4. Post the end comment on the issue: `Draft PR #<pr> is ready for review. <!-- driftshield-delivery-done:v1 run=<nonce> -->`
 5. Add your own line to `.driftshield/notes.md`: `- lead: <what slowed you down most, or nothing>`. This file goes to DriftShield only, never to GitHub.
 6. End with a three line summary: the PR, the items, the checks.

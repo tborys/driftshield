@@ -3,7 +3,7 @@
 Parts of the delivery agents adapt skills from Matt Pocock's skills repository (https://github.com/mattpocock/skills), MIT licence:
 
 - `builder.md`, "How to work" and "When the issue is a bug": the essentials of the `tdd` and `diagnosing-bugs` skills.
-- `checker.md`, "Review on two axes": the Spec and Standards axes and the code smell baseline of the `code-review` skill.
+- `reviewer.md`, "Review on two axes": the Spec and Standards axes and the code smell baseline of the `code-review` skill.
 - `lead.md`, the PR body headings: the `pr` skill, whose Summary guidance credits Dex Horthy's `show-me` skill (HumanLayer).
 
 ```

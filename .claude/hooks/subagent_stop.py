@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """SubagentStop (cloud routine only): note every subagent that finished, and
-post the checker's verdict on the PR word for word, so the lead cannot soften it.
+post the reviewer's verdict on the PR word for word, so the lead cannot soften it.
 
-The verdict is the checker's final report: the SubagentHandback message when
+The verdict is the reviewer's final report: the SubagentHandback message when
 there is one (auto mode), else `last_assistant_message`. It must be valid
 JSON, name the PR's current head, cover every AC and MNC in the issue, and
-not approve with a blocking or major finding. If not, the checker is sent
+not approve with a blocking or major finding. If not, the reviewer is sent
 back once (exit 2). Still invalid, it is posted as `changes` with one
 synthetic blocking finding, which the lead escalates. If its text fails the
 public safety scan, only the verdict and counts go on GitHub. The full
@@ -69,7 +69,7 @@ def comment_body(round_no: int, raw: str, v: dict, withheld: list[str]) -> str:
     serious = [f for f in findings if f.get("severity") in ("blocking", "major")]
     word = "approved" if v["verdict"] == "approve" else "changes requested"
     head = (f"<!-- {dslib.REVIEW_MARKER} round={round_no} head={v.get('head_sha')} verdict={v['verdict']} -->\n"
-            f"**Checker, round {round_no}: {word}.** {len(findings)} findings, {len(serious)} blocking or major.\n\n")
+            f"**Reviewer, round {round_no}: {word}.** {len(findings)} findings, {len(serious)} blocking or major.\n\n")
     if withheld:
         return head + "The full verdict failed the public safety scan, so it is kept off GitHub.\n"
     return head + "```json\n" + raw + "\n```\n"
@@ -85,7 +85,7 @@ def main() -> int:
         agents.setdefault(agent_id, {}).update({"agent_type": agent_type, "transcript": hook_input.get("agent_transcript_path")})
     actor = dslib.actor_from(hook_input)
     finished = {"transcript": Path(hook_input.get("agent_transcript_path") or "").name}
-    if agent_type != "checker":
+    if agent_type != "reviewer":
         dslib.append_event("agent.finished", actor=actor, data=finished)
         return 0
 
@@ -106,7 +106,7 @@ def main() -> int:
     if errors:
         verdict = {"verdict": "changes", "round": round_no, "head_sha": pr_head, "invalid": True, "ac_assessment": [],
                    "findings": [{"id": f"F-{round_no}-0", "axis": "spec", "severity": "blocking", "ac": None,
-                                 "location": "", "finding": ("The checker gave no valid verdict after one retry: "
+                                 "location": "", "finding": ("The reviewer gave no valid verdict after one retry: "
                                                              + "; ".join(errors))[:300]}]}
         raw = json.dumps(verdict, indent=2)
     else:
@@ -135,7 +135,7 @@ def main() -> int:
         data={"ac_assessment": verdict.get("ac_assessment"), "findings": findings, "resolved": verdict.get("resolved"),
               "comment_id": comment_id, "posted": comment_id is not None, "posted_as": posted_as,
               "reviewer_login": reviewer_login, "reviewer_app_note": app_note, "withheld": bool(withheld),
-              "invalid": bool(errors), "checker_round": verdict.get("round")})
+              "invalid": bool(errors), "reviewer_round": verdict.get("round")})
     dslib.append_event("agent.finished", actor=actor, data=finished)
     return 0
 
