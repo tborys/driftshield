@@ -78,7 +78,7 @@ Copy the checklist and must not change items from the issue word for word, with 
 5. **Open the draft PR once**, after the first push: `gh api --method POST repos/{owner}/{repo}/pulls --input .driftshield/pr.json` with `{"title": "<type>: <summary> (#n)", "head": "<branch>", "base": "<default branch>", "draft": true, "body": "Closes #n\n\nWork in progress."}`.
 6. **Draw the After picture**, following `.claude/skills/issue-diagram/SKILL.md`. Build it from `git diff <default branch>...HEAD`, starting from the issue's `## Picture` when it has one. Write the PR body to `.driftshield/body.json` with the picture and its `Legend:` line under `## After`, run `python3 .claude/skills/issue-diagram/check_diagram.py .driftshield/body.json` until it prints `clean`, then PATCH the PR body. Redraw it in every later round, so the reviewer always sees the picture of the head it reviews.
 7. **Run the reviewer** (`reviewer` subagent). The brief is exactly: `Review PR #<pr>, round <k>, for issue #<n>.` Nothing more.
-8. **Read the verdict** the hook posted on the PR. If the comment says it was withheld from GitHub, read `.driftshield/verdicts/round-<k>.json` instead.
+8. **Read the verdict** from `.driftshield/verdicts/round-<k>.json`, the hook's copy. The comment on the PR can land a few seconds later, because the reviewer's GitHub App posts it from outside this session.
    - `approve`: go to step 5.
    - `changes` with a `blocking` or `major` finding: brief the builder with those finding ids, then repeat from step 3 of this list (round k+1).
    - `changes` with only `minor` or `nit` findings: treat as approve and list them in the PR body.

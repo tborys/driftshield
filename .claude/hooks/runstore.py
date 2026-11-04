@@ -270,6 +270,38 @@ def upload_run(found: list[dict], run: dict, ctx: dict, events: list[dict], dead
     return result
 
 
+# ---------- the reviewer's verdict comment ----------
+
+POST_SUFFIX = ".post.json"  # the bucket sends objects ending in this to the reviewer poster in AWS
+POST_SCHEMA = "driftshield-reviewer-post.v1"
+
+
+def post_key(run: dict, ctx: dict, round_no: int) -> str:
+    return f"{bundle_prefix(run, ctx)}/reviewer/round-{round_no}{POST_SUFFIX}"
+
+
+def queue_reviewer_post(run: dict, ctx: dict, round_no: int, head_sha: str | None, body: str,
+                        env: dict | None = None, budget_s: float = 30) -> tuple[str | None, str | None]:
+    """(key, None) once the verdict comment is in the run store for the reviewer poster to put on the PR
+    as the reviewer's GitHub App, else (None, why not). Only when DS_REVIEWER_POST_VIA_STORE is 1, which is
+    set once the poster is live: before that a queued comment would never reach GitHub. Never raises."""
+    env = os.environ if env is None else env
+    if env.get("DS_REVIEWER_POST_VIA_STORE") != "1":
+        return None, "DS_REVIEWER_POST_VIA_STORE is not 1"
+    cfg, why = config(env)
+    if cfg is None:
+        return None, why or "the run store is off"
+    try:
+        key = post_key(run, ctx, round_no)
+        doc = {"schema": POST_SCHEMA, "repository": ctx["repo"], "issue": ctx["issue"], "pr": ctx["pr"],
+               "branch": ctx["branch"], "round": round_no, "head_sha": head_sha, "body": body}
+        data, _ = scrub_bytes(json.dumps(doc, indent=2).encode(), secret_values(env))
+        stored, detail = put_object(cfg, key, data, time.time() + budget_s, TYPES[".json"])
+    except Exception as exc:  # the hook must never fail on this
+        return None, f"unexpected {type(exc).__name__}"
+    return (key, None) if stored else (None, detail[:200])
+
+
 def _upload(cfg: dict, found: list[dict], run: dict, ctx: dict, events: list[dict], deadline: float,
             env: dict | None) -> dict:
     values, prefix = secret_values(env), bundle_prefix(run, ctx)
