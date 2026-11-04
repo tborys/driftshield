@@ -30,10 +30,10 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/tborys/driftshield"
-Changelog = "https://github.com/tborys/driftshield/blob/main/CHANGELOG.md"
-Documentation = "https://github.com/tborys/driftshield/blob/main/docs/public-api.md"
-Issues = "https://github.com/tborys/driftshield/issues"
+Homepage = "https://github.com/driftshield/driftshield-sdk"
+Changelog = "https://github.com/driftshield/driftshield-sdk/blob/main/CHANGELOG.md"
+Documentation = "https://github.com/driftshield/driftshield-sdk/blob/main/docs/public-api.md"
+Issues = "https://github.com/driftshield/driftshield-sdk/issues"
 
 [project.optional-dependencies]
 dev = [

@@ -32,6 +32,6 @@ is the only call that sends anything off the machine, and it only ever sends
 `run.redacted_transcript`.
 
 Documentation, the self hosted web UI and the full CLI reference live in the
-repository: https://github.com/tborys/driftshield
+repository: https://github.com/driftshield/driftshield-sdk
 
 Licensed under AGPL-3.0-or-later.

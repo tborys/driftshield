@@ -1,18 +1,18 @@
 ---
 name: driftshield-pr-review
-description: Review GitHub PRs and patches for the tborys/driftshield OSS repository with repo-specific context across the FastAPI backend, SQLAlchemy and Alembic database layer, Typer CLI, transcript ingest and analysis pipeline, and React/Vite frontend. Use when asked to review a DriftShield OSS PR, branch, diff, or implementation for regressions, missing tests, schema drift, migration gaps, incomplete verification, or backend/frontend mismatches.
+description: Review GitHub PRs and patches for the driftshield/driftshield-sdk OSS repository with repo-specific context across the FastAPI backend, SQLAlchemy and Alembic database layer, Typer CLI, transcript ingest and analysis pipeline, and React/Vite frontend. Use when asked to review a DriftShield OSS PR, branch, diff, or implementation for regressions, missing tests, schema drift, migration gaps, incomplete verification, or backend/frontend mismatches.
 ---
 
 # DriftShield PR Review
 
-Review `tborys/driftshield` changes in findings-first mode. Read the PR or diff, the linked issue, the repo guidance, and the surrounding code before judging the patch. Focus on bugs, regressions, missing tests, schema and type mismatches, migration gaps, workflow-state mistakes, and verification holes rather than style nits.
+Review `driftshield/driftshield-sdk` changes in findings-first mode. Read the PR or diff, the linked issue, the repo guidance, and the surrounding code before judging the patch. Focus on bugs, regressions, missing tests, schema and type mismatches, migration gaps, workflow-state mistakes, and verification holes rather than style nits.
 
 ## Workflow
 
 1. Establish scope.
 - If the user gives a PR number, inspect it with `gh pr view <pr> --json title,body,files,commits,baseRefName,headRefName,url`.
 - Read the linked issue or acceptance criteria before reviewing implementation details.
-- Read `AGENTS.md` and `.github/pull_request_template.md` in `tborys/driftshield`.
+- Read `AGENTS.md` and `.github/pull_request_template.md` in `driftshield/driftshield-sdk`.
 - Read changed files and nearby code paths; do not review the diff in isolation.
 
 2. Map the touched system.
