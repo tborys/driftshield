@@ -74,7 +74,7 @@ source .venv/bin/activate
 driftshield signatures pull community-general --ref <git-tag-or-commit>
 ```
 
-By default this pulls from `tborys/driftshield` and stores the validated manifest under `~/.local/share/driftshield/signatures/<pack-name>/<pack-version>/`.
+By default this pulls from `driftshield/driftshield-sdk` and stores the validated manifest under `~/.local/share/driftshield/signatures/<pack-name>/<pack-version>/`.
 
 If you need to test or mirror a pack source, override the source URL directly:
 
@@ -121,8 +121,8 @@ If a public sentence sounds like a bundled promise about what repeats across run
 ### 1. Setup from a clean clone
 
 ```bash
-git clone https://github.com/tborys/driftshield.git
-cd driftshield
+git clone https://github.com/driftshield/driftshield-sdk.git
+cd driftshield-sdk
 ./scripts/dev-setup.sh
 ```
 
@@ -447,7 +447,7 @@ Contributions are welcome. DriftShield is founded and maintained by Tomasz Borys
    ```bash
    ./scripts/dev-verify.sh
    ```
-6. **Open a pull request** from your fork's branch to `tborys/driftshield:main`
+6. **Open a pull request** from your fork's branch to `driftshield/driftshield-sdk:main`
 
 All pull requests are reviewed and merged by Tomasz Borys, DriftShield's founder and current maintainer. Direct pushes to `main` are not accepted.
 

@@ -73,11 +73,11 @@ def _distribution_manifest_payload(*, pack_payload: dict[str, object]) -> dict[s
 
 def test_build_github_raw_pack_url_uses_repository_ref_and_pack_name() -> None:
     assert build_github_raw_pack_url(
-        repository="tborys/driftshield",
+        repository="driftshield/driftshield-sdk",
         ref="v1.2.3",
         pack_name="community-general",
     ) == (
-        "https://raw.githubusercontent.com/tborys/driftshield/"
+        "https://raw.githubusercontent.com/driftshield/driftshield-sdk/"
         "v1.2.3/driftshield/src/driftshield/signatures/packs/community-general.json"
     )
 

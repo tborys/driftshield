@@ -9,7 +9,7 @@ from urllib.request import urlopen
 
 from driftshield.signatures.community import CommunityPackManifest, parse_community_pack
 
-DEFAULT_COMMUNITY_REPOSITORY = "tborys/driftshield"
+DEFAULT_COMMUNITY_REPOSITORY = "driftshield/driftshield-sdk"
 DEFAULT_COMMUNITY_PACK_PATH = "driftshield/src/driftshield/signatures/packs"
 DEFAULT_DISTRIBUTION_MANIFEST_NAME = "signature-pack-manifest.json"
 DEFAULT_DISTRIBUTION_PACK_NAME = "signature-pack.json"

@@ -14,8 +14,8 @@
       "state_conflict",
       "tool_misuse"
     ],
-    "homepage_url": "https://github.com/tborys/driftshield",
-    "documentation_url": "https://github.com/tborys/driftshield/tree/main/docs"
+    "homepage_url": "https://github.com/driftshield/driftshield-sdk",
+    "documentation_url": "https://github.com/driftshield/driftshield-sdk/tree/main/docs"
   },
   "signatures": [
     {
