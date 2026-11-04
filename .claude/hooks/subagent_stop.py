@@ -9,12 +9,20 @@ not approve with a blocking or major finding. If not, the reviewer is sent
 back once (exit 2). Still invalid, it is posted as `changes` with one
 synthetic blocking finding, which the lead escalates. If its text fails the
 public safety scan, only the verdict and counts go on GitHub. The full
-verdict is kept in .driftshield/verdicts/round-<k>.json either way.
+verdict is kept in .driftshield/verdicts/round-<k>.json either way, and
+that file is what the lead reads.
+
+The comment goes into the private run store when DS_REVIEWER_POST_VIA_STORE
+is 1, and a function in AWS posts it as the reviewer's GitHub App after it
+checks the PR is open on the same branch and head. The App key never enters
+the session. Without that, the App posts directly if its key is set, else
+the run's identity does.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -22,6 +30,7 @@ from pathlib import Path
 sys.dont_write_bytecode = True  # keep the kit folder clean
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import dslib  # noqa: E402
+import runstore  # noqa: E402
 
 
 def extract_json(text: str) -> tuple[str, dict] | None:
@@ -113,27 +122,37 @@ def main() -> int:
         raw, verdict = parsed
     dslib.write_json(dslib.work() / "verdicts" / f"round-{round_no}.json", verdict)
     withheld = dslib.unsafe(raw)
-    comment_id, posted_as, reviewer_login, app_note = None, None, None, None
+    comment_id, posted_as, reviewer_login, app_note, queued, queue_note = None, None, None, None, None, None
     if pr:
         text = comment_body(round_no, raw, verdict, withheld)
-        # As the reviewer's own GitHub App when it is set up; if not, or it fails, as the run's identity, and say so.
-        posted, app_note = dslib.post_as_reviewer(run.get("repository"), pr["number"], text)
-        posted_as = "reviewer_app" if posted is not None else "run_identity"
-        if posted is None:
-            posted = dslib.gh_json(f"repos/{run.get('repository')}/issues/{pr['number']}/comments", body={"body": text})
-        comment_id = posted.get("id") if isinstance(posted, dict) else None
-        if posted_as == "reviewer_app":
-            reviewer_login = (posted.get("user") or {}).get("login")
-            if reviewer_login:
-                with dslib.state("run.json") as info:
-                    info["reviewer_login"] = reviewer_login
+        # Through the run store, where the reviewer poster in AWS puts it on the PR as the reviewer's GitHub App;
+        # else as the App directly when its key is set; else as the run's identity. Each step says why it was skipped.
+        ctx = {"repo": run.get("repository"), "issue": run.get("issue"), "pr": pr["number"],
+               "branch": (pr.get("head") or {}).get("ref") or dslib.branch()}
+        queued, queue_note = runstore.queue_reviewer_post(run, ctx, round_no, verdict.get("head_sha"), text)
+        if queued:
+            posted_as = "reviewer_queued"
+            reviewer_login = next((x.strip() for x in os.environ.get("DS_REVIEWER_LOGINS", "").split(",")
+                                   if x.strip().endswith("[bot]")), None)
+        else:
+            posted, app_note = dslib.post_as_reviewer(run.get("repository"), pr["number"], text)
+            posted_as = "reviewer_app" if posted is not None else "run_identity"
+            if posted is None:
+                posted = dslib.gh_json(f"repos/{run.get('repository')}/issues/{pr['number']}/comments", body={"body": text})
+            comment_id = posted.get("id") if isinstance(posted, dict) else None
+            if posted_as == "reviewer_app":
+                reviewer_login = (posted.get("user") or {}).get("login")
+        if reviewer_login:
+            with dslib.state("run.json") as info:
+                info["reviewer_login"] = reviewer_login
     findings = [{**f, "finding": str(f.get("finding", ""))[:300]} for f in verdict.get("findings") or [] if isinstance(f, dict)]
     dslib.append_event(
         "review.verdict", actor=actor, tier="C", round=round_no, pr=pr["number"] if pr else None,
         head_sha=verdict.get("head_sha"), status=verdict["verdict"],
         ac_refs=dslib.items_in(" ".join(str(a.get("ac")) for a in verdict.get("ac_assessment") or [] if isinstance(a, dict))) or None,
         data={"ac_assessment": verdict.get("ac_assessment"), "findings": findings, "resolved": verdict.get("resolved"),
-              "comment_id": comment_id, "posted": comment_id is not None, "posted_as": posted_as,
+              "comment_id": comment_id, "posted": comment_id is not None or bool(queued), "posted_as": posted_as,
+              "queued_key": queued, "reviewer_queue_note": queue_note,
               "reviewer_login": reviewer_login, "reviewer_app_note": app_note, "withheld": bool(withheld),
               "invalid": bool(errors), "reviewer_round": verdict.get("round")})
     dslib.append_event("agent.finished", actor=actor, data=finished)
