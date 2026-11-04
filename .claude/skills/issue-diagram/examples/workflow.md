@@ -12,7 +12,7 @@ flowchart TB
     build["<b>Build and push </b><font color='#6f7681'><i>test first</i></font>"]
     drawn["<b>Draw the After picture </b><font color='#6f7681'><i>from the diff</i></font>"]
   end
-  subgraph checker["Checker agent"]
+  subgraph reviewer["Reviewer agent"]
     review["<b>Review the diff </b><font color='#6f7681'><i>against the checklist</i></font>"]
     compare["<b>Compare the pictures </b><font color='#6f7681'><i>with the diff</i></font>"]
   end
@@ -22,7 +22,7 @@ flowchart TB
   classDef componentBox fill:#ffffff, color:black, stroke:none
   classDef unchanged fill:#e9ebee, color:black, stroke:#c9ccd1, stroke-width:1px
   classDef todo fill:#ffffff, color:#c4202f, stroke:#d62b3a, stroke-width:1.5px, stroke-dasharray:5
-  class owner,lead,checker containerBox
+  class owner,lead,reviewer containerBox
   class pr componentBox
   class write,build,review unchanged
   class picture,drawn,compare todo

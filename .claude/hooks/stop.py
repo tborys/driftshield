@@ -213,10 +213,10 @@ def link_sessions(uploads: list[dict], ctx: dict, run: dict, events: list[dict],
         identity = {"repository": ctx["repo"], "issue_number": ctx["issue"], "pull_request": None, "head_sha": None,
                     "review_round": None, "dispatch_key": None, "branch": None}
         verdict = verdicts.get(u.get("agent_id"))
-        if u["role"] == "checker" and verdict and ctx["pr"] and verdict.get("head_sha"):
+        if u["role"] == "reviewer" and verdict and ctx["pr"] and verdict.get("head_sha"):
             role = "review"
             identity.update(pull_request=ctx["pr"], head_sha=verdict["head_sha"], review_round=verdict.get("round"))
-        elif u["role"] != "checker" and lineage:
+        elif u["role"] != "reviewer" and lineage:
             role = "implementation"
             identity["branch"] = ctx["branch"]
         else:
@@ -304,9 +304,10 @@ def build_record(ctx: dict, run: dict, events: list[dict], uploads: list[dict], 
     notes = []
     notes_path = dslib.work() / "notes.md"
     for line in (notes_path.read_text()[:6000].splitlines() if notes_path.exists() else []):
-        m = re.match(r"^\s*[-*]\s*(?:(lead|builder|checker)\s*:\s*)?(.+)$", line, re.I)
+        m = re.match(r"^\s*[-*]\s*(?:(lead|builder|reviewer|checker)\s*:\s*)?(.+)$", line, re.I)
         if m:
-            notes.append({"by": (m.group(1) or "lead").lower(), "text": m.group(2).strip()[:500]})
+            by = (m.group(1) or "lead").lower()
+            notes.append({"by": "reviewer" if by == "checker" else by, "text": m.group(2).strip()[:500]})
     drill = dslib.read_json(dslib.work() / "drill.json", None)
     seqs, tokens = [e["seq"] for e in events], ctx["tokens"]
     total = sum(sum(v.values()) for v in tokens.values()) or 1
